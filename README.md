@@ -23,6 +23,37 @@ This is a concept test version and may contain bugs. Use it at your own risk and
 - **Version Deactivation:**
   - Revert the environment changes made during activation by restoring the original values of `PATH`, `CC`, `CXX`, `LD`, and `PS1`.
 
+## Installation Script (install.sh)
+
+To make it easier to call the LLVM version manager tools from anywhere, an installation script (`install.sh`) is provided. This script copies the project’s commands to a directory (by default, `$HOME/.local/bin`) that is typically included in your PATH.
+
+### How to Use the Installation Script
+
+1. **Run the Installer:**
+   ```bash
+   ./install.sh
+   ```
+   This will:
+   - Create the installation directory (`$HOME/.local/bin`) if it doesn't exist.
+   - Copy the following scripts into that directory:
+     - `llvm_manager.sh` as `llvm-manager`
+     - `activate_llvm.sh` as `llvm-activate`
+     - `deactivate_llvm.sh` as `llvm-deactivate`
+   - Set the appropriate executable permissions on these scripts.
+
+2. **Verify PATH:**
+   The installer checks if `$HOME/.local/bin` is in your PATH. If it isn’t, you'll receive a warning along with instructions to add it:
+   ```bash
+   export PATH="$HOME/.local/bin:$PATH"
+   ```
+   You may add this line to your shell’s startup file (e.g., `~/.bashrc` or `~/.profile`) for persistence.
+
+3. **Using the Commands:**
+   After installation, you can run the commands from anywhere in your terminal:
+   - Use `llvm-manager` to download and install LLVM versions.
+   - Use `llvm-activate` to activate a specific LLVM version for the current terminal session.
+   - Use `llvm-deactivate` to revert the activation.
+
 ## Files
 
 - **llvm_manager.sh:**
