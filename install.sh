@@ -22,6 +22,7 @@ echo "Copying scripts to $INSTALL_DIR..."
 cp llvm_manager.sh "$INSTALL_DIR/llvm-manager"
 cp activate_llvm.sh "$INSTALL_DIR/llvm-activate"
 cp deactivate_llvm.sh "$INSTALL_DIR/llvm-deactivate"
+cp activate_llvm_vscode.sh "$INSTALL_DIR/llvm-vscode-activate"
 
 echo "Making scripts executable..."
 chmod +x "$INSTALL_DIR/llvm-manager" "$INSTALL_DIR/llvm-activate" "$INSTALL_DIR/llvm-deactivate"
