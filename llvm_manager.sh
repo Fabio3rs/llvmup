@@ -40,18 +40,52 @@ for i in "${!listaVersoes[@]}"; do
     echo "$((i+1))) $versao$INSTALLED_FLAG"
 done
 
-# Solicita que o usuário selecione uma versão
-read -p "Selecione uma versão pelo número | Select a version by the Number: " escolha
+# Function to validate and select version based on input
+select_version() {
+    local input="$1"
+    # If input is a number, use it as an index (1-based)
+    if [[ "$input" =~ ^[0-9]+$ ]]; then
+        if [ "$input" -ge 1 ] && [ "$input" -le ${#listaVersoes[@]} ]; then
+            VERSAO_SELECIONADA="${listaVersoes[$((input-1))]}"
+            return 0
+        else
+            return 1
+        fi
+    else
+        # Otherwise, assume it's a version tag. Check if it exists in the array.
+        for tag in "${listaVersoes[@]}"; do
+            if [ "$tag" = "$input" ]; then
+                VERSAO_SELECIONADA="$tag"
+                return 0
+            fi
+        done
+        return 1
+    fi
+}
 
-if ! [[ "$escolha" =~ ^[0-9]+$ ]] || [ "$escolha" -lt 1 ] || [ "$escolha" -gt ${#listaVersoes[@]} ]; then
-  echo "Seleção inválida."
-  echo "Invalid selection."
-  exit 1
+# Check if an argument is passed.
+if [ "$#" -ge 1 ]; then
+    input="$1"
+    if select_version "$input"; then
+        echo "Você selecionou: $VERSAO_SELECIONADA"
+        echo "You selected: $VERSAO_SELECIONADA"
+    else
+        echo "Seleção inválida."
+        echo "Invalid selection."
+        exit 1
+    fi
+else
+    # No argument provided: prompt the user.
+    read -p "Selecione uma versão pelo número | Select a version by the Number: " escolha
+    if select_version "$escolha"; then
+        echo "Você selecionou: $VERSAO_SELECIONADA"
+        echo "You selected: $VERSAO_SELECIONADA"
+    else
+        echo "Seleção inválida."
+        echo "Invalid selection."
+        exit 1
+    fi
 fi
-
-VERSAO_SELECIONADA="${listaVersoes[$((escolha-1))]}"
-echo "Você selecionou: $VERSAO_SELECIONADA"
-echo "You selected: $VERSAO_SELECIONADA"
 
 # Procura o asset que contenha "Linux-X64.tar.xz" no nome para a versão selecionada
 ASSET_URL=$(echo "$RELEASES" | jq -r --arg versao "$VERSAO_SELECIONADA" '

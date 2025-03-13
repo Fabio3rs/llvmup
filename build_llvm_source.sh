@@ -37,14 +37,45 @@ for tag in "${tagArray[@]}"; do
   ((i++))
 done
 
-read -p "Enter the number of the release you want to build: " choice
-if ! [[ "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt ${#tagArray[@]} ]; then
-  echo "Invalid selection."
-  exit 1
-fi
+# Function to select a version based on input (number or version tag)
+select_version() {
+    local input="$1"
+    if [[ "$input" =~ ^[0-9]+$ ]]; then
+        if [ "$input" -ge 1 ] && [ "$input" -le "${#tagArray[@]}" ]; then
+            selectedTag="${tagArray[$((input-1))]}"
+            return 0
+        else
+            return 1
+        fi
+    else
+        for tag in "${tagArray[@]}"; do
+            if [ "$tag" = "$input" ]; then
+                selectedTag="$tag"
+                return 0
+            fi
+        done
+        return 1
+    fi
+}
 
-selectedTag="${tagArray[$((choice-1))]}"
-echo "You selected: $selectedTag"
+if [ "$#" -ge 1 ]; then
+    # Use the first argument to select the version
+    if select_version "$1"; then
+        echo "You selected: $selectedTag"
+    else
+        echo "Invalid selection provided: $1"
+        exit 1
+    fi
+else
+    # No argument provided: prompt the user.
+    read -p "Enter the number of the release you want to build: " choice
+    if select_version "$choice"; then
+        echo "You selected: $selectedTag"
+    else
+        echo "Invalid selection."
+        exit 1
+    fi
+fi
 
 # Prepare source directory
 targetSourceDir="$SOURCES_DIR/$selectedTag"

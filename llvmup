@@ -1,0 +1,23 @@
+#!/bin/bash
+# llvmup: A wrapper script for LLVM installation management.
+#
+# Usage:
+#   llvmup [--from-source] [additional arguments...]
+#
+# If the flag --from-source is provided, the script calls build_llvm_source.sh
+# to build LLVM from source. Otherwise, it calls llvm_manager.sh to download and install a pre-built release.
+#
+# Make sure that both llvm_manager.sh and build_llvm_source.sh are located in the same directory as this script.
+
+set -e
+
+SCRIPT_DIR="$(dirname "$0")"
+
+if [ "$1" == "--from-source" ]; then
+    shift
+    echo "Building LLVM from source..."
+    exec "$SCRIPT_DIR/build_llvm_source.sh" "$@"
+else
+    echo "Installing pre-built LLVM release..."
+    exec "$SCRIPT_DIR/llvm_manager.sh" "$@"
+fi
