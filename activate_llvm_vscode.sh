@@ -53,8 +53,22 @@ if [ -z "$clangMajor" ]; then
     clangMajor="20"
 fi
 
+if [ ! -d "$LLVM_DIR/lib/clang/$clangMajor" ]; then
+    LS_CLANG=$(ls "$LLVM_DIR/lib/clang")
+    if [ -n "$LS_CLANG" ]; then
+        clangMajor="$LS_CLANG"
+    else
+        echo "Warning: Could not find the clang-$clangMajor directory in $LLVM_DIR/lib/clang."
+    fi
+fi
+
 # Construct fallback flags; adjust include paths as necessary
-FALLBACK_FLAGS="-isystem $LLVM_DIR/lib/clang/$clangMajor/include -isystem $LLVM_DIR/include/c++/v1"
+FALLBACK_FLAGS="-isystem $LLVM_DIR/lib/clang/$clangMajor/include"
+
+INCLUDE_CPP_V1="$LLVM_DIR/include/c++/v1"
+if [ -d "$INCLUDE_CPP_V1" ]; then
+    FALLBACK_FLAGS="$FALLBACK_FLAGS -isystem $INCLUDE_CPP_V1"
+fi
 
 # Build the new PATH for CMake configuration by prepending the LLVM bin directory
 NEW_PATH="$LLVM_DIR/bin:$PATH"
