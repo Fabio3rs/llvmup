@@ -121,11 +121,11 @@ To make it easier to call the LLVM version manager tools from anywhere, an insta
    This will:
    - Create the installation directory (`$HOME/.local/bin`) if it doesn't exist.
    - Copy the following scripts into that directory:
-     - `llvm_prebuilt.sh` as `llvm-prebuilt`
-     - `activate_llvm.sh` as `llvm-activate`
-     - `deactivate_llvm.sh` as `llvm-deactivate`
-     - `activate_llvm_vscode.sh` as `llvm-vscode-activate`
-     - `build_llvm_source.sh` (for building from source)
+     - `llvm-prebuilt`
+     - `llvm-activate`
+     - `llvm-deactivate`
+     - `llvm-vscode-activate`
+     - `llvm-build` (for building from source)
      - `llvmup` (wrapper command)
    - Set the appropriate executable permissions on these scripts.
 
@@ -182,12 +182,12 @@ For Windows users, PowerShell scripts are provided to manage the LLVM toolchains
 
 ## Files
 
-- **llvm_prebuilt.sh (Linux):**
+- **llvm-prebuilt (Linux):**
   - Interacts with the GitHub API to list available LLVM releases.
   - Allows you to choose a version for download and installation.
   - Downloads, extracts, and installs the selected LLVM release into `~/.llvm/toolchains/<version>`.
 
-- **build_llvm_source.sh (Linux):**
+- **llvm-build (Linux):**
   - Implements a build-from-source workflow.
   - Shallow clones the LLVM project at the selected release into `~/.llvm/sources/<tag>`.
   - Configures, builds, and installs LLVM (using Ninja) to `~/.llvm/toolchains/source-<version>`.
@@ -195,9 +195,9 @@ For Windows users, PowerShell scripts are provided to manage the LLVM toolchains
 - **llvmup (Linux):**
   - A wrapper script that accepts an optional `--from-source` flag.
   - If `--from-source` is passed, it calls the build-from-source script.
-  - Otherwise, it calls the pre-built release manager (`llvm_prebuilt.sh`).
+  - Otherwise, it calls the pre-built release manager (`llvm-prebuilt`).
 
-- **activate_llvm.sh (Linux):**
+- **llvm-activate (Linux):**
   - A script intended to be **sourced** in the shell.
   - If no argument is provided, it lists the installed LLVM versions.
   - When a version is provided (e.g., `llvmorg-20.1.0`), it:
@@ -206,11 +206,11 @@ For Windows users, PowerShell scripts are provided to manage the LLVM toolchains
     - Updates these variables to use the selected LLVM version.
     - Alters the shell prompt to indicate the active LLVM version.
 
-- **deactivate_llvm.sh (Linux):**
+- **llvm-deactivate (Linux):**
   - A script intended to be **sourced** in the shell.
   - Restores the environment variables to their original state, effectively deactivating the LLVM version.
 
-- **activate_llvm_vscode.sh (Linux):**
+- **llvm-vscode-activate (Linux):**
   - A script to update your VSCode workspace settings by merging LLVM-specific configuration.
   - Uses `jq` to merge settings into `.vscode/settings.json` without replacing existing settings.
   - Configures:
