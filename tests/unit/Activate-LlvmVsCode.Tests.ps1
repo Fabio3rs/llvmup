@@ -109,7 +109,9 @@ Describe "Activate-LlvmVsCode" {
         It "Should set environment variables correctly" {
             Test-ActivateLlvmVsCode -Version $testVersion
 
-            $env:PATH | Should -Contain $binDir
+            # Split PATH into array and check if binDir is in it
+            $pathArray = $env:PATH -split ';'
+            $pathArray | Should -Contain $binDir
             $env:CC   | Should -Be (Join-Path $binDir 'clangd.exe')
             $env:CXX  | Should -Be (Join-Path $binDir 'clangd.exe')
             $env:LLVM_ACTIVE_VERSION | Should -Be $testVersion
