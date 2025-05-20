@@ -1,7 +1,7 @@
 #!/bin/bash
-# activate_llvm_vscode.sh: Updates VSCode workspace settings for LLVM integration.
+# llvm-vscode-activate: Updates VSCode workspace settings for LLVM integration.
 # Usage:
-#   ./activate_llvm_vscode.sh <version>
+#   ./llvm-vscode-activate <version>
 
 set -e
 
@@ -49,11 +49,19 @@ jq --arg bin_dir "$LLVM_DIR/bin" \
    --arg clangd_path "$LLVM_DIR/bin/clangd" \
    --arg include_dir "$LLVM_DIR/include" \
    --arg new_path "$LLVM_DIR/bin:$PATH" \
+   --arg lldb_path "$LLVM_DIR/bin/lldb" \
    '. + {
        "cmake.additionalCompilerSearchDirs": [$bin_dir],
        "clangd.path": $clangd_path,
        "clangd.fallbackFlags": ["-I" + $include_dir],
-       "cmake.configureEnvironment": { "PATH": $new_path }
+       "cmake.configureEnvironment": { "PATH": $new_path },
+       "cmake.debuggerPath": $lldb_path,
+       "cmake.debuggerEnvironment": {
+           "PATH": $new_path
+       },
+       "cmake.debuggerArgs": [
+           "--source-map=/build=${workspaceFolder}"
+       ]
     }' "$SETTINGS_FILE" > "$tmp" && mv "$tmp" "$SETTINGS_FILE"
 
 echo "VSCode workspace settings updated for LLVM version '$VERSION'."
