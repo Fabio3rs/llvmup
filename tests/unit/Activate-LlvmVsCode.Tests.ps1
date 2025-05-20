@@ -3,11 +3,12 @@ $scriptPath = Join-Path $PSScriptRoot "../../Activate-LlvmVsCode.ps1"
 
 # Define test function
 function Test-ActivateLlvmVsCode {
+    [CmdletBinding()]
     param (
         [Parameter(Mandatory = $true)]
         [string]$Version
     )
-    & $scriptPath -Version $Version
+    . $scriptPath -Version $Version
 }
 
 # Define the path to the script under test inside BeforeAll
