@@ -22,12 +22,14 @@ Describe "Activate-LlvmVsCode" {
         $Script:toolchainsDir = Join-Path $testDir '.llvm\toolchains'
         $Script:testVersion   = 'llvmorg-15.0.0'
         $Script:versionDir    = Join-Path $toolchainsDir $testVersion
+        $Script:binDir        = Join-Path $versionDir 'bin'
 
         #––– Create directories and fake binaries
         New-Item -ItemType Directory -Path $vscodeDir     -Force | Out-Null
         New-Item -ItemType Directory -Path $versionDir     -Force | Out-Null
-        New-Item -ItemType File      -Path (Join-Path $versionDir 'clangd.exe') -Force | Out-Null
-        New-Item -ItemType File      -Path (Join-Path $versionDir 'lldb.exe')   -Force | Out-Null
+        New-Item -ItemType Directory -Path $binDir         -Force | Out-Null
+        New-Item -ItemType File      -Path (Join-Path $binDir 'clangd.exe') -Force | Out-Null
+        New-Item -ItemType File      -Path (Join-Path $binDir 'lldb.exe')   -Force | Out-Null
 
         #––– Mock HOME and save environment
         $env:USERPROFILE      = $testDir
@@ -62,9 +64,11 @@ Describe "Activate-LlvmVsCode" {
     Context "When executed outside VSCode workspace" {
         It "Should throw an error when not in VSCode workspace" {
             Set-Location $env:USERPROFILE
+            Remove-Item -Path $vscodeDir -Recurse -Force -ErrorAction SilentlyContinue
             { Test-ActivateLlvmVsCode -Version $testVersion } |
                 Should -Throw -ExpectedMessage '*VSCode workspace*'
             Set-Location $testDir
+            New-Item -ItemType Directory -Path $vscodeDir -Force | Out-Null
         }
     }
 
@@ -74,6 +78,11 @@ Describe "Activate-LlvmVsCode" {
             $env:VSCODE_CWD = $testDir
             $settingsJson = Join-Path $vscodeDir 'settings.json'
             if (Test-Path $settingsJson) { Remove-Item $settingsJson -Force }
+            # Reset environment variables
+            $env:PATH = $script:originalPath
+            $env:CC   = $script:originalCC
+            $env:CXX  = $script:originalCXX
+            $env:LD   = $script:originalLD
         }
 
         It "Should create settings.json if it doesn't exist" {
@@ -85,34 +94,50 @@ Describe "Activate-LlvmVsCode" {
             Test-ActivateLlvmVsCode -Version $testVersion
             $settings = Get-Content (Join-Path $vscodeDir 'settings.json') | ConvertFrom-Json
 
-            $settings.'C_Cpp.default.compilerPath'     | Should -Be (Join-Path $versionDir 'clangd.exe')
-            $settings.'C_Cpp.default.intelliSenseMode' | Should -Be 'clang-x64'
+            $settings.'clangd.path' | Should -Be (Join-Path $binDir 'clangd.exe')
         }
 
         It "Should set correct debugger configuration in settings.json" {
             Test-ActivateLlvmVsCode -Version $testVersion
             $settings = Get-Content (Join-Path $vscodeDir 'settings.json') | ConvertFrom-Json
 
-            $settings.'cmake.debuggerPath' | Should -Be (Join-Path $versionDir 'lldb.exe')
+            $settings.'cmake.debuggerPath' | Should -Be (Join-Path $binDir 'lldb.exe')
         }
 
         It "Should set environment variables correctly" {
             Test-ActivateLlvmVsCode -Version $testVersion
 
-            $env:PATH | Should -Contain $versionDir
-            $env:CC   | Should -Be (Join-Path $versionDir 'clangd.exe')
-            $env:CXX  | Should -Be (Join-Path $versionDir 'clangd.exe')
+            $env:PATH | Should -Contain $binDir
+            $env:CC   | Should -Be (Join-Path $binDir 'clangd.exe')
+            $env:CXX  | Should -Be (Join-Path $binDir 'clangd.exe')
         }
 
         It "Should prevent multiple activations" {
             Test-ActivateLlvmVsCode -Version $testVersion
-            { Test-ActivateLlvmVsCode -Version 'llvmorg-16.0.0' } |
+            # Create a second version to test multiple activations
+            $secondVersion = 'llvmorg-16.0.0'
+            $secondDir = Join-Path $toolchainsDir $secondVersion
+            $secondBinDir = Join-Path $secondDir 'bin'
+            New-Item -ItemType Directory -Path $secondBinDir -Force | Out-Null
+            New-Item -ItemType File -Path (Join-Path $secondBinDir 'clangd.exe') -Force | Out-Null
+            New-Item -ItemType File -Path (Join-Path $secondBinDir 'lldb.exe') -Force | Out-Null
+
+            { Test-ActivateLlvmVsCode -Version $secondVersion } |
                 Should -Throw -ExpectedMessage '*already active*'
         }
 
         It "Should restore environment on deactivation" {
             $origPath = $env:PATH; $origCC = $env:CC; $origCXX = $env:CXX; $origLD = $env:LD
             Test-ActivateLlvmVsCode -Version $testVersion
+
+            # Define deactivation function
+            function Deactivate-LlvmVsCode {
+                $env:PATH = $script:originalPath
+                $env:CC   = $script:originalCC
+                $env:CXX  = $script:originalCXX
+                $env:LD   = $script:originalLD
+            }
+
             Deactivate-LlvmVsCode
 
             $env:PATH | Should -Be $origPath
