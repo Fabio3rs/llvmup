@@ -1,61 +1,50 @@
+# Activate-LlvmVsCode.ps1: Updates VSCode workspace settings for LLVM integration.
+# Usage:
+#   . Activate-LlvmVsCode.ps1 <version>
+
 param (
-    [Parameter(Mandatory=$true)]
-    [string]$LLVMVersion
+    [Parameter(Mandatory = $true)]
+    [string]$Version
 )
 
-# Define the directory where LLVM toolchains are installed
-$llvmToolchainsDir = Join-Path $env:USERPROFILE ".llvm\toolchains"
-$LLVMDir = Join-Path $llvmToolchainsDir $LLVMVersion
+$toolchainsDir = Join-Path $env:USERPROFILE ".llvm\toolchains"
+$llvmDir = Join-Path $toolchainsDir $Version
 
-if (-not (Test-Path $LLVMDir)) {
-    Write-Error "Error: LLVM version '$LLVMVersion' is not installed in $llvmToolchainsDir."
-    exit 1
+# Check if the version is installed
+if (-not (Test-Path $llvmDir)) {
+    Write-Error "Version '$Version' is not installed in $toolchainsDir."
+    return 1
 }
 
-# Define paths based on the selected LLVM version
-$binDir = Join-Path $LLVMDir "bin"
-$clangdPath = Join-Path $binDir "clangd.exe"  # assuming clangd.exe for Windows
-$compilerSearchDir = $binDir
-
-# Extract the major version from the LLVM version string (e.g. from "llvmorg-20.1.0" extract "20")
-$llvmMajorMatch = [regex]::Match($LLVMVersion, '\d+')
-if ($llvmMajorMatch.Success) {
-    $llvmMajor = $llvmMajorMatch.Value
-} else {
-    $llvmMajor = "20"
-}
-
-# Construct fallback flags for clangd (adjust paths as needed)
-$fallbackFlags = "-isystem $LLVMDir\lib\clang\$llvmMajor\include -isystem $LLVMDir\include\c++\v1"
-
-# Build the new PATH by prepending the LLVM bin directory to the existing PATH
-$newPath = "$binDir;$env:PATH"
-
-# Define the VSCode settings file location (relative to the current directory)
+# Check if we're in a VSCode workspace
 $vscodeDir = ".vscode"
-$settingsFile = Join-Path $vscodeDir "settings.json"
-
-# Ensure the .vscode directory exists
 if (-not (Test-Path $vscodeDir)) {
-    New-Item -ItemType Directory -Path $vscodeDir | Out-Null
+    Write-Error "Not in a VSCode workspace. Please run this script from your project root."
+    return 1
 }
 
-# If settings.json doesn't exist, initialize it as an empty JSON object
-if (-not (Test-Path $settingsFile)) {
-    "{}" | Out-File -Encoding utf8 $settingsFile
+# Create settings.json if it doesn't exist
+$settingsPath = Join-Path $vscodeDir "settings.json"
+if (-not (Test-Path $settingsPath)) {
+    @{} | ConvertTo-Json | Set-Content $settingsPath
 }
 
-# Read the existing JSON settings
-$jsonContent = Get-Content -Raw -Path $settingsFile | ConvertFrom-Json
+# Read current settings
+$settings = Get-Content $settingsPath | ConvertFrom-Json
 
-# Add or update the new LLVM settings using Add-Member with -Force
-$jsonContent | Add-Member -MemberType NoteProperty -Name "cmake.additionalCompilerSearchDirs" -Value @($compilerSearchDir) -Force
-$jsonContent | Add-Member -MemberType NoteProperty -Name "clangd.path" -Value $clangdPath -Force
-$jsonContent | Add-Member -MemberType NoteProperty -Name "clangd.fallbackFlags" -Value @($fallbackFlags) -Force
-$jsonContent | Add-Member -MemberType NoteProperty -Name "cmake.configureEnvironment" -Value @{ "PATH" = $newPath } -Force
+# Update settings
+$settings | Add-Member -NotePropertyName "cmake.additionalCompilerSearchDirs" -NotePropertyValue @("$($llvmDir)\bin") -Force
+$settings | Add-Member -NotePropertyName "clangd.path" -NotePropertyValue (Join-Path $llvmDir "bin\clangd.exe") -Force
+$settings | Add-Member -NotePropertyName "clangd.fallbackFlags" -NotePropertyValue @("-I$($llvmDir)\include") -Force
 
-# Write updated JSON back to the settings file with a reasonable depth
-$jsonContent | ConvertTo-Json -Depth 100 | Out-File -Encoding utf8 $settingsFile
+# Update cmake.configureEnvironment
+if (-not $settings.'cmake.configureEnvironment') {
+    $settings | Add-Member -NotePropertyName "cmake.configureEnvironment" -NotePropertyValue @{} -Force
+}
+$settings.'cmake.configureEnvironment' | Add-Member -NotePropertyName "PATH" -NotePropertyValue "$($llvmDir)\bin;$env:PATH" -Force
 
-Write-Host "VSCode settings updated to use LLVM version '$LLVMVersion'."
-Write-Host "Please reload your VSCode workspace for the changes to take effect."
+# Save updated settings
+$settings | ConvertTo-Json -Depth 10 | Set-Content $settingsPath
+
+Write-Output "VSCode workspace settings updated for LLVM version '$Version'."
+Write-Output "Please reload your VSCode window for changes to take effect."

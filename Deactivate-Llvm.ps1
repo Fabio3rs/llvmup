@@ -1,47 +1,30 @@
-# Deactivate-Llvm.ps1
-# This script reverts the changes made by Activate-Llvm.ps1 for the current session.
+# Deactivate-Llvm.ps1: Deactivates the currently active LLVM version.
+# Usage:
+#   . Deactivate-Llvm.ps1
 
-# Check if an active LLVM version exists.
-if (-not $global:ACTIVE_LLVM_VERSION) {
-    Write-Output "No active LLVM version found."
-    exit 0
+# Check if any version is active
+if (-not $env:_ACTIVE_LLVM) {
+    Write-Output "No LLVM version is currently active."
+    return 0
 }
 
-# Restore PATH
+# Restore original environment variables
 if ($env:_OLD_PATH) {
     $env:PATH = $env:_OLD_PATH
-    Remove-Item Env:_OLD_PATH
-} else {
-    Write-Output "No backup PATH found."
-}
-
-# Restore CC
-if ($env:_OLD_CC) {
     $env:CC = $env:_OLD_CC
-    Remove-Item Env:_OLD_CC
-} else {
-    Remove-Item Env:CC -ErrorAction SilentlyContinue
-}
-
-# Restore CXX
-if ($env:_OLD_CXX) {
     $env:CXX = $env:_OLD_CXX
-    Remove-Item Env:_OLD_CXX
-} else {
-    Remove-Item Env:CXX -ErrorAction SilentlyContinue
+    $env:LD = $env:_OLD_LD
+    $env:PS1 = $env:_OLD_PS1
+
+    # Clear backup variables
+    Remove-Item Env:\_OLD_PATH -ErrorAction SilentlyContinue
+    Remove-Item Env:\_OLD_CC -ErrorAction SilentlyContinue
+    Remove-Item Env:\_OLD_CXX -ErrorAction SilentlyContinue
+    Remove-Item Env:\_OLD_LD -ErrorAction SilentlyContinue
+    Remove-Item Env:\_OLD_PS1 -ErrorAction SilentlyContinue
 }
 
-# Restore the original prompt function from the backup
-if ($global:OLD_PROMPT) {
-    Set-Item -Path function:prompt -Value $global:OLD_PROMPT
-    Remove-Variable -Name OLD_PROMPT -Scope Global
-} else {
-    Write-Output "No backup prompt found."
-}
+# Clear active version indicator
+Remove-Item Env:\_ACTIVE_LLVM -ErrorAction SilentlyContinue
 
-# Remove the active LLVM version global variable if it exists
-if ($global:ACTIVE_LLVM_VERSION) {
-    Remove-Variable -Name ACTIVE_LLVM_VERSION -Scope Global
-}
-
-Write-Output "LLVM deactivated for this session."
+Write-Output "LLVM version deactivated. Environment variables restored."
