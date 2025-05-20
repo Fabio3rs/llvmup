@@ -1,26 +1,14 @@
 #!/bin/bash
-# activate_llvm_vscode.sh
-#
+# activate_llvm_vscode.sh: Updates VSCode workspace settings for LLVM integration.
 # Usage:
-#   ./activate_llvm_vscode.sh <llvm-version>
-#
-# This script updates your VSCode workspace settings by merging new LLVM configuration
-# settings into the existing .vscode/settings.json. This way, any other settings in the file
-# remain intact.
-#
-# It configures:
-#   - cmake.additionalCompilerSearchDirs
-#   - clangd.path
-#   - clangd.fallbackFlags
-#   - cmake.configureEnvironment (PATH)
+#   ./activate_llvm_vscode.sh <version>
 
 set -e
 
 LLVM_TOOLCHAINS_DIR="$HOME/.llvm/toolchains"
 
 if [ "$#" -ne 1 ]; then
-    echo "Usage: $0 <llvm-version>"
-    echo "Versões instaladas em $LLVM_TOOLCHAINS_DIR:"
+    echo "Usage: $0 <version>"
     echo "Installed versions in $LLVM_TOOLCHAINS_DIR:"
     if [ -d "$LLVM_TOOLCHAINS_DIR" ]; then
         for dir in "$LLVM_TOOLCHAINS_DIR"/*; do
@@ -29,74 +17,44 @@ if [ "$#" -ne 1 ]; then
             fi
         done
     else
-        echo "Nenhuma versão instalada em $LLVM_TOOLCHAINS_DIR."
         echo "No versions installed in $LLVM_TOOLCHAINS_DIR."
     fi
     exit 1
 fi
 
-LLVM_VERSION="$1"
-LLVM_DIR="$LLVM_TOOLCHAINS_DIR/$LLVM_VERSION"
+VERSION="$1"
+LLVM_DIR="$LLVM_TOOLCHAINS_DIR/$VERSION"
 
 if [ ! -d "$LLVM_DIR" ]; then
-    echo "Error: LLVM version '$LLVM_VERSION' is not installed in $LLVM_TOOLCHAINS_DIR."
+    echo "Version '$VERSION' is not installed in $LLVM_TOOLCHAINS_DIR."
     exit 1
 fi
 
-# Define the paths based on the LLVM_DIR
-CLANGD_PATH="$LLVM_DIR/bin/clangd"
-COMPILER_SEARCH_DIR="$LLVM_DIR/bin"
-
-# Extract the major version for fallback flags (assumes version format like llvmorg-20.1.0)
-clangMajor=$(echo "$LLVM_VERSION" | grep -o '[0-9]\+' | head -n 1)
-if [ -z "$clangMajor" ]; then
-    clangMajor="20"
-fi
-
-if [ ! -d "$LLVM_DIR/lib/clang/$clangMajor" ]; then
-    LS_CLANG=$(ls "$LLVM_DIR/lib/clang")
-    if [ -n "$LS_CLANG" ]; then
-        clangMajor="$LS_CLANG"
-    else
-        echo "Warning: Could not find the clang-$clangMajor directory in $LLVM_DIR/lib/clang."
-    fi
-fi
-
-# Construct fallback flags; adjust include paths as necessary
-FALLBACK_FLAGS="-isystem $LLVM_DIR/lib/clang/$clangMajor/include"
-
-INCLUDE_CPP_V1="$LLVM_DIR/include/c++/v1"
-if [ -d "$INCLUDE_CPP_V1" ]; then
-    FALLBACK_FLAGS="$FALLBACK_FLAGS -isystem $INCLUDE_CPP_V1"
-fi
-
-# Build the new PATH for CMake configuration by prepending the LLVM bin directory
-NEW_PATH="$LLVM_DIR/bin:$PATH"
-
-# Define the VSCode settings file location (relative to the current directory)
+# Check if we're in a VSCode workspace
 VSCODE_DIR=".vscode"
+if [ ! -d "$VSCODE_DIR" ]; then
+    echo "Not in a VSCode workspace. Please run this script from your project root."
+    exit 1
+fi
+
+# Create settings.json if it doesn't exist
 SETTINGS_FILE="$VSCODE_DIR/settings.json"
-
-# Ensure the .vscode directory exists
-mkdir -p "$VSCODE_DIR"
-
-# If the settings file doesn't exist, create an empty JSON object
 if [ ! -f "$SETTINGS_FILE" ]; then
     echo "{}" > "$SETTINGS_FILE"
 fi
 
 # Merge new settings using jq
 tmp=$(mktemp)
-jq --arg clangd_path "$CLANGD_PATH" \
-   --arg comp_search "$COMPILER_SEARCH_DIR" \
-   --arg fallback_flags "$FALLBACK_FLAGS" \
-   --arg new_path "$NEW_PATH" \
+jq --arg bin_dir "$LLVM_DIR/bin" \
+   --arg clangd_path "$LLVM_DIR/bin/clangd" \
+   --arg include_dir "$LLVM_DIR/include" \
+   --arg new_path "$LLVM_DIR/bin:$PATH" \
    '. + {
-       "cmake.additionalCompilerSearchDirs": [$comp_search],
+       "cmake.additionalCompilerSearchDirs": [$bin_dir],
        "clangd.path": $clangd_path,
-       "clangd.fallbackFlags": [$fallback_flags],
+       "clangd.fallbackFlags": ["-I" + $include_dir],
        "cmake.configureEnvironment": { "PATH": $new_path }
     }' "$SETTINGS_FILE" > "$tmp" && mv "$tmp" "$SETTINGS_FILE"
 
-echo "VSCode settings updated to use LLVM version '$LLVM_VERSION'."
-echo "Please reload your VSCode workspace for the changes to take effect."
+echo "VSCode workspace settings updated for LLVM version '$VERSION'."
+echo "Please reload your VSCode window for changes to take effect."
