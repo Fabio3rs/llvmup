@@ -2,22 +2,90 @@
 # llvmup: A wrapper script for LLVM installation management.
 #
 # Usage:
-#   llvmup [--from-source] [additional arguments...]
+#   llvmup <command> [options...]
 #
-# If the flag --from-source is provided, the script calls build_llvm_source.sh
-# to build LLVM from source. Otherwise, it calls llvm_manager.sh to download and install a pre-built release.
+# Commands:
+#   install [--from-source] [args...]
+#         Install an LLVM release.
+#         If --from-source is provided, the build-from-source process is invoked;
+#         otherwise, a pre-built release is installed.
 #
-# Make sure that both llvm_manager.sh and build_llvm_source.sh are located in the same directory as this script.
+#   build [args...]
+#         Alias for 'install --from-source' to build LLVM from source.
+#
+#   activate <llvm-version>
+#         Activate a specific LLVM version for the current shell session.
+#
+#   deactivate
+#         Deactivate the currently active LLVM version.
+#
+#   help
+#         Display this help message.
+#
+# All scripts (llvmup-prebuilt.sh, llvmup-build.sh, llvmup-activate.sh,
+# llvmup-deactivate.sh, llvmup-vscode.sh) should reside in the same directory as this script.
 
 set -e
 
 SCRIPT_DIR="$(dirname "$0")"
 
-if [ "$1" == "--from-source" ]; then
-    shift
-    echo "Building LLVM from source..."
-    exec "$SCRIPT_DIR/build_llvm_source.sh" "$@"
-else
-    echo "Installing pre-built LLVM release..."
-    exec "$SCRIPT_DIR/llvm_manager.sh" "$@"
+usage() {
+    cat <<EOF
+Usage: llvmup <command> [options...]
+
+Commands:
+  install [--from-source] [args...]
+      Install an LLVM release.
+      --from-source   Build LLVM from source instead of installing a pre-built release.
+  build [args...]
+      Alias for 'install --from-source'.
+  activate <llvm-version>
+      Activate a specific LLVM version for the current shell session.
+  deactivate
+      Deactivate the currently active LLVM version.
+  help
+      Display this help message.
+EOF
+    exit 1
+}
+
+if [ $# -lt 1 ]; then
+    usage
 fi
+
+command="$1"
+shift
+
+case "$command" in
+    install)
+        if [ "$1" == "--from-source" ]; then
+            shift
+            echo "Building LLVM from source..."
+            exec "$SCRIPT_DIR/llvmup-build.sh" "$@"
+        else
+            echo "Installing pre-built LLVM release..."
+            exec "$SCRIPT_DIR/llvmup-prebuilt.sh" "$@"
+        fi
+        ;;
+    build)
+        echo "Building LLVM from source..."
+        exec "$SCRIPT_DIR/llvmup-build.sh" "$@"
+        ;;
+    activate)
+        if [ $# -lt 1 ]; then
+            echo "Error: 'activate' requires an LLVM version as argument."
+            usage
+        fi
+        exec "$SCRIPT_DIR/llvmup-activate.sh" "$@"
+        ;;
+    deactivate)
+        exec "$SCRIPT_DIR/llvmup-deactivate.sh" "$@"
+        ;;
+    help)
+        usage
+        ;;
+    *)
+        echo "Unknown command: $command"
+        usage
+        ;;
+esac

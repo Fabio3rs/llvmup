@@ -1,17 +1,22 @@
 # LLVMUP: LLVM Version Manager (Concept Test)
 
-This project is a minimal viable test software inspired by tools like **rustup**, **Python venv**, and **Node Version Manager (nvm)**. It demonstrates a concept for managing multiple LLVM versions by downloading, extracting, and switching between different LLVM releases.
+This project is a minimal viable test software inspired by tools like **rustup**, **Python venv**, and **Node Version Manager (nvm)**. It demonstrates a concept for managing multiple LLVM versions by downloading, extracting, and switching between different LLVM releases. Additionally, it provides an option to build LLVM from source.
 
 **WARNING:**
 This is a concept test version and may contain bugs. Use it at your own risk and feel free to contribute improvements or report issues.
 
 ## Features
 
-- **Download & Install:**
+- **Download & Install (Pre-built Releases):**
   - Fetch available LLVM releases from the GitHub API.
   - **Linux:** Download the Linux X64 tarball for the selected version, extract it (which creates a directory with the release name), and move it to the designated toolchains directory (`~/.llvm/toolchains/<version>`).
   - **Windows:** Download the LLVM NSIS installer for the selected release and perform a silent installation into `%USERPROFILE%\.llvm\toolchains\<version>`.
-  - Mark already installed versions when listing available releases.
+  - Marks already installed versions when listing available releases.
+
+- **Build From Source (Linux):**
+  - Alternatively, build LLVM from source using the provided build script.
+  - The build script shallowly clones the LLVM repository for the selected release tag into `~/.llvm/sources/<tag>`, then configures, builds, and installs LLVM (using Ninja) to a directory under `~/.llvm/toolchains/source-<version>`.
+  - Use the wrapper command with the `--from-source` flag to trigger a source build.
 
 - **Version Activation:**
   - **Linux:** Activate a specific LLVM version for the current terminal session by:
@@ -31,12 +36,15 @@ This is a concept test version and may contain bugs. Use it at your own risk and
     - `clangd.path`
     - `clangd.fallbackFlags`
     - `cmake.configureEnvironment` (with an updated `PATH`)
-  - **Windows:** Use the PowerShell script (e.g., `Activate-LlvmVsCode.ps1`) to merge LLVM configuration settings into your `.vscode\settings.json` file. This script sets:
+  - **Windows:** Use the PowerShell script (`Activate-LlvmVsCode.ps1`) to merge LLVM configuration settings into your `.vscode\settings.json` file. This script sets:
     - `cmake.additionalCompilerSearchDirs` to point to the LLVM `bin` directory.
     - `clangd.path` to the LLVM `clangd.exe` executable.
     - `clangd.fallbackFlags` to include the proper LLVM include paths.
     - `cmake.configureEnvironment` with the updated `PATH` (prepending the LLVM `bin` directory).
-  - In both cases, the integration script merges settings (using `jq` on Linux or native JSON handling on Windows) so that any pre-existing VSCode settings are preserved.
+  - In both cases, the integration script merges settings so that any pre-existing VSCode settings are preserved.
+
+- **Wrapper Command:**
+  - A wrapper script called `llvmup` is provided that accepts an optional `--from-source` flag. When used, it calls the build-from-source script; otherwise, it uses the pre-built release manager.
 
 ## Installation Script (install.sh)
 
@@ -51,10 +59,12 @@ To make it easier to call the LLVM version manager tools from anywhere, an insta
    This will:
    - Create the installation directory (`$HOME/.local/bin`) if it doesn't exist.
    - Copy the following scripts into that directory:
-     - `llvm_manager.sh` as `llvm-manager`
+     - `llvm_prebuilt.sh` as `llvm-prebuilt`
      - `activate_llvm.sh` as `llvm-activate`
      - `deactivate_llvm.sh` as `llvm-deactivate`
      - `activate_llvm_vscode.sh` as `llvm-vscode-activate`
+     - `build_llvm_source.sh` (for building from source)
+     - `llvmup` (wrapper command)
    - Set the appropriate executable permissions on these scripts.
 
 2. **Verify PATH:**
@@ -66,7 +76,16 @@ To make it easier to call the LLVM version manager tools from anywhere, an insta
 
 3. **Using the Commands:**
    After installation, you can run the commands from anywhere in your terminal:
-   - Use `llvm-manager` to download and install LLVM versions.
+   - Use `llvm-prebuilt` to download and install pre-built LLVM versions.
+   - Use `llvmup` to choose between a pre-built installation or a build-from-source:
+     - To install a pre-built release:
+       ```bash
+       llvmup [additional arguments...]
+       ```
+     - To build from source:
+       ```bash
+       llvmup --from-source [additional arguments...]
+       ```
    - Use `llvm-activate` to activate a specific LLVM version for the current terminal session.
    - Use `llvm-deactivate` to revert the activation.
    - Use `llvm-vscode-activate` to update your VSCode workspace settings with the selected LLVM configuration.
@@ -91,20 +110,30 @@ For Windows users, PowerShell scripts are provided to manage the LLVM toolchains
   - Restores the original environment variables and PowerShell prompt.
 
 - **Activate-LlvmVsCode.ps1:**
-  - Updates your VSCode workspace settings (`.vscode\settings.json`) to use the selected LLVM toolchain.
-  - Merges the following settings:
+  - Updates your VSCode workspace settings (`.vscode\settings.json`) by merging LLVM-specific configuration.
+  - Sets:
     - `cmake.additionalCompilerSearchDirs`
     - `clangd.path`
     - `clangd.fallbackFlags`
-    - `cmake.configureEnvironment` (with an updated `PATH`)
+    - `cmake.configureEnvironment` (with updated `PATH`)
   - After running the script, reload your VSCode workspace for the changes to take effect.
 
 ## Files
 
-- **llvm_manager.sh (Linux):**
+- **llvm_prebuilt.sh (Linux):**
   - Interacts with the GitHub API to list available LLVM releases.
   - Allows you to choose a version for download and installation.
   - Downloads, extracts, and installs the selected LLVM release into `~/.llvm/toolchains/<version>`.
+
+- **build_llvm_source.sh (Linux):**
+  - Implements a build-from-source workflow.
+  - Shallow clones the LLVM project at the selected release into `~/.llvm/sources/<tag>`.
+  - Configures, builds, and installs LLVM (using Ninja) to `~/.llvm/toolchains/source-<version>`.
+
+- **llvmup (Linux):**
+  - A wrapper script that accepts an optional `--from-source` flag.
+  - If `--from-source` is passed, it calls the build-from-source script.
+  - Otherwise, it calls the pre-built release manager (`llvm_prebuilt.sh`).
 
 - **activate_llvm.sh (Linux):**
   - A script intended to be **sourced** in the shell.
@@ -155,34 +184,35 @@ For Windows users, PowerShell scripts are provided to manage the LLVM toolchains
 
 ### 1. Install an LLVM Version
 
-Run the manager script (Linux) to download and install an LLVM version:
+- **Pre-built (Linux):**
+  Run the manager script to download and install a pre-built LLVM version:
+  ```bash
+  ./llvm_prebuilt.sh
+  ```
+  Follow the on-screen instructions. The release will be installed into `~/.llvm/toolchains/<version>`.
 
-```bash
-./llvm_manager.sh
-```
-
-Follow the on-screen instructions to select the version you wish to install. The release will be installed into `~/.llvm/toolchains/<version>`.
+- **Build from Source (Linux):**
+  Use the wrapper script with the `--from-source` flag:
+  ```bash
+  llvmup --from-source
+  ```
+  This will prompt you to select a release and then build LLVM from source. The source will be cloned into `~/.llvm/sources/<tag>`, and the installation will be placed into `~/.llvm/toolchains/source-<version>`.
 
 ### 2. Activate an LLVM Version (Linux)
 
 To list installed versions:
-
 ```bash
 source activate_llvm.sh
 ```
-
-To activate a specific version (for example, `llvmorg-20.1.0`):
-
+To activate a specific version (e.g., `llvmorg-20.1.0`):
 ```bash
 source activate_llvm.sh llvmorg-20.1.0
 ```
-
-This command will update your environment for the current session by modifying `PATH`, `CC`, `CXX`, `LD`, and `PS1`.
+This updates your environment (e.g., `PATH`, `CC`, `CXX`, `LD`, and `PS1`).
 
 ### 3. Deactivate the LLVM Version (Linux)
 
 To revert the changes and restore your original environment, run:
-
 ```bash
 source deactivate_llvm.sh
 ```
@@ -190,16 +220,10 @@ source deactivate_llvm.sh
 ### 4. Activate LLVM for VSCode (Linux)
 
 To update your VSCode workspace settings with the selected LLVM configuration, run:
-
 ```bash
 ./activate_llvm_vscode.sh llvmorg-20.1.0
 ```
-
-This script will merge the LLVM configuration settings into your `.vscode/settings.json` file, ensuring that:
-- CMake uses the LLVM toolchain (`cmake.additionalCompilerSearchDirs` and updated `PATH`).
-- Clangd is pointed to the correct executable and include directories (`clangd.path` and `clangd.fallbackFlags`).
-
-After running the script, reload your VSCode workspace for the changes to take effect.
+This merges LLVM configuration settings into your `.vscode/settings.json` file. Reload your VSCode workspace for changes to take effect.
 
 ### 5. Windows Usage
 
