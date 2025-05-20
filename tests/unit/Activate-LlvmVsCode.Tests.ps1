@@ -1,5 +1,6 @@
 # Import the script under test
-. $PSScriptRoot/../../Activate-LlvmVsCode.ps1
+$scriptPath = Join-Path $PSScriptRoot "../../Activate-LlvmVsCode.ps1"
+. $scriptPath
 
 # Define test function
 function Test-ActivateLlvmVsCode {
@@ -7,7 +8,7 @@ function Test-ActivateLlvmVsCode {
         [Parameter(Mandatory = $true)]
         [string]$Version
     )
-    Activate-LlvmVsCode -Version $Version
+    & $scriptPath -Version $Version
 }
 
 Describe "Activate-LlvmVsCode" {
