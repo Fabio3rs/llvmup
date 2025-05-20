@@ -1,53 +1,50 @@
-# Path to the script under test
-$scriptPath = Join-Path $PSScriptRoot '../../Activate-LlvmVsCode.ps1'
+# Path to the script under test (will be captured in BeforeAll)
+# $scriptPath = Join-Path $PSScriptRoot '../../Activate-LlvmVsCode.ps1'
 
 Describe "Activate-LlvmVsCode" {
-    #––– Helper: always dot-source the script under test with -Version
-    function Test-ActivateLlvmVsCode {
-        [CmdletBinding()]
-        param (
-            [Parameter(Mandatory)]
-            [string]$Version
-        )
-
-        # This will load and run the script under test
-        . $scriptPath -Version $Version
-    }
-
     BeforeAll {
-        #––– Test fixture setup
+        #––– Locate your script under test
+        $scriptPath = Join-Path $PSScriptRoot '../../Activate-LlvmVsCode.ps1'
+
+        #––– Define the helper *inside* BeforeAll
+        function Test-ActivateLlvmVsCode {
+            [CmdletBinding()]
+            param (
+                [Parameter(Mandatory)]
+                [string]$Version
+            )
+            . $scriptPath -Version $Version
+        }
+
+        #––– Test fixtures
         $Script:testDir       = 'TestDrive:\test'
         $Script:vscodeDir     = Join-Path $testDir '.vscode'
         $Script:toolchainsDir = Join-Path $testDir '.llvm\toolchains'
         $Script:testVersion   = 'llvmorg-15.0.0'
         $Script:versionDir    = Join-Path $toolchainsDir $testVersion
 
-        # Create the directory tree
+        #––– Create directories and fake binaries
         New-Item -ItemType Directory -Path $vscodeDir     -Force | Out-Null
         New-Item -ItemType Directory -Path $versionDir     -Force | Out-Null
+        New-Item -ItemType File      -Path (Join-Path $versionDir 'clangd.exe') -Force | Out-Null
+        New-Item -ItemType File      -Path (Join-Path $versionDir 'lldb.exe')   -Force | Out-Null
 
-        # Touch fake binaries
-        New-Item -ItemType File -Path (Join-Path $versionDir 'clangd.exe') -Force | Out-Null
-        New-Item -ItemType File -Path (Join-Path $versionDir 'lldb.exe')   -Force | Out-Null
-
-        # Mock HOME
-        $env:USERPROFILE = $testDir
-
-        # Save original env vars
-        $script:originalPath = $env:PATH
-        $script:originalCC   = $env:CC
-        $script:originalCXX  = $env:CXX
-        $script:originalLD   = $env:LD
+        #––– Mock HOME and save environment
+        $env:USERPROFILE      = $testDir
+        $script:originalPath  = $env:PATH
+        $script:originalCC    = $env:CC
+        $script:originalCXX   = $env:CXX
+        $script:originalLD    = $env:LD
     }
 
     AfterAll {
-        # Tear down
+        #––– Restore environment and clean up
         $env:PATH = $script:originalPath
         $env:CC   = $script:originalCC
         $env:CXX  = $script:originalCXX
         $env:LD   = $script:originalLD
 
-        Remove-Item -Path $testDir -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path $script:testDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     Context "When version is not installed" {
@@ -67,7 +64,6 @@ Describe "Activate-LlvmVsCode" {
 
     Context "When executed in valid VSCode workspace with valid version" {
         BeforeEach {
-            # Ensure a clean workspace
             $env:VSCODE_CWD = $testDir
             $settingsJson = Join-Path $vscodeDir 'settings.json'
             if (Test-Path $settingsJson) { Remove-Item $settingsJson -Force }
@@ -96,9 +92,9 @@ Describe "Activate-LlvmVsCode" {
         It "Should set environment variables correctly" {
             Test-ActivateLlvmVsCode -Version $testVersion
 
-            $env:PATH  | Should -Contain $versionDir
-            $env:CC    | Should -Be (Join-Path $versionDir 'clangd.exe')
-            $env:CXX   | Should -Be (Join-Path $versionDir 'clangd.exe')
+            $env:PATH | Should -Contain $versionDir
+            $env:CC   | Should -Be (Join-Path $versionDir 'clangd.exe')
+            $env:CXX  | Should -Be (Join-Path $versionDir 'clangd.exe')
         }
 
         It "Should prevent multiple activations" {
@@ -109,7 +105,6 @@ Describe "Activate-LlvmVsCode" {
 
         It "Should restore environment on deactivation" {
             $origPath = $env:PATH; $origCC = $env:CC; $origCXX = $env:CXX; $origLD = $env:LD
-
             Test-ActivateLlvmVsCode -Version $testVersion
             Deactivate-LlvmVsCode
 
