@@ -1,12 +1,11 @@
 #!/bin/bash
 # install.sh: Installation script for the LLVMUP tools.
 # This script installs the following commands:
-#   - llvmup-prebuilt.sh   : Downloads and installs pre-built LLVM releases.
-#   - llvmup-build.sh     : Builds LLVM from source.
-#   - llvmup              : Wrapper command to choose between source build or pre-built install (use --from-source for source build).
-#   - llvmup-activate.sh  : Activates a selected LLVM version for the current shell.
-#   - llvmup-deactivate.sh: Deactivates the currently active LLVM version.
-#   - llvmup-vscode.sh    : Updates VSCode workspace settings with the selected LLVM configuration.
+#   - llvm-prebuilt   : Downloads and installs pre-built LLVM releases.
+#   - llvm-activate   : Activates a selected LLVM version for the current shell.
+#   - llvm-deactivate : Deactivates the currently active LLVM version.
+#   - llvm-vscode-activate : Updates VSCode workspace settings with the selected LLVM configuration.
+#   - llvmup          : Wrapper command to choose between source build or pre-built install (use --from-source for source build).
 #
 # The scripts are copied to $HOME/.local/bin. Make sure that this directory is in your PATH.
 #
@@ -23,11 +22,11 @@ mkdir -p "$INSTALL_DIR"
 
 # Define an associative array mapping source filenames to target filenames.
 declare -A scripts=(
-    ["llvm_prebuilt.sh"]="llvmup-prebuilt.sh"
-    ["activate_llvm.sh"]="llvmup-activate.sh"
-    ["deactivate_llvm.sh"]="llvmup-deactivate.sh"
-    ["activate_llvm_vscode.sh"]="llvmup-vscode.sh"
-    ["build_llvm_source.sh"]="llvmup-build.sh"
+    ["llvm_prebuilt.sh"]="llvm-prebuilt"
+    ["activate_llvm.sh"]="llvm-activate"
+    ["deactivate_llvm.sh"]="llvm-deactivate"
+    ["activate_llvm_vscode.sh"]="llvm-vscode-activate"
+    ["build_llvm_source.sh"]="llvm-build"
     ["llvmup"]="llvmup"
 )
 
@@ -41,7 +40,7 @@ for src in "${!scripts[@]}"; do
 done
 
 echo "Making scripts executable..."
-chmod +x "$INSTALL_DIR/llvmup-prebuilt.sh" "$INSTALL_DIR/llvmup-activate.sh" "$INSTALL_DIR/llvmup-deactivate.sh" "$INSTALL_DIR/llvmup-vscode.sh" "$INSTALL_DIR/llvmup-build.sh" "$INSTALL_DIR/llvmup"
+chmod +x "$INSTALL_DIR/llvm-prebuilt" "$INSTALL_DIR/llvm-activate" "$INSTALL_DIR/llvm-deactivate" "$INSTALL_DIR/llvm-vscode-activate" "$INSTALL_DIR/llvm-build" "$INSTALL_DIR/llvmup"
 
 echo "Installation complete!"
 
@@ -56,9 +55,8 @@ else
 fi
 
 echo "You can now use the following commands from any terminal:"
-echo "  llvmup-prebuilt.sh   : Download and install pre-built LLVM releases."
-echo "  llvmup-build.sh     : Build LLVM from source."
-echo "  llvmup              : Wrapper command (use --from-source to build from source)."
-echo "  llvmup-activate.sh  : Activate a selected LLVM version for the current shell."
-echo "  llvmup-deactivate.sh: Deactivate the active LLVM version."
-echo "  llvmup-vscode.sh    : Update VSCode workspace settings with the selected LLVM configuration."
+echo "  llvmup              : Wrapper command (use --from-source to build from source)"
+echo "  llvm-prebuilt       : Download and install pre-built LLVM releases"
+echo "  llvm-activate       : Activate a selected LLVM version for the current shell"
+echo "  llvm-deactivate     : Deactivate the active LLVM version"
+echo "  llvm-vscode-activate: Update VSCode workspace settings with the selected LLVM configuration"

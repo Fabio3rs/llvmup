@@ -36,12 +36,17 @@ This is a concept test version and may contain bugs. Use it at your own risk and
    cd llvm-manager
    ```
 
-2. Install an LLVM version:
+2. Open PowerShell as Administrator and run:
+   ```powershell
+   Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+   ```
+
+3. Install an LLVM version:
    ```powershell
    .\Download-Llvm.ps1
    ```
 
-3. Activate the version:
+4. Activate the version:
    ```powershell
    .\Activate-Llvm.ps1 <version>
    ```
@@ -60,6 +65,7 @@ This is a concept test version and may contain bugs. Use it at your own risk and
 - PowerShell 5.0 or later
 - Internet connection for downloading releases
 - Administrator privileges for installation
+- Execution policy set to RemoteSigned (at least for CurrentUser)
 
 ## Features
 
@@ -243,7 +249,7 @@ For Windows users, PowerShell scripts are provided to manage the LLVM toolchains
 - **Pre-built (Linux):**
   Run the manager script to download and install a pre-built LLVM version:
   ```bash
-  ./llvm_prebuilt.sh
+  llvmup
   ```
   Follow the on-screen instructions. The release will be installed into `~/.llvm/toolchains/<version>`.
 
@@ -258,11 +264,11 @@ For Windows users, PowerShell scripts are provided to manage the LLVM toolchains
 
 To list installed versions:
 ```bash
-source activate_llvm.sh
+source llvm-activate
 ```
 To activate a specific version (e.g., `llvmorg-20.1.0`):
 ```bash
-source activate_llvm.sh llvmorg-20.1.0
+source llvm-activate llvmorg-20.1.0
 ```
 This updates your environment (e.g., `PATH`, `CC`, `CXX`, `LD`, and `PS1`).
 
@@ -270,21 +276,27 @@ This updates your environment (e.g., `PATH`, `CC`, `CXX`, `LD`, and `PS1`).
 
 To revert the changes and restore your original environment, run:
 ```bash
-source deactivate_llvm.sh
+source llvm-deactivate
 ```
 
 ### 4. Activate LLVM for VSCode (Linux)
 
 To update your VSCode workspace settings with the selected LLVM configuration, run:
 ```bash
-./activate_llvm_vscode.sh llvmorg-20.1.0
+llvm-vscode-activate llvmorg-20.1.0
 ```
-This merges LLVM configuration settings into your `.vscode/settings.json` file. Reload your VSCode workspace for changes to take effect.
+This merges LLVM configuration settings into your `.vscode/settings.json` file. **Important:** Reload your VSCode workspace for changes to take effect.
 
 ### 5. Windows Usage
 
 - **Download and Install:**
-  Run `Download-Llvm.ps1` in PowerShell to fetch the desired LLVM NSIS installer and perform a silent installation into `%USERPROFILE%\.llvm\toolchains\<version>`.
+  1. Open PowerShell as Administrator
+  2. Navigate to the project directory
+  3. Run:
+     ```powershell
+     .\Download-Llvm.ps1
+     ```
+     This will fetch the desired LLVM NSIS installer and perform a silent installation into `%USERPROFILE%\.llvm\toolchains\<version>`.
 
 - **Activate in PowerShell:**
   Run:
@@ -305,7 +317,7 @@ This merges LLVM configuration settings into your `.vscode/settings.json` file. 
   ```powershell
   .\Activate-LlvmVsCode.ps1 llvmorg-20.1.0
   ```
-  This updates your `.vscode\settings.json` file with the LLVM configuration. Reload your VSCode workspace for the changes to take effect.
+  This updates your `.vscode\settings.json` file with the LLVM configuration. **Important:** Reload your VSCode workspace for the changes to take effect.
 
 ## Inspiration
 
