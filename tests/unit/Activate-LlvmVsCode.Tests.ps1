@@ -35,6 +35,10 @@ Describe "Activate-LlvmVsCode" {
         $script:originalCC    = $env:CC
         $script:originalCXX   = $env:CXX
         $script:originalLD    = $env:LD
+        $script:originalPWD   = $PWD
+
+        #––– Change to test directory to simulate VSCode workspace
+        Set-Location $testDir
     }
 
     AfterAll {
@@ -43,6 +47,7 @@ Describe "Activate-LlvmVsCode" {
         $env:CC   = $script:originalCC
         $env:CXX  = $script:originalCXX
         $env:LD   = $script:originalLD
+        Set-Location $script:originalPWD
 
         Remove-Item -Path $script:testDir -Recurse -Force -ErrorAction SilentlyContinue
     }
@@ -56,14 +61,16 @@ Describe "Activate-LlvmVsCode" {
 
     Context "When executed outside VSCode workspace" {
         It "Should throw an error when not in VSCode workspace" {
-            $env:VSCODE_CWD = $null
+            Set-Location $env:USERPROFILE
             { Test-ActivateLlvmVsCode -Version $testVersion } |
                 Should -Throw -ExpectedMessage '*VSCode workspace*'
+            Set-Location $testDir
         }
     }
 
     Context "When executed in valid VSCode workspace with valid version" {
         BeforeEach {
+            Set-Location $testDir
             $env:VSCODE_CWD = $testDir
             $settingsJson = Join-Path $vscodeDir 'settings.json'
             if (Test-Path $settingsJson) { Remove-Item $settingsJson -Force }
