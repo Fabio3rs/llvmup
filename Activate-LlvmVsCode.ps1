@@ -7,8 +7,15 @@ param (
     [string]$Version
 )
 
+# Check if already activated
+if ($env:LLVM_ACTIVE_VERSION) {
+    Write-Error "LLVM version '$env:LLVM_ACTIVE_VERSION' is already active. Please deactivate it first."
+    return 1
+}
+
 $toolchainsDir = Join-Path $env:USERPROFILE ".llvm\toolchains"
 $llvmDir = Join-Path $toolchainsDir $Version
+$binDir = Join-Path $llvmDir "bin"
 
 # Check if the version is installed
 if (-not (Test-Path $llvmDir)) {
@@ -33,20 +40,20 @@ if (-not (Test-Path $settingsPath)) {
 $settings = Get-Content $settingsPath | ConvertFrom-Json
 
 # Update settings
-$settings | Add-Member -NotePropertyName "cmake.additionalCompilerSearchDirs" -NotePropertyValue @("$($llvmDir)\bin") -Force
-$settings | Add-Member -NotePropertyName "clangd.path" -NotePropertyValue (Join-Path $llvmDir "bin\clangd.exe") -Force
+$settings | Add-Member -NotePropertyName "cmake.additionalCompilerSearchDirs" -NotePropertyValue @("$binDir") -Force
+$settings | Add-Member -NotePropertyName "clangd.path" -NotePropertyValue (Join-Path $binDir "clangd.exe") -Force
 $settings | Add-Member -NotePropertyName "clangd.fallbackFlags" -NotePropertyValue @("-I$($llvmDir)\include") -Force
 
 # Update cmake.configureEnvironment
 if (-not $settings.'cmake.configureEnvironment') {
     $settings | Add-Member -NotePropertyName "cmake.configureEnvironment" -NotePropertyValue @{} -Force
 }
-$settings.'cmake.configureEnvironment' | Add-Member -NotePropertyName "PATH" -NotePropertyValue "$($llvmDir)\bin;$env:PATH" -Force
+$settings.'cmake.configureEnvironment' | Add-Member -NotePropertyName "PATH" -NotePropertyValue "$binDir;$env:PATH" -Force
 
 # Add debugger configuration for CMake Tools
-$settings | Add-Member -NotePropertyName "cmake.debuggerPath" -NotePropertyValue (Join-Path $llvmDir "bin\lldb.exe") -Force
+$settings | Add-Member -NotePropertyName "cmake.debuggerPath" -NotePropertyValue (Join-Path $binDir "lldb.exe") -Force
 $settings | Add-Member -NotePropertyName "cmake.debuggerEnvironment" -NotePropertyValue @{
-    "PATH" = "$($llvmDir)\bin;$env:PATH"
+    "PATH" = "$binDir;$env:PATH"
 } -Force
 $settings | Add-Member -NotePropertyName "cmake.debuggerArgs" -NotePropertyValue @(
     "--source-map=/build=${workspaceFolder}"
@@ -54,6 +61,12 @@ $settings | Add-Member -NotePropertyName "cmake.debuggerArgs" -NotePropertyValue
 
 # Save updated settings
 $settings | ConvertTo-Json -Depth 10 | Set-Content $settingsPath
+
+# Update environment variables
+$env:PATH = "$binDir;$env:PATH"
+$env:CC = Join-Path $binDir "clangd.exe"
+$env:CXX = Join-Path $binDir "clangd.exe"
+$env:LLVM_ACTIVE_VERSION = $Version
 
 Write-Output "VSCode workspace settings updated for LLVM version '$Version'."
 Write-Output "Please reload your VSCode window for changes to take effect."

@@ -49,6 +49,7 @@ Describe "Activate-LlvmVsCode" {
         $env:CC   = $script:originalCC
         $env:CXX  = $script:originalCXX
         $env:LD   = $script:originalLD
+        $env:LLVM_ACTIVE_VERSION = $null
         Set-Location $script:originalPWD
 
         Remove-Item -Path $script:testDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -83,6 +84,7 @@ Describe "Activate-LlvmVsCode" {
             $env:CC   = $script:originalCC
             $env:CXX  = $script:originalCXX
             $env:LD   = $script:originalLD
+            $env:LLVM_ACTIVE_VERSION = $null
         }
 
         It "Should create settings.json if it doesn't exist" {
@@ -110,6 +112,7 @@ Describe "Activate-LlvmVsCode" {
             $env:PATH | Should -Contain $binDir
             $env:CC   | Should -Be (Join-Path $binDir 'clangd.exe')
             $env:CXX  | Should -Be (Join-Path $binDir 'clangd.exe')
+            $env:LLVM_ACTIVE_VERSION | Should -Be $testVersion
         }
 
         It "Should prevent multiple activations" {
@@ -123,7 +126,7 @@ Describe "Activate-LlvmVsCode" {
             New-Item -ItemType File -Path (Join-Path $secondBinDir 'lldb.exe') -Force | Out-Null
 
             { Test-ActivateLlvmVsCode -Version $secondVersion } |
-                Should -Throw -ExpectedMessage '*already active*'
+                Should -Throw -ExpectedMessage "*already active*"
         }
 
         It "Should restore environment on deactivation" {
@@ -136,6 +139,7 @@ Describe "Activate-LlvmVsCode" {
                 $env:CC   = $script:originalCC
                 $env:CXX  = $script:originalCXX
                 $env:LD   = $script:originalLD
+                $env:LLVM_ACTIVE_VERSION = $null
             }
 
             Deactivate-LlvmVsCode
@@ -144,6 +148,7 @@ Describe "Activate-LlvmVsCode" {
             $env:CC   | Should -Be $origCC
             $env:CXX  | Should -Be $origCXX
             $env:LD   | Should -Be $origLD
+            $env:LLVM_ACTIVE_VERSION | Should -BeNullOrEmpty
         }
     }
 }
