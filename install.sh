@@ -22,11 +22,11 @@ mkdir -p "$INSTALL_DIR"
 
 # Define an associative array mapping source filenames to target filenames.
 declare -A scripts=(
-    ["llvm_prebuilt.sh"]="llvm-prebuilt"
-    ["activate_llvm.sh"]="llvm-activate"
-    ["deactivate_llvm.sh"]="llvm-deactivate"
-    ["activate_llvm_vscode.sh"]="llvm-vscode-activate"
-    ["build_llvm_source.sh"]="llvm-build"
+    ["llvm-prebuilt"]="llvm-prebuilt"
+    ["llvm-activate"]="llvm-activate"
+    ["llvm-deactivate"]="llvm-deactivate"
+    ["llvm-vscode-activate"]="llvm-vscode-activate"
+    ["llvm-build"]="llvm-build"
     ["llvmup"]="llvmup"
 )
 

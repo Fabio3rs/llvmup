@@ -1,0 +1,77 @@
+#!/bin/bash
+# llvm-activate: Activates a specific LLVM version for the current session.
+# Usage:
+#   source llvm-activate             -> Lists available versions
+#   source llvm-activate <version>   -> Activates the specified version
+
+# Check if script is being sourced
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    echo "Error: This script must be sourced, not executed directly."
+    echo "Usage: source llvm-activate [version]"
+    exit 1
+fi
+
+# Define the toolchains directory
+TOOLCHAINS_DIR="$HOME/.llvm/toolchains"
+
+# If no version is specified, list installed versions
+if [ $# -eq 0 ]; then
+    echo "Installed versions in $TOOLCHAINS_DIR:"
+    if [ -d "$TOOLCHAINS_DIR" ]; then
+        for version in "$TOOLCHAINS_DIR"/*; do
+            if [ -d "$version" ]; then
+                echo "  - $(basename "$version")"
+            fi
+        done
+    else
+        echo "No versions installed in $TOOLCHAINS_DIR."
+    fi
+    return 0
+fi
+
+VERSION="$1"
+LLVM_DIR="$TOOLCHAINS_DIR/$VERSION"
+
+# Check if the version is installed
+if [ ! -d "$LLVM_DIR" ]; then
+    echo "Error: Version '$VERSION' is not installed in $TOOLCHAINS_DIR."
+    return 1
+fi
+
+# Check if another version is already active
+if [ -n "$_ACTIVE_LLVM" ]; then
+    echo "Error: Another version is already active: $_ACTIVE_LLVM."
+    echo "To change, run 'source llvm-deactivate' first."
+    return 1
+fi
+
+# Backup environment variables if not already backed up
+if [ -z "$_OLD_PATH" ]; then
+    export _OLD_PATH="$PATH"
+    export _OLD_CC="$CC"
+    export _OLD_CXX="$CXX"
+    export _OLD_LD="$LD"
+    export _OLD_PS1="$PS1"
+fi
+
+# Update PATH to include the selected LLVM's bin directory
+export PATH="$LLVM_DIR/bin:$PATH"
+
+# Update compiler variables (CC and CXX)
+export CC="$LLVM_DIR/bin/clang"
+export CXX="$LLVM_DIR/bin/clang++"
+
+# Update LD if lld exists
+if [ -x "$LLVM_DIR/bin/lld" ]; then
+    export LD="$LLVM_DIR/bin/lld"
+fi
+
+# Modify the prompt to indicate active LLVM version
+export PS1="(LLVM: $VERSION) $_OLD_PS1"
+
+# Set internal variable to indicate active version
+export _ACTIVE_LLVM="$VERSION"
+
+echo "LLVM version '$VERSION' activated for this session."
+echo "CC, CXX, and LD have been set; PATH and PS1 have been updated."
+echo "To deactivate, run 'source llvm-deactivate'."
