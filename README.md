@@ -10,7 +10,7 @@ This is a concept test version and may contain bugs. Use it at your own risk and
 ### Linux
 1. Clone this repository:
    ```bash
-   git clone https://github.com/yourusername/llvm-manager.git
+   git clone https://github.com/Fabio3rs/llvm-manager.git
    cd llvm-manager
    ```
 
@@ -32,7 +32,7 @@ This is a concept test version and may contain bugs. Use it at your own risk and
 ### Windows
 1. Clone this repository:
    ```powershell
-   git clone https://github.com/yourusername/llvm-manager.git
+   git clone https://github.com/Fabio3rs/llvm-manager.git
    cd llvm-manager
    ```
 
