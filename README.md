@@ -5,6 +5,62 @@ This project is a minimal viable test software inspired by tools like **rustup**
 **WARNING:**
 This is a concept test version and may contain bugs. Use it at your own risk and feel free to contribute improvements or report issues.
 
+## Quick Start
+
+### Linux
+1. Clone this repository:
+   ```bash
+   git clone https://github.com/yourusername/llvm-manager.git
+   cd llvm-manager
+   ```
+
+2. Run the installation script:
+   ```bash
+   ./install.sh
+   ```
+
+3. Install an LLVM version:
+   ```bash
+   llvmup
+   ```
+
+4. Activate the version:
+   ```bash
+   source llvm-activate <version>
+   ```
+
+### Windows
+1. Clone this repository:
+   ```powershell
+   git clone https://github.com/yourusername/llvm-manager.git
+   cd llvm-manager
+   ```
+
+2. Install an LLVM version:
+   ```powershell
+   .\Download-Llvm.ps1
+   ```
+
+3. Activate the version:
+   ```powershell
+   .\Activate-Llvm.ps1 <version>
+   ```
+
+## Prerequisites
+
+### Linux
+- `curl`: For downloading files
+- `jq`: For parsing JSON responses
+- `tar`: For extracting archives
+- `git`: For building from source (optional)
+- `ninja`: For building from source (optional)
+- `cmake`: For building from source (optional)
+
+### Windows
+- PowerShell 5.0 or later
+- Internet connection for downloading releases
+- Administrator privileges for installation
+
 ## Features
 
 - **Download & Install (Pre-built Releases):**
@@ -48,7 +104,7 @@ This is a concept test version and may contain bugs. Use it at your own risk and
 
 ## Installation Script (install.sh)
 
-To make it easier to call the LLVM version manager tools from anywhere, an installation script (`install.sh`) is provided. This script copies the project’s commands to a directory (by default, `$HOME/.local/bin`) that is typically included in your PATH.
+To make it easier to call the LLVM version manager tools from anywhere, an installation script (`install.sh`) is provided. This script copies the project's commands to a directory (by default, `$HOME/.local/bin`) that is typically included in your PATH.
 
 ### How to Use the Installation Script
 
@@ -68,11 +124,11 @@ To make it easier to call the LLVM version manager tools from anywhere, an insta
    - Set the appropriate executable permissions on these scripts.
 
 2. **Verify PATH:**
-   The installer checks if `$HOME/.local/bin` is in your PATH. If it isn’t, you'll receive a warning along with instructions to add it:
+   The installer checks if `$HOME/.local/bin` is in your PATH. If it isn't, you'll receive a warning along with instructions to add it:
    ```bash
    export PATH="$HOME/.local/bin:$PATH"
    ```
-   You may add this line to your shell’s startup file (e.g., `~/.bashrc` or `~/.profile`) for persistence.
+   You may add this line to your shell's startup file (e.g., `~/.bashrc` or `~/.profile`) for persistence.
 
 3. **Using the Commands:**
    After installation, you can run the commands from anywhere in your terminal:
