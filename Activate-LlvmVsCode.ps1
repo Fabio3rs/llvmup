@@ -43,6 +43,15 @@ if (-not $settings.'cmake.configureEnvironment') {
 }
 $settings.'cmake.configureEnvironment' | Add-Member -NotePropertyName "PATH" -NotePropertyValue "$($llvmDir)\bin;$env:PATH" -Force
 
+# Add debugger configuration for CMake Tools
+$settings | Add-Member -NotePropertyName "cmake.debuggerPath" -NotePropertyValue (Join-Path $llvmDir "bin\lldb.exe") -Force
+$settings | Add-Member -NotePropertyName "cmake.debuggerEnvironment" -NotePropertyValue @{
+    "PATH" = "$($llvmDir)\bin;$env:PATH"
+} -Force
+$settings | Add-Member -NotePropertyName "cmake.debuggerArgs" -NotePropertyValue @(
+    "--source-map=/build=${workspaceFolder}"
+) -Force
+
 # Save updated settings
 $settings | ConvertTo-Json -Depth 10 | Set-Content $settingsPath
 
