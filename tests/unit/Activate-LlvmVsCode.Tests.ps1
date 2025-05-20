@@ -1,6 +1,15 @@
 # Import the script under test
 . $PSScriptRoot/../../Activate-LlvmVsCode.ps1
 
+# Define test function
+function Test-ActivateLlvmVsCode {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$Version
+    )
+    Activate-LlvmVsCode -Version $Version
+}
+
 Describe "Activate-LlvmVsCode" {
     BeforeAll {
         # Create test directories
@@ -41,7 +50,7 @@ Describe "Activate-LlvmVsCode" {
 
     Context "When version is not installed" {
         It "Should throw an error for nonexistent version" {
-            { Activate-LlvmVsCode -Version "nonexistent-version" } | 
+            { Test-ActivateLlvmVsCode -Version "nonexistent-version" } | 
                 Should -Throw -ExpectedMessage "*not installed*"
         }
     }
@@ -49,7 +58,7 @@ Describe "Activate-LlvmVsCode" {
     Context "When executed outside VSCode workspace" {
         It "Should throw an error when not in VSCode workspace" {
             $env:VSCODE_CWD = $null
-            { Activate-LlvmVsCode -Version $testVersion } | 
+            { Test-ActivateLlvmVsCode -Version $testVersion } | 
                 Should -Throw -ExpectedMessage "*VSCode workspace*"
         }
     }
@@ -65,12 +74,12 @@ Describe "Activate-LlvmVsCode" {
         }
 
         It "Should create settings.json if it doesn't exist" {
-            Activate-LlvmVsCode -Version $testVersion
+            Test-ActivateLlvmVsCode -Version $testVersion
             Test-Path (Join-Path $vscodeDir "settings.json") | Should -BeTrue
         }
 
         It "Should set correct compiler paths in settings.json" {
-            Activate-LlvmVsCode -Version $testVersion
+            Test-ActivateLlvmVsCode -Version $testVersion
             $settings = Get-Content (Join-Path $vscodeDir "settings.json") | ConvertFrom-Json
             
             $settings.'C_Cpp.default.compilerPath' | Should -Be (Join-Path $versionDir "clangd.exe")
@@ -78,7 +87,7 @@ Describe "Activate-LlvmVsCode" {
         }
 
         It "Should set correct debugger configuration in settings.json" {
-            Activate-LlvmVsCode -Version $testVersion
+            Test-ActivateLlvmVsCode -Version $testVersion
             $settings = Get-Content (Join-Path $vscodeDir "settings.json") | ConvertFrom-Json
             
             $debuggerPath = $settings.'cmake.debuggerPath'
@@ -86,7 +95,7 @@ Describe "Activate-LlvmVsCode" {
         }
 
         It "Should set environment variables correctly" {
-            Activate-LlvmVsCode -Version $testVersion
+            Test-ActivateLlvmVsCode -Version $testVersion
             
             $env:PATH | Should -Contain $versionDir
             $env:CC | Should -Be (Join-Path $versionDir "clangd.exe")
@@ -94,8 +103,8 @@ Describe "Activate-LlvmVsCode" {
         }
 
         It "Should prevent multiple activations" {
-            Activate-LlvmVsCode -Version $testVersion
-            { Activate-LlvmVsCode -Version "llvmorg-16.0.0" } | 
+            Test-ActivateLlvmVsCode -Version $testVersion
+            { Test-ActivateLlvmVsCode -Version "llvmorg-16.0.0" } | 
                 Should -Throw -ExpectedMessage "*already active*"
         }
 
@@ -107,7 +116,7 @@ Describe "Activate-LlvmVsCode" {
             $originalLD = $env:LD
 
             # Activate
-            Activate-LlvmVsCode -Version $testVersion
+            Test-ActivateLlvmVsCode -Version $testVersion
 
             # Deactivate
             Deactivate-LlvmVsCode

@@ -19,14 +19,35 @@ jobs:
     
     - name: Install BATS
       run: |
+        # Create local bin directory
+        mkdir -p ~/.local/bin
+        # Clone and install BATS to user directory
         git clone https://github.com/bats-core/bats-core.git
         cd bats-core
-        ./install.sh /usr/local
+        # Create necessary directories with proper permissions
+        mkdir -p ~/.local/lib/bats-core
+        mkdir -p ~/.local/libexec
+        mkdir -p ~/.local/share/man/man7
+        # Install to local directory
+        ./install.sh ~/.local
         cd ..
         rm -rf bats-core
+        # Add to PATH
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+        # Verify installation
+        echo "Verifying BATS installation..."
+        which bats || echo "BATS not found in PATH"
+        echo "Current PATH: $PATH"
+        # List installed files
+        echo "Installed files:"
+        ls -la ~/.local/bin/bats
+        ls -la ~/.local/lib/bats-core/
     
     - name: Run BATS tests
       run: |
+        # Ensure PATH is updated in this step
+        export PATH="$HOME/.local/bin:$PATH"
+        echo "Running tests with PATH: $PATH"
         bats --tap tests/unit/*.bats
       continue-on-error: true
     
