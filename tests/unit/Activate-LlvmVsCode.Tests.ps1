@@ -1,7 +1,7 @@
 # Import the script under test
 $scriptPath = Join-Path $PSScriptRoot "../../Activate-LlvmVsCode.ps1"
 
-# Define test function
+# Define the test function in script scope
 function Test-ActivateLlvmVsCode {
     [CmdletBinding()]
     param (
@@ -58,16 +58,6 @@ Describe "Activate-LlvmVsCode" {
 
         # Clean up test directory
         Remove-Item -Path $testDir -Recurse -Force -ErrorAction SilentlyContinue
-    }
-
-    # Helper function that dot-sources *with* the required -Version
-    function Test-ActivateLlvmVsCode {
-        [CmdletBinding()]
-        param (
-            [Parameter(Mandatory = $true)]
-            [string]$Version
-        )
-        . $scriptPath -Version $Version
     }
 
     Context "When version is not installed" {
