@@ -43,6 +43,11 @@ jobs:
         ls -la ~/.local/bin/bats
         ls -la ~/.local/lib/bats-core/
 
+    - name: Install the project
+      run: |
+        chmod +x install.sh
+        ./install.sh
+
     - name: Run BATS tests
       run: |
         # Ensure PATH is updated in this step
