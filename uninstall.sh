@@ -44,33 +44,8 @@ fi
 remove_from_profile() {
     local profile_file="$1"
 
-    if [ -f "$profile_file" ]; then
-        if grep -q "llvm-functions.sh" "$profile_file"; then
-            # Create a temporary file without the LLVM configuration
-            grep -v "llvm-functions.sh\|# LLVM Manager Functions" "$profile_file" > "${profile_file}.tmp"
-
-            # Remove empty lines that might have been left
-            awk '
-                BEGIN { prev_empty = 0 }
-                /^$/ {
-                    if (prev_empty) next
-                    prev_empty = 1
-                    empty_line = $0
-                    next
-                }
-                {
-                    if (prev_empty) print empty_line
-                    prev_empty = 0
-                    print $0
-                }
-            ' "${profile_file}.tmp" > "$profile_file"
-
-            rm "${profile_file}.tmp"
-            echo "Removed LLVM configuration from $profile_file"
-            return 0
-        fi
-    fi
-    return 1
+    # it was causing issues on some systems
+    return 0
 }
 
 # Remove from profile files

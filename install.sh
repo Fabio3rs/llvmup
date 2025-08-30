@@ -64,7 +64,8 @@ add_to_profile() {
     local source_line="# LLVM Manager Functions
 if [ -f \"$FUNCTIONS_FILE\" ]; then
     source \"$FUNCTIONS_FILE\"
-fi"
+fi
+"
 
     if [ -f "$profile_file" ]; then
         if ! grep -q "llvm-functions.sh" "$profile_file"; then
@@ -115,6 +116,7 @@ fi
 if [ -f "$FUNCTIONS_FILE" ]; then
     source "$FUNCTIONS_FILE"
 fi
+
 EOF
         echo "Created $HOME/.bashrc with LLVM functions"
         profile_configured=true
