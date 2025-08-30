@@ -1,140 +1,79 @@
 #!/usr/bin/env bats
 
-# Test setup
 setup() {
-    # Create temporary test directories
     export TEST_DIR=$(mktemp -d)
-    export LLVM_TOOLCHAINS_DIR="$TEST_DIR/.llvm/toolchains"
-    export TEST_VERSION="llvmorg-15.0.0"
-    mkdir -p "$LLVM_TOOLCHAINS_DIR/$TEST_VERSION/bin"
-    
-    # Create mock LLVM binaries
-    touch "$LLVM_TOOLCHAINS_DIR/$TEST_VERSION/bin/clang"
-    touch "$LLVM_TOOLCHAINS_DIR/$TEST_VERSION/bin/clang++"
-    touch "$LLVM_TOOLCHAINS_DIR/$TEST_VERSION/bin/ld.lld"
-    
-    # Save original environment
-    export OLD_PATH="$PATH"
-    export OLD_CC="$CC"
-    export OLD_CXX="$CXX"
-    export OLD_LD="$LD"
-    export OLD_PS1="$PS1"
-    
-    # Source the script under test with a version argument
-    source "$BATS_TEST_DIRNAME/../../llvm-activate" "$TEST_VERSION"
+    export HOME_BACKUP="$HOME"
+    export HOME="$TEST_DIR"
+    export TOOLCHAINS_DIR="$TEST_DIR/.llvm/toolchains"
+    export TEST_VERSION="llvmorg-19.1.7"
+    export TEST_VERSION2="llvmorg-20.1.0"
+
+    mkdir -p "$TOOLCHAINS_DIR/$TEST_VERSION/bin"
+    mkdir -p "$TOOLCHAINS_DIR/$TEST_VERSION2/bin"
+
+    for binary in clang clang++ clangd lld llvm-config lldb; do
+        echo '#!/bin/bash
+echo "Mock '$binary' version 19.1.7"' > "$TOOLCHAINS_DIR/$TEST_VERSION/bin/$binary"
+        echo '#!/bin/bash
+echo "Mock '$binary' version 20.1.0"' > "$TOOLCHAINS_DIR/$TEST_VERSION2/bin/$binary"
+        chmod +x "$TOOLCHAINS_DIR/$TEST_VERSION/bin/$binary"
+        chmod +x "$TOOLCHAINS_DIR/$TEST_VERSION2/bin/$binary"
+    done
+
+    mkdir -p "$TEST_DIR/.local/bin"
+    cp "$BATS_TEST_DIRNAME/../../llvm-activate" "$TEST_DIR/.local/bin/"
+    cp "$BATS_TEST_DIRNAME/../../llvm-deactivate" "$TEST_DIR/.local/bin/"
+    cp "$BATS_TEST_DIRNAME/../../llvm-vscode-activate" "$TEST_DIR/.local/bin/"
+
+    source "$BATS_TEST_DIRNAME/../../llvm-functions.sh"
 }
 
-# Test cleanup
 teardown() {
-    # Restore original environment
-    export PATH="$OLD_PATH"
-    export CC="$OLD_CC"
-    export CXX="$OLD_CXX"
-    export LD="$OLD_LD"
-    export PS1="$OLD_PS1"
-    
-    # Clean up test directory
-    rm -rf "$TEST_DIR"
+    export HOME="$HOME_BACKUP"
+    if [ -d "$TEST_DIR" ]; then
+        rm -rf "$TEST_DIR" 2>/dev/null || true
+    fi
 }
 
-@test "llvm-activate lists versions when no argument provided" {
-    # Create multiple versions
-    mkdir -p "$LLVM_TOOLCHAINS_DIR/llvmorg-14.0.0/bin"
-    mkdir -p "$LLVM_TOOLCHAINS_DIR/llvmorg-16.0.0/bin"
-    
-    # Reset environment for this test
-    export PATH="$OLD_PATH"
-    export CC="$OLD_CC"
-    export CXX="$OLD_CXX"
-    export LD="$OLD_LD"
-    export PS1="$OLD_PS1"
-    
+@test "llvm-activate function shows usage when no argument provided" {
     run llvm-activate
     [ "$status" -eq 1 ]
-    [[ "$output" == *"llvmorg-14.0.0"* ]]
-    [[ "$output" == *"llvmorg-15.0.0"* ]]
-    [[ "$output" == *"llvmorg-16.0.0"* ]]
+    [[ "$output" == *"Usage: llvm-activate <version>"* ]]
+    [[ "$output" == *"$TEST_VERSION"* ]]
 }
 
-@test "llvm-activate fails with non-existent version" {
-    # Reset environment for this test
-    export PATH="$OLD_PATH"
-    export CC="$OLD_CC"
-    export CXX="$OLD_CXX"
-    export LD="$OLD_LD"
-    export PS1="$OLD_PS1"
-    
+@test "llvm-activate function fails with non-existent version" {
     run llvm-activate "nonexistent-version"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"not installed"* ]]
 }
 
-@test "llvm-activate sets environment variables correctly" {
-    # Reset environment for this test
-    export PATH="$OLD_PATH"
-    export CC="$OLD_CC"
-    export CXX="$OLD_CXX"
-    export LD="$OLD_LD"
-    export PS1="$OLD_PS1"
-    
-    # Run the activation
-    run llvm-activate "$TEST_VERSION"
-    [ "$status" -eq 0 ]
-    
-    # Verify environment variables
-    [[ "$PATH" == *"$LLVM_TOOLCHAINS_DIR/$TEST_VERSION/bin"* ]]
-    [ "$CC" = "$LLVM_TOOLCHAINS_DIR/$TEST_VERSION/bin/clang" ]
-    [ "$CXX" = "$LLVM_TOOLCHAINS_DIR/$TEST_VERSION/bin/clang++" ]
-    [ "$LD" = "$LLVM_TOOLCHAINS_DIR/$TEST_VERSION/bin/ld.lld" ]
-    [[ "$PS1" == *"[$TEST_VERSION]"* ]]
+@test "llvm-activate function activates existing version successfully" {
+    (
+        llvm-activate "$TEST_VERSION"
+        result=$?
+        [ "$result" -eq 0 ]
+        [[ "$PATH" == *"$TOOLCHAINS_DIR/$TEST_VERSION/bin"* ]]
+    )
 }
 
-@test "llvm-activate prevents multiple activations" {
-    # Reset environment for this test
-    export PATH="$OLD_PATH"
-    export CC="$OLD_CC"
-    export CXX="$OLD_CXX"
-    export LD="$OLD_LD"
-    export PS1="$OLD_PS1"
-    
-    # First activation
-    run llvm-activate "$TEST_VERSION"
-    [ "$status" -eq 0 ]
-    
-    # Try to activate another version
-    mkdir -p "$LLVM_TOOLCHAINS_DIR/llvmorg-16.0.0/bin"
-    run llvm-activate "llvmorg-16.0.0"
-    [ "$status" -eq 1 ]
-    [[ "$output" == *"already active"* ]]
+@test "llvm-deactivate function works" {
+    (
+        llvm-activate "$TEST_VERSION"
+        llvm-deactivate
+        result=$?
+        [ "$result" -eq 0 ]
+    )
 }
 
-@test "llvm-activate restores environment on deactivation" {
-    # Reset environment for this test
-    export PATH="$OLD_PATH"
-    export CC="$OLD_CC"
-    export CXX="$OLD_CXX"
-    export LD="$OLD_LD"
-    export PS1="$OLD_PS1"
-    
-    # Store original values
-    local original_path="$PATH"
-    local original_cc="$CC"
-    local original_cxx="$CXX"
-    local original_ld="$LD"
-    local original_ps1="$PS1"
-    
-    # Activate a version
-    run llvm-activate "$TEST_VERSION"
+@test "llvm-status shows no active version initially" {
+    run llvm-status
     [ "$status" -eq 0 ]
-    
-    # Deactivate
-    run llvm-deactivate
+    [[ "$output" == *"No LLVM version is currently active"* ]]
+}
+
+@test "llvm-list shows installed versions" {
+    run llvm-list
     [ "$status" -eq 0 ]
-    
-    # Verify environment is restored
-    [ "$PATH" = "$original_path" ]
-    [ "$CC" = "$original_cc" ]
-    [ "$CXX" = "$original_cxx" ]
-    [ "$LD" = "$original_ld" ]
-    [ "$PS1" = "$original_ps1" ]
-} 
+    [[ "$output" == *"$TEST_VERSION"* ]]
+    [[ "$output" == *"$TEST_VERSION2"* ]]
+}

@@ -11,12 +11,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    
+
     - name: Install dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y jq curl
-    
+
     - name: Install BATS
       run: |
         # Create local bin directory
@@ -42,34 +42,42 @@ jobs:
         echo "Installed files:"
         ls -la ~/.local/bin/bats
         ls -la ~/.local/lib/bats-core/
-    
+
     - name: Run BATS tests
       run: |
         # Ensure PATH is updated in this step
         export PATH="$HOME/.local/bin:$PATH"
         echo "Running tests with PATH: $PATH"
-        bats --tap tests/unit/*.bats
-      continue-on-error: true
-    
-    - name: Check test results
+        echo ""
+        echo "Available test files:"
+        ls -la tests/unit/*.bats
+        echo ""
+
+        # Run the test runner script
+        chmod +x tests/run_tests.sh
+        ./tests/run_tests.sh
+      continue-on-error: false
+
+    - name: Upload test results
       if: always()
-      run: |
-        if [ $? -ne 0 ]; then
-          echo "::error::BATS tests failed"
-          exit 1
-        fi
+      uses: actions/upload-artifact@v3
+      with:
+        name: bats-test-results
+        path: |
+          tests/unit/*.bats
+          tests/run_tests.sh
 
   test-windows:
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v3
-    
+
     - name: Install Pester
       shell: pwsh
       run: |
         Install-Module -Name Pester -Force -SkipPublisherCheck
         Import-Module Pester
-    
+
     - name: Run Pester tests
       shell: pwsh
       run: |

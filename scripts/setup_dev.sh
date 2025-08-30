@@ -59,7 +59,7 @@ if ! command_exists pwsh; then
     print_warning "To run Windows tests, install PowerShell: https://docs.microsoft.com/en-us/powershell/scripting/install/installing-powershell"
 else
     print_status "PowerShell is installed"
-    
+
     # Install Pester if PowerShell is available
     print_status "Installing Pester..."
     pwsh -Command "if (-not (Get-Module -ListAvailable -Name Pester)) { Install-Module -Name Pester -Force -SkipPublisherCheck }"

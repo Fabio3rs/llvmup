@@ -71,6 +71,7 @@ export PS1="(LLVM: $VERSION) $_OLD_PS1"
 
 # Set internal variable to indicate active version
 export _ACTIVE_LLVM="$VERSION"
+export _ACTIVE_LLVM_PATH="$LLVM_DIR"
 
 echo "LLVM version '$VERSION' activated for this session."
 echo "CC, CXX, and LD have been set; PATH and PS1 have been updated."

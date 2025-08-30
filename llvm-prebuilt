@@ -2,88 +2,194 @@
 # llvm_prebuilt.sh: Manages the download and installation of LLVM versions from the GitHub API.
 # Requirements: curl, jq, tar
 
+# Parse command line arguments
+VERBOSE=0
+QUIET=0
+ARGS=()
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -v|--verbose)
+            VERBOSE=1
+            shift
+            ;;
+        -q|--quiet)
+            QUIET=1
+            shift
+            ;;
+        -h|--help)
+            echo "Usage: $0 [OPTIONS] [VERSION]"
+            echo ""
+            echo "Options:"
+            echo "  -v, --verbose    Enable verbose output"
+            echo "  -q, --quiet      Suppress non-essential output"
+            echo "  -h, --help       Show this help message"
+            echo ""
+            echo "Arguments:"
+            echo "  VERSION          Version number (1-N) or version tag (e.g., llvmorg-19.1.7)"
+            echo ""
+            echo "Examples:"
+            echo "  $0               # Interactive mode"
+            echo "  $0 1             # Install first version in list"
+            echo "  $0 llvmorg-19.1.7  # Install specific version"
+            echo "  $0 -v 1          # Install with verbose output"
+            exit 0
+            ;;
+        -*)
+            echo "Unknown option $1"
+            exit 1
+            ;;
+        *)
+            ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+
+# Restore positional parameters
+set -- "${ARGS[@]}"
+
+# Logging functions
+log_verbose() {
+    if [ "$VERBOSE" -eq 1 ] && [ "$QUIET" -eq 0 ]; then
+        echo "[VERBOSE] $*" >&2
+    fi
+}
+
+log_info() {
+    if [ "$QUIET" -eq 0 ]; then
+        echo "$*"
+    fi
+}
+
+log_error() {
+    echo "Error: $*" >&2
+}
+
+log_warning() {
+    if [ "$QUIET" -eq 0 ]; then
+        echo "Warning: $*" >&2
+    fi
+}
+
 # Check if required commands are installed
 command -v curl >/dev/null 2>&1 || {
-    echo "Error: The 'curl' command is required but not installed."
-    echo "Please install curl using your package manager:"
-    echo "  Ubuntu/Debian: sudo apt-get install curl"
-    echo "  Fedora: sudo dnf install curl"
-    echo "  Arch Linux: sudo pacman -S curl"
+    log_error "The 'curl' command is required but not installed."
+    log_info "Please install curl using your package manager:"
+    log_info "  Ubuntu/Debian: sudo apt-get install curl"
+    log_info "  Fedora: sudo dnf install curl"
+    log_info "  Arch Linux: sudo pacman -S curl"
     exit 1
 }
 
 command -v jq >/dev/null 2>&1 || {
-    echo "Error: The 'jq' command is required but not installed."
-    echo "Please install jq using your package manager:"
-    echo "  Ubuntu/Debian: sudo apt-get install jq"
-    echo "  Fedora: sudo dnf install jq"
-    echo "  Arch Linux: sudo pacman -S jq"
+    log_error "The 'jq' command is required but not installed."
+    log_info "Please install jq using your package manager:"
+    log_info "  Ubuntu/Debian: sudo apt-get install jq"
+    log_info "  Fedora: sudo dnf install jq"
+    log_info "  Arch Linux: sudo pacman -S jq"
     exit 1
 }
 
 # GitHub API URL for llvm-project releases
 API_URL="https://api.github.com/repos/llvm/llvm-project/releases"
 
-echo "Fetching releases from GitHub..."
-RELEASES=$(curl -s "$API_URL")
+log_info "Fetching available LLVM releases from GitHub..."
+log_info "This may take a few seconds..."
+log_verbose "API URL: $API_URL"
 
-if [ -z "$RELEASES" ]; then
-    echo "Error: Failed to fetch releases from GitHub."
-    echo "This might be due to:"
-    echo "  - Internet connection issues"
-    echo "  - GitHub API rate limiting"
-    echo "  - Temporary GitHub service disruption"
-    echo "Please check your connection and try again in a few minutes."
+# Show progress for API call with timeout
+echo -n "Connecting to GitHub API... "
+if ! RELEASES=$(timeout 60 curl -f \
+    --connect-timeout 30 \
+    --max-time 60 \
+    --retry 2 \
+    --retry-delay 3 \
+    --silent \
+    --show-error \
+    "$API_URL" 2>&1); then
+    echo "FAILED"
+    log_error "Failed to fetch releases from GitHub."
+    log_info "This might be due to:"
+    log_info "  - Internet connection issues"
+    log_info "  - GitHub API rate limiting (try again in an hour)"
+    log_info "  - Temporary GitHub service disruption"
+    log_info "  - Firewall or proxy blocking the request"
+    log_info "Please check your connection and try again."
+    exit 1
+fi
+
+echo "SUCCESS"
+log_info "✅ Successfully retrieved release information from GitHub"
+log_verbose "API response received ($(echo "$RELEASES" | wc -c) characters)"
+
+# Validate JSON response
+if ! echo "$RELEASES" | jq . >/dev/null 2>&1; then
+    log_error "Invalid JSON response from GitHub API."
+    log_info "This might indicate a temporary API issue."
+    if [ "$VERBOSE" -eq 1 ]; then
+        log_verbose "Response received:"
+        echo "$RELEASES" | head -5
+    fi
+    log_info "Please try again in a few minutes."
     exit 1
 fi
 
 # Extract available tags (versions)
+log_verbose "Extracting version tags from API response..."
 VERSIONS=$(echo "$RELEASES" | jq -r '.[].tag_name')
 IFS=$'\n' read -rd '' -a versionList <<<"$VERSIONS"
 
 if [ ${#versionList[@]} -eq 0 ]; then
-    echo "Error: No LLVM versions found."
-    echo "This might be due to:"
-    echo "  - GitHub API rate limiting"
-    echo "  - Changes in the LLVM release structure"
-    echo "  - Temporary GitHub service disruption"
-    echo "Please try again in a few minutes."
+    log_error "No LLVM versions found."
+    log_info "This might be due to:"
+    log_info "  - GitHub API rate limiting"
+    log_info "  - Changes in the LLVM release structure"
+    log_info "  - Temporary GitHub service disruption"
+    log_info "Please try again in a few minutes."
     exit 1
 fi
 
-echo "Available versions:"
+log_verbose "Found ${#versionList[@]} available versions"
+log_info "Available versions:"
 for i in "${!versionList[@]}"; do
     version="${versionList[$i]}"
     INSTALLED_FLAG=""
     if [ -d "$HOME/.llvm/toolchains/$version" ]; then
         INSTALLED_FLAG=" [installed]"
     fi
-    echo "$((i+1))) $version$INSTALLED_FLAG"
+    log_info "$((i+1))) $version$INSTALLED_FLAG"
 done
 
 # Function to validate and select version based on input
 select_version() {
     local input="$1"
+    log_verbose "Validating version input: '$input'"
+
     # If input is a number, use it as an index (1-based)
     if [[ "$input" =~ ^[0-9]+$ ]]; then
+        log_verbose "Input is numeric: $input"
         if [ "$input" -ge 1 ] && [ "$input" -le ${#versionList[@]} ]; then
             SELECTED_VERSION="${versionList[$((input-1))]}"
+            log_verbose "Selected version by index: $SELECTED_VERSION"
             return 0
         else
-            echo "Error: Invalid version number '$input'"
-            echo "Please select a number between 1 and ${#versionList[@]}"
+            log_error "Invalid version number '$input'"
+            log_info "Please select a number between 1 and ${#versionList[@]}"
             return 1
         fi
     else
+        log_verbose "Input is version tag: $input"
         # Otherwise, assume it's a version tag. Check if it exists in the array.
         for tag in "${versionList[@]}"; do
             if [ "$tag" = "$input" ]; then
                 SELECTED_VERSION="$tag"
+                log_verbose "Found matching version tag: $SELECTED_VERSION"
                 return 0
             fi
         done
-        echo "Error: Invalid version tag '$input'"
-        echo "Please provide either a valid version number or a valid version tag from the list above."
+        log_error "Invalid version tag '$input'"
+        log_info "Please provide either a valid version number or a valid version tag from the list above."
         return 1
     fi
 }
@@ -91,8 +197,9 @@ select_version() {
 # Check if an argument is passed
 if [ "$#" -ge 1 ]; then
     input="$1"
+    log_verbose "Using command line argument: $input"
     if select_version "$input"; then
-        echo "You selected: $SELECTED_VERSION"
+        log_info "You selected: $SELECTED_VERSION"
     else
         exit 1
     fi
@@ -100,11 +207,13 @@ else
     # No argument provided: prompt the user
     read -p "Select a version by number: " choice
     if select_version "$choice"; then
-        echo "You selected: $SELECTED_VERSION"
+        log_info "You selected: $SELECTED_VERSION"
     else
         exit 1
     fi
 fi
+
+log_verbose "Starting asset search for version: $SELECTED_VERSION"
 
 # Find the asset containing "Linux-X64.tar.xz" for the selected version
 ASSET_URL=$(echo "$RELEASES" | jq -r --arg version "$SELECTED_VERSION" '
@@ -114,79 +223,169 @@ ASSET_URL=$(echo "$RELEASES" | jq -r --arg version "$SELECTED_VERSION" '
 ')
 
 if [ -z "$ASSET_URL" ]; then
-    echo "Error: No Linux X64 tarball found for version $SELECTED_VERSION."
-    echo "This might be because:"
-    echo "  - The release doesn't include a Linux X64 build"
-    echo "  - The asset naming convention has changed"
-    echo "Please try a different version or check the LLVM releases page manually."
+    log_error "No Linux X64 tarball found for version $SELECTED_VERSION."
+    log_info "This might be because:"
+    log_info "  - The release doesn't include a Linux X64 build"
+    log_info "  - The asset naming convention has changed"
+    log_info "Please try a different version or check the LLVM releases page manually."
     exit 1
 fi
 
-echo "Download URL found: $ASSET_URL"
+log_info "Download URL found: $ASSET_URL"
+log_verbose "Full asset URL: $ASSET_URL"
 
 # Define directories: temporary area and final installation directory
 TEMP_DIR="$HOME/llvm_temp/$SELECTED_VERSION"
+log_verbose "Creating temporary directory: $TEMP_DIR"
+
 if ! mkdir -p "$TEMP_DIR"; then
-    echo "Error: Failed to create temporary directory: $TEMP_DIR"
-    echo "Please check if you have write permissions in your home directory."
+    log_error "Failed to create temporary directory: $TEMP_DIR"
+    log_info "Please check if you have write permissions in your home directory."
     exit 1
 fi
 
 DEST_FILE="$TEMP_DIR/$(basename "$ASSET_URL")"
-echo "Downloading the tarball..."
-if ! curl -L "$ASSET_URL" -o "$DEST_FILE"; then
-    echo "Error: Failed to download the tarball."
-    echo "Please check your internet connection and try again."
+
+# Get file size for progress indication
+log_info "Getting file information..."
+log_verbose "Checking file size at URL: $ASSET_URL"
+FILE_SIZE=$(curl -sI "$ASSET_URL" 2>/dev/null | grep -i content-length | awk '{print $2}' | tr -d '\r')
+if [ -n "$FILE_SIZE" ]; then
+    FILE_SIZE_MB=$((FILE_SIZE / 1024 / 1024))
+    log_info "File size: ${FILE_SIZE_MB}MB"
+    log_verbose "Raw file size: $FILE_SIZE bytes"
+else
+    log_info "File size: unknown (no Content-Length header)"
+fi
+
+log_info "Starting download..."
+log_info "This may take several minutes depending on your connection speed."
+log_verbose "Downloading to: $DEST_FILE"
+
+# Always show progress bar for downloads, regardless of verbose mode
+# Use curl's progress bar which writes to stderr and doesn't interfere with logging
+echo "Download progress:"
+if ! curl -L \
+    --progress-bar \
+    --connect-timeout 30 \
+    --max-time 3600 \
+    --retry 3 \
+    --retry-delay 5 \
+    "$ASSET_URL" -o "$DEST_FILE"; then
+    log_error "Failed to download the tarball."
+    log_info "This could be due to:"
+    log_info "  - Network connectivity issues"
+    log_info "  - GitHub API rate limiting"
+    log_info "  - Invalid or expired download URL"
+    log_info "Please check your internet connection and try again."
+    log_verbose "Cleaning up temporary directory: $TEMP_DIR"
     rm -rf "$TEMP_DIR"
     exit 1
 fi
 
-echo "Download completed: $DEST_FILE"
-echo "Extracting the file..."
-if ! tar -xf "$DEST_FILE" -C "$TEMP_DIR"; then
-    echo "Error: Failed to extract the tarball."
-    echo "The downloaded file might be corrupted. Please try again."
-    rm -rf "$TEMP_DIR"
-    exit 1
+echo # Add newline after progress bar
+log_info "✅ Download completed successfully!"
+log_verbose "Downloaded file: $DEST_FILE ($(du -h "$DEST_FILE" | cut -f1))"
+log_info "Extracting the archive... (this may take a few moments)"
+echo "Extraction progress:"
+
+# Always show some extraction feedback, even in non-verbose mode
+if [ "$VERBOSE" -eq 1 ]; then
+    log_verbose "Extracting with verbose output (showing first 50 files):"
+    if ! tar -xf "$DEST_FILE" -C "$TEMP_DIR" --verbose 2>&1 | head -50; then
+        log_error "Failed to extract the tarball."
+        log_info "The downloaded file might be corrupted. Please try again."
+        log_verbose "Cleaning up temporary directory: $TEMP_DIR"
+        rm -rf "$TEMP_DIR"
+        exit 1
+    fi
+else
+    # Show basic extraction progress with a simple progress indicator
+    echo -n "Extracting files... "
+    if ! tar -xf "$DEST_FILE" -C "$TEMP_DIR" 2>&1; then
+        echo "FAILED"
+        log_error "Failed to extract the tarball."
+        log_info "The downloaded file might be corrupted. Please try again."
+        rm -rf "$TEMP_DIR"
+        exit 1
+    fi
+    echo "DONE"
+fi
+
+log_info "✅ Extraction completed successfully!"
+        exit 1
+    fi
 fi
 
 # Identify the extracted folder (assuming the tarball contains a single main folder)
+log_verbose "Identifying extracted directory structure..."
 EXTRACTED_DIR=$(tar -tf "$DEST_FILE" | head -1 | cut -d/ -f1)
 if [ -z "$EXTRACTED_DIR" ]; then
-    echo "Error: Failed to identify the extracted directory."
-    echo "The tarball structure might be unexpected. Please try again."
+    log_error "Failed to identify the extracted directory."
+    log_info "The tarball structure might be unexpected. Please try again."
+    log_verbose "Cleaning up temporary directory: $TEMP_DIR"
     rm -rf "$TEMP_DIR"
     exit 1
 fi
-echo "Extracted directory: $EXTRACTED_DIR"
+log_verbose "Extracted directory: $EXTRACTED_DIR"
 
 # Define the final installation directory (used by the activation script)
 LLVM_TOOLCHAINS_DIR="$HOME/.llvm/toolchains"
 TARGET_DIR="$LLVM_TOOLCHAINS_DIR/$SELECTED_VERSION"
 
+log_info "Preparing final installation directory..."
+log_verbose "Target directory: $TARGET_DIR"
+
 # Create the toolchains directory if it doesn't exist
 if ! mkdir -p "$LLVM_TOOLCHAINS_DIR"; then
-    echo "Error: Failed to create toolchains directory: $LLVM_TOOLCHAINS_DIR"
-    echo "Please check if you have write permissions in your home directory."
+    log_error "Failed to create toolchains directory: $LLVM_TOOLCHAINS_DIR"
+    log_info "Please check if you have write permissions in your home directory."
+    log_verbose "Cleaning up temporary directory: $TEMP_DIR"
     rm -rf "$TEMP_DIR"
     exit 1
 fi
 
 # Move the extracted folder to the final directory
+log_info "Installing LLVM to final location..."
+log_verbose "Moving from: $TEMP_DIR/$EXTRACTED_DIR"
+log_verbose "Moving to: $TARGET_DIR"
+
 if ! mv "$TEMP_DIR/$EXTRACTED_DIR" "$TARGET_DIR"; then
-    echo "Error: Failed to move the extracted files to the target directory."
-    echo "Please check if you have write permissions in your home directory."
+    log_error "Failed to move the extracted files to the target directory."
+    log_info "Please check if you have write permissions in your home directory."
+    log_verbose "Cleaning up temporary directory: $TEMP_DIR"
     rm -rf "$TEMP_DIR"
     exit 1
 fi
 
-echo "LLVM $SELECTED_VERSION installed in $TARGET_DIR."
+log_info "LLVM $SELECTED_VERSION installed in $TARGET_DIR."
 
 # Clean up temporary files
+log_verbose "Cleaning up temporary files: $TEMP_DIR"
 if ! rm -rf "$TEMP_DIR"; then
-    echo "Warning: Failed to clean up temporary files in $TEMP_DIR"
-    echo "You can safely delete this directory manually."
+    log_warning "Failed to clean up temporary files in $TEMP_DIR"
+    log_info "You can safely delete this directory manually."
 fi
 
-echo "Run 'source activate_llvm.sh $SELECTED_VERSION' to activate the installed version."
+log_info ""
+log_info "✅ Installation completed successfully!"
+log_info "Run 'llvm-activate $SELECTED_VERSION' to activate the installed version."
+log_info ""
+
+# Verify installation
+if [ -f "$TARGET_DIR/bin/clang" ]; then
+    log_info "Installation verification: clang binary found ✓"
+    if [ "$VERBOSE" -eq 1 ]; then
+        log_verbose "clang version info:"
+        "$TARGET_DIR/bin/clang" --version 2>/dev/null | head -3
+    fi
+else
+    log_warning "Installation verification: clang binary not found in expected location"
+    log_info "LLVM might have been installed with a different structure."
+    log_info "Check $TARGET_DIR for the actual binaries."
+    if [ "$VERBOSE" -eq 1 ]; then
+        log_verbose "Contents of installation directory:"
+        ls -la "$TARGET_DIR" 2>/dev/null || log_verbose "Directory listing failed"
+    fi
+fi
 

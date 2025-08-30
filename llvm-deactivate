@@ -44,5 +44,6 @@ fi
 
 # Clear the active version indicator
 unset _ACTIVE_LLVM
+unset _ACTIVE_LLVM_PATH
 
 echo "LLVM version deactivated. Environment variables have been restored."

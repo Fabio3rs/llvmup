@@ -61,7 +61,7 @@ function Select-Version {
     param (
         [string]$Input
     )
-    
+
     # If input is a number, use it as an index (1-based)
     if ($Input -match '^\d+$') {
         $index = [int]$Input - 1

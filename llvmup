@@ -2,10 +2,13 @@
 # llvmup: A wrapper script for LLVM installation management.
 #
 # Usage:
-#   llvmup [--from-source] [args...]
+#   llvmup [--from-source] [-v|--verbose] [-q|--quiet] [-h|--help] [args...]
 #
 # Options:
 #   --from-source    Build LLVM from source instead of installing a pre-built release.
+#   -v, --verbose    Enable verbose output for debugging.
+#   -q, --quiet      Suppress non-essential output.
+#   -h, --help       Show this help message.
 #
 # All scripts (llvm-prebuilt, llvm-build, llvm-activate, llvm-deactivate, llvm-vscode-activate)
 # should reside in the same directory as this script.
@@ -14,25 +17,112 @@ set -e
 
 SCRIPT_DIR="$(dirname "$0")"
 
+# Default values
+FROM_SOURCE=0
+VERBOSE=0
+QUIET=0
+
+# Logging functions
+log_verbose() {
+    if [ "$VERBOSE" -eq 1 ] && [ "$QUIET" -eq 0 ]; then
+        echo "[VERBOSE] $*" >&2
+    fi
+}
+
+log_info() {
+    if [ "$QUIET" -eq 0 ]; then
+        echo "$*"
+    fi
+}
+
+log_error() {
+    echo "Error: $*" >&2
+}
+
 usage() {
     cat <<EOF
-Usage: llvmup [--from-source] [args...]
+Usage: llvmup [--from-source] [-v|--verbose] [-q|--quiet] [-h|--help] [args...]
 
 Options:
   --from-source    Build LLVM from source instead of installing a pre-built release.
+  -v, --verbose    Enable verbose output for debugging.
+  -q, --quiet      Suppress non-essential output.
+  -h, --help       Show this help message.
 
 Examples:
-  llvmup                    # Install a pre-built LLVM release
-  llvmup --from-source     # Build LLVM from source
+  llvmup                         # Install a pre-built LLVM release
+  llvmup --from-source          # Build LLVM from source
+  llvmup -v                     # Install with verbose output
+  llvmup --from-source -v       # Build from source with verbose output
+  llvmup -q 18.1.0              # Install specific version quietly
 EOF
     exit 1
 }
 
-if [ "$1" == "--from-source" ]; then
-    shift
-    echo "Building LLVM from source..."
-    exec "$SCRIPT_DIR/llvm-build" "$@"
+# Parse command line arguments
+remaining_args=()
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --from-source)
+            FROM_SOURCE=1
+            log_verbose "Option: Build from source enabled"
+            shift
+            ;;
+        -v|--verbose)
+            VERBOSE=1
+            log_verbose "Option: Verbose output enabled"
+            shift
+            ;;
+        -q|--quiet)
+            QUIET=1
+            log_verbose "Option: Quiet mode enabled"
+            shift
+            ;;
+        -h|--help)
+            usage
+            ;;
+        --)
+            shift
+            remaining_args+=("$@")
+            break
+            ;;
+        -*)
+            log_error "Unknown option: $1"
+            usage
+            ;;
+        *)
+            remaining_args+=("$1")
+            shift
+            ;;
+    esac
+done
+
+log_verbose "Parsed ${#remaining_args[@]} remaining arguments: ${remaining_args[*]}"
+
+# Prepare arguments to pass to the target script
+script_args=()
+
+# Add verbosity flags to target script
+if [ "$VERBOSE" -eq 1 ]; then
+    script_args+=("--verbose")
+fi
+
+if [ "$QUIET" -eq 1 ]; then
+    script_args+=("--quiet")
+fi
+
+# Add remaining arguments
+script_args+=("${remaining_args[@]}")
+
+log_verbose "Arguments to pass to target script: ${script_args[*]}"
+
+if [ "$FROM_SOURCE" -eq 1 ]; then
+    log_info "Building LLVM from source..."
+    log_verbose "Executing: $SCRIPT_DIR/llvm-build ${script_args[*]}"
+    exec "$SCRIPT_DIR/llvm-build" "${script_args[@]}"
 else
-    echo "Installing pre-built LLVM release..."
-    exec "$SCRIPT_DIR/llvm-prebuilt" "$@"
+    log_info "Installing pre-built LLVM release..."
+    log_verbose "Executing: $SCRIPT_DIR/llvm-prebuilt ${script_args[*]}"
+    exec "$SCRIPT_DIR/llvm-prebuilt" "${script_args[@]}"
 fi
