@@ -1,308 +1,417 @@
-# LLVMUP: LLVM Version Manager (Concept Test)
+# 🚀 LLVMUP: LLVM Version Manager
 
-This project is a minimal viable test software inspired by tools like **rustup**, **Python venv**, and **Node Version Manager (nvm)**. It demonstrates a concept for managing multiple LLVM versions by downloading, extracting, and switching between different LLVM releases. Additionally, it provides an option to build LLVM from source.
+Um gerenciador de versões LLVM inspirado em ferramentas como **rustup**, **Python venv** e **Node Version Manager (nvm)**. O LLVMUP permite baixar, instalar, compilar a partir do código-fonte e alternar entre diferentes versões do LLVM de forma fácil e eficiente.
 
-**WARNING:**
-This is a concept test version and may contain bugs. Use it at your own risk and feel free to contribute improvements or report issues.
+**⚠️ AVISO:**
+Esta é uma versão de teste conceitual e pode conter bugs. Use por sua conta e risco. Contribuições e relatórios de problemas são bem-vindos!
 
-## Quick Start
+## ✨ Recursos Principais
+
+- 📦 **Instalação de versões pré-compiladas** do LLVM
+- 🛠️ **Compilação a partir do código-fonte** com otimizações nativas
+- 🔄 **Alternância rápida** entre versões instaladas
+- 💻 **Integração com VSCode** automática
+- 🎯 **Interface visual rica** com emojis e formatação
+- ⌨️ **Auto-completar** com TAB para nomes de versões
+- 📊 **Status detalhado** do ambiente ativo
+
+## 🚀 Início Rápido
 
 ### Linux
-1. Clone this repository:
-   ```bash
-   git clone https://github.com/Fabio3rs/llvm-manager.git
-   cd llvm-manager
-   ```
 
-2. Run the installation script:
-   ```bash
-   ./install.sh
-   ```
+#### 1. Instalação
+```bash
+# Clone o repositório
+git clone https://github.com/Fabio3rs/llvm-manager.git
+cd llvm-manager
 
-3. Install an LLVM version:
-   ```bash
-   llvmup
-   ```
+# Execute o script de instalação
+./install.sh
 
-4. Activate the version (the functions are automatically loaded in new terminals):
-   ```bash
-   llvm-activate <version>
-   ```
+# Reinicie o terminal ou recarregue o perfil
+source ~/.bashrc
+```
+
+#### 2. Instalando uma versão LLVM
+```bash
+# Instala a versão mais recente
+llvmup
+
+# Instala uma versão específica
+llvmup 18.1.8
+
+# Compila uma versão a partir do código-fonte
+llvmup --from-source
+
+# Instalação com saída detalhada
+llvmup --verbose 19.1.0
+```
+
+#### 3. Ativando e usando uma versão
+```bash
+# Ativa uma versão específica
+llvm-activate 18.1.8
+
+# Verifica o status atual
+llvm-status
+
+# Lista todas as versões instaladas
+llvm-list
+
+# Obtém ajuda completa
+llvm-help
+```
+
+#### 4. Integração com VSCode
+```bash
+# Vai para seu projeto e configura o VSCode
+cd /seu/projeto
+llvm-vscode-activate 18.1.8
+
+# Recarrega a janela do VSCode para aplicar as configurações
+# Ctrl+Shift+P → "Developer: Reload Window"
+```
 
 ### Windows
-1. Clone this repository:
+1. Clone o repositório:
    ```powershell
    git clone https://github.com/Fabio3rs/llvm-manager.git
    cd llvm-manager
    ```
 
-2. Open PowerShell as Administrator and run:
+2. Abra PowerShell como Administrador e execute:
    ```powershell
    Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
    Install-Module -Name Pester -Force -SkipPublisherCheck
    ```
 
-3. Install an LLVM version:
+3. Instale uma versão LLVM:
    ```powershell
    .\Download-Llvm.ps1
    ```
 
-4. Activate the version (must be sourced to modify environment variables):
+4. Ative a versão (deve ser "sourced" para modificar variáveis de ambiente):
    ```powershell
-   . .\Activate-Llvm.ps1 <version>
+   . .\Activate-Llvm.ps1 <versão>
    ```
 
-## Prerequisites
+## 📋 Pré-requisitos
 
 ### Linux
-- `curl`: For downloading files
-- `jq`: For parsing JSON responses
-- `tar`: For extracting archives
-- `git`: For building from source (optional)
-- `ninja`: For building from source (optional)
-- `cmake`: For building from source (optional)
-- `bash-completion`: For command completion (optional)
+- `curl`: Para download de arquivos
+- `jq`: Para parsing de respostas JSON
+- `tar`: Para extração de arquivos
+- `git`: Para compilação a partir do código-fonte (opcional)
+- `ninja`: Para compilação a partir do código-fonte (opcional)
+- `cmake`: Para compilação a partir do código-fonte (opcional)
+- `bash-completion`: Para auto-completar comandos (opcional)
 
 ### Windows
-- PowerShell 5.0 or later
-- Pester module (for testing)
-- Internet connection for downloading releases
-- Administrator privileges for installation
-- Execution policy set to RemoteSigned (at least for CurrentUser)
+- PowerShell 5.0 ou superior
+- Módulo Pester (para testes)
+- Conexão com internet para downloads
+- Privilégios de administrador para instalação
+- Política de execução definida como RemoteSigned (pelo menos para CurrentUser)
 
-## Features
+## 🛠️ Comandos Disponíveis
 
-- **Download & Install (Pre-built Releases):**
-  - Fetch available LLVM releases from the GitHub API.
-  - **Linux:** Download the Linux X64 tarball for the selected version, extract it (which creates a directory with the release name), and move it to the designated toolchains directory (`~/.llvm/toolchains/<version>`).
-  - **Windows:** Download the LLVM NSIS installer for the selected release and perform a silent installation into `%USERPROFILE%\.llvm\toolchains\<version>`.
-  - Marks already installed versions when listing available releases.
+### 📦 Comandos de Instalação
+```bash
+llvmup                      # Instala versão pré-compilada mais recente
+llvmup 18.1.8              # Instala versão específica
+llvmup --from-source        # Compila a partir do código-fonte
+llvmup --verbose            # Mostra saída detalhada
+llvmup --quiet             # Suprime saída não essencial
+```
 
-- **Build From Source (Linux):**
-  - Alternatively, build LLVM from source using the provided build script.
-  - The build script shallowly clones the LLVM repository for the selected release tag into `~/.llvm/sources/<tag>`, then configures, builds, and installs LLVM (using Ninja) to a directory under `~/.llvm/toolchains/source-<version>`.
-  - Use the wrapper command with the `--from-source` flag to trigger a source build.
+### 🔧 Gerenciamento de Ambiente
+```bash
+llvm-activate <versão>      # Ativa uma versão LLVM
+llvm-deactivate            # Desativa a versão atual
+llvm-status                # Mostra status atual detalhado
+llvm-list                  # Lista versões instaladas
+llvm-help                  # Mostra guia completo de uso
+```
 
-- **Version Activation:**
-  - **Linux:** Activate a specific LLVM version for the current terminal session using the `llvm-activate <version>` bash function (no need for manual sourcing):
-    - Updates the `PATH` to include the selected LLVM's `bin` directory.
-    - Backs up and then sets `CC`, `CXX`, and `LD` (if available) to point to the LLVM binaries.
-    - Modifies the terminal prompt (`PS1`) to indicate the active LLVM version.
-  - **Windows:** Use PowerShell scripts (`Activate-Llvm.ps1`) to update environment variables (`PATH`, `CC`, and `CXX`) and modify the PowerShell prompt to indicate the active LLVM version.
-  - The scripts prevent activating a new version if one is already active until deactivation.
+### 💻 Integração de Desenvolvimento
+```bash
+llvm-vscode-activate <ver>  # Configura integração com VSCode
+```
 
-- **Version Deactivation:**
-  - **Linux:** Revert the environment changes made during activation using the `llvm-deactivate` bash function, which restores the original values of `PATH`, `CC`, `CXX`, `LD`, and `PS1`.
-  - **Windows:** Use PowerShell scripts (`Deactivate-Llvm.ps1`) to restore the original environment variables and prompt.
+### 🎯 Interface Visual Intuitiva
 
-- **VSCode Integration:**
-  - **Linux:** Use the `llvm-vscode-activate <version>` bash function to merge LLVM-specific settings into your `.vscode/settings.json` file. This configures:
-    - `cmake.additionalCompilerSearchDirs`
-    - `clangd.path`
-    - `clangd.fallbackFlags`
-    - `cmake.configureEnvironment` (with an updated `PATH`)
-  - **Windows:** Use the PowerShell script (`Activate-LlvmVsCode.ps1`) to merge LLVM configuration settings into your `.vscode\settings.json` file. This script sets:
-    - `cmake.additionalCompilerSearchDirs` to point to the LLVM `bin` directory.
-    - `clangd.path` to the LLVM `clangd.exe` executable.
-    - `clangd.fallbackFlags` to include the proper LLVM include paths.
-    - `cmake.configureEnvironment` with the updated `PATH` (prepending the LLVM `bin` directory).
-  - In both cases, the integration script merges settings so that any pre-existing VSCode settings are preserved.
+O LLVM Manager fornece feedback visual rico com:
+- ✅ **Status de sucesso** com confirmações claras
+- ❌ **Mensagens de erro** informativas
+- 💡 **Dicas contextuais** para próximos passos
+- 🔄 **Indicadores de progresso** durante operações
+- 📊 **Informações detalhadas** sobre o ambiente ativo
 
-- **Command Completion:**
-  - **Linux:** Bash completion script (`llvmup-completion.sh`) is installed to provide tab completion for:
-    - Available LLVM versions
-    - Command options
-    - Subcommands
-  - **LLVM Functions:** The bash functions also provide tab completion for installed LLVM versions.
+## 🚀 Ferramentas Disponíveis Após Ativação
 
-- **Wrapper Command:**
-  - A wrapper script called `llvmup` is provided that accepts an optional `--from-source` flag. When used, it calls the build-from-source script; otherwise, it uses the pre-built release manager.
+Quando você ativa uma versão LLVM, as seguintes ferramentas ficam disponíveis:
 
-- **Profile Integration:**
-  - The installation script automatically configures your shell profile (`.bashrc` or `.profile`) to load LLVM functions
-  - Safe installation: checks if already configured before adding entries
-  - Graceful handling: functions provide warnings instead of errors if scripts are missing
+- **clang/clang++**: Compiladores C/C++
+- **ld.lld**: Linker LLVM
+- **lldb**: Debugger LLVM
+- **clangd**: Servidor de linguagem para IDEs
+- **llvm-ar**: Arquivador
+- **llvm-nm**: Dumper de tabela de símbolos
+- **opt**: Otimizador LLVM
+- E muitas outras ferramentas LLVM!
 
-## Installation Script (install.sh)
+## 📚 Fluxos de Trabalho Exemplo
 
-To make it easier to call the LLVM version manager tools from anywhere, an installation script (`install.sh`) is provided. This script copies the project's commands to a directory (by default, `$HOME/.local/bin`) that is typically included in your PATH.
+### 🔄 Workflow Básico
+```bash
+# 1. Instalar e ativar LLVM
+llvmup 18.1.8
+llvm-activate 18.1.8
 
-## Uninstallation Script (uninstall.sh)
+# 2. Verificar instalação
+llvm-status
+clang --version
 
-For complete removal of the LLVM manager, an uninstallation script (`uninstall.sh`) is provided. This script removes all installed components and cleans up profile configurations.
+# 3. Compilar um programa
+echo '#include <stdio.h>
+int main() { printf("Hello LLVM!\n"); return 0; }' > hello.c
+clang hello.c -o hello
+./hello
+```
 
-### How to Use the Uninstallation Script
+### 💻 Configuração para Desenvolvimento VSCode
+```bash
+# 1. Vá para seu projeto C/C++
+cd /meu/projeto/cpp
 
-1. **Run the Uninstaller:**
-   ```bash
-   ./uninstall.sh
-   ```
-   This will:
-   - Remove all LLVM manager scripts from `$HOME/.local/bin`
-   - Remove bash completion files
-   - Clean up shell profile configuration (removes LLVM function loading from `.bashrc` or `.profile`)
-   - Provide instructions for manual cleanup if needed
+# 2. Configure LLVM para VSCode
+llvm-vscode-activate 18.1.8
 
-2. **Note:** The uninstaller preserves your LLVM toolchain installations in `~/.llvm/toolchains/`. If you want to completely remove all LLVM installations, you can manually run:
-   ```bash
-   rm -rf ~/.llvm
-   ```
+# 3. Abra VSCode (as configurações são aplicadas automaticamente)
+code .
 
-### How to Use the Installation Script
+# 4. Recarregue a janela VSCode
+# Ctrl+Shift+P → "Developer: Reload Window"
+```
 
-1. **Run the Installer:**
+### 🔀 Alternando Entre Versões
+```bash
+# 1. Listar versões disponíveis
+llvm-list
+
+# 2. Desativar versão atual
+llvm-deactivate
+
+# 3. Ativar outra versão
+llvm-activate 19.1.0
+
+# 4. Verificar nova versão ativa
+llvm-status
+```
+
+### 🛠️ Compilação a Partir do Código-fonte
+```bash
+# 1. Compilar versão específica
+llvmup --from-source 18.1.8
+
+# 2. Compilação com saída detalhada
+llvmup --from-source --verbose
+
+# 3. Ativar versão compilada
+llvm-activate source-llvmorg-18.1.8
+```
+
+## 🔧 Recursos Avançados
+
+### Auto-completar com TAB
+```bash
+llvm-activate <TAB><TAB>     # Lista versões instaladas
+llvmup --<TAB><TAB>         # Lista opções disponíveis
+```
+
+### Verificação de Status Detalhado
+O comando `llvm-status` fornece informações completas sobre o ambiente ativo:
+
+```bash
+llvm-status
+# ╭─ LLVM Environment Status ──────────────────────────────────╮
+# │ ✅ Status: ACTIVE                                          │
+# │ 📦 Version: 18.1.8                                        │
+# │ 📁 Path: ~/.llvm/toolchains/18.1.8                       │
+# │                                                           │
+# │ 🛠️  Available tools:                                       │
+# │   • clang (C compiler)                                    │
+# │   • clang++ (C++ compiler)                                │
+# │   • clangd (Language Server)                              │
+# │   • lldb (Debugger)                                       │
+# │                                                           │
+# │ 💡 To deactivate: llvm-deactivate                         │
+# ╰───────────────────────────────────────────────────────────╯
+```
+
+## ✨ Funcionalidades Principais
+
+### 📦 **Download & Install (Versões Pré-compiladas)**
+- Busca versões disponíveis do LLVM através da API do GitHub
+- **Linux**: Download do tarball Linux X64 para a versão selecionada, extração e instalação em `~/.llvm/toolchains/<version>`
+- **Windows**: Download do instalador NSIS LLVM e instalação silenciosa em `%USERPROFILE%\.llvm\toolchains\<version>`
+- Marca versões já instaladas ao listar releases disponíveis
+
+### 🛠️ **Build From Source (Linux)**
+- Compilação do LLVM a partir do código-fonte usando script de build
+- Clone shallow do repositório LLVM para a tag de release selecionada em `~/.llvm/sources/<tag>`
+- Configuração, compilação e instalação usando Ninja em `~/.llvm/toolchains/source-<version>`
+- Use o comando wrapper com flag `--from-source` para build do código-fonte
+
+### 🔄 **Ativação de Versão**
+- **Linux**: Ative uma versão específica do LLVM usando a função bash `llvm-activate <version>` (sem necessidade de sourcing manual):
+  - Atualiza o `PATH` para incluir o diretório `bin` do LLVM selecionado
+  - Faz backup e define `CC`, `CXX`, e `LD` para apontar para binários LLVM
+  - Modifica o prompt do terminal (`PS1`) para indicar a versão ativa do LLVM
+- **Windows**: Use scripts PowerShell (`Activate-Llvm.ps1`) para atualizar variáveis de ambiente
+- Os scripts previnem ativação de nova versão se uma já estiver ativa até a desativação
+
+### ❌ **Desativação de Versão**
+- **Linux**: Reverte mudanças do ambiente usando função bash `llvm-deactivate`, restaurando valores originais de `PATH`, `CC`, `CXX`, `LD`, e `PS1`
+- **Windows**: Use scripts PowerShell (`Deactivate-Llvm.ps1`) para restaurar variáveis de ambiente originais
+
+### 💻 **Integração VSCode**
+- **Linux**: Use `llvm-vscode-activate <version>` para mesclar configurações específicas do LLVM em `.vscode/settings.json`:
+  - `cmake.additionalCompilerSearchDirs`
+  - `clangd.path`
+  - `clangd.fallbackFlags`
+  - `cmake.configureEnvironment` (com `PATH` atualizado)
+- **Windows**: Use script PowerShell para mesclar configurações no `.vscode\settings.json`
+- Integração preserva configurações VSCode pré-existentes
+
+### ⌨️ **Auto-completar de Comandos**
+- **Linux**: Script de completion bash (`llvmup-completion.sh`) instalado para fornecer completion com TAB para:
+  - Versões LLVM disponíveis
+  - Opções de comando
+  - Subcomandos
+- **Funções LLVM**: Funções bash também fornecem TAB completion para versões instaladas
+
+### 🎯 **Comando Wrapper**
+- Script wrapper `llvmup` que aceita flag opcional `--from-source`
+- Quando usado, chama script build-from-source; caso contrário, usa gerenciador de releases pré-compilados
+
+### 🔧 **Integração de Perfil**
+- Script de instalação configura automaticamente seu perfil shell (`.bashrc` ou `.profile`) para carregar funções LLVM
+- Instalação segura: verifica se já configurado antes de adicionar entradas
+- Tratamento gracioso: funções fornecem avisos ao invés de erros se scripts estiverem faltando
+
+## 📥 Script de Instalação (install.sh)
+
+Para facilitar o uso das ferramentas do gerenciador de versões LLVM de qualquer lugar, um script de instalação (`install.sh`) é fornecido. Este script copia os comandos do projeto para um diretório (por padrão, `$HOME/.local/bin`) que geralmente está incluído no seu PATH.
+
+### Como Usar o Script de Instalação
+
+1. **Execute o Instalador:**
    ```bash
    ./install.sh
    ```
-   This will:
-   - Create the installation directory (`$HOME/.local/bin`) if it doesn't exist.
-   - Copy the following scripts into that directory:
+   Isto irá:
+   - Criar o diretório de instalação (`$HOME/.local/bin`) se não existir
+   - Copiar os seguintes scripts para esse diretório:
      - `llvm-prebuilt`
      - `llvm-activate`
      - `llvm-deactivate`
      - `llvm-vscode-activate`
-     - `llvm-build` (for building from source)
-     - `llvmup` (wrapper command)
-     - `llvm-functions.sh` (bash functions)
-   - Install bash completion script to `$HOME/.local/share/bash-completion/completions`
-   - Set the appropriate executable permissions on these scripts.
-   - **Automatically configure your shell profile** (`.bashrc` or `.profile`) to load the LLVM bash functions.
+     - `llvm-build` (para compilação do código-fonte)
+     - `llvmup` (comando wrapper)
+     - `llvm-functions.sh` (funções bash)
+   - Instalar script de bash completion em `$HOME/.local/share/bash-completion/completions`
+   - Definir permissões executáveis apropriadas nesses scripts
+   - **Configurar automaticamente seu perfil shell** (`.bashrc` ou `.profile`) para carregar as funções bash LLVM
 
-2. **Verify PATH:**
-   The installer checks if `$HOME/.local/bin` is in your PATH. If it isn't, you'll receive a warning along with instructions to add it:
+2. **Verificar PATH:**
+   O instalador verifica se `$HOME/.local/bin` está no seu PATH. Se não estiver, você receberá um aviso junto com instruções para adicioná-lo:
    ```bash
    export PATH="$HOME/.local/bin:$PATH"
    ```
-   You may add this line to your shell's startup file (e.g., `~/.bashrc` or `~/.profile`) for persistence.
+   Você pode adicionar esta linha ao arquivo de inicialização do seu shell (ex: `~/.bashrc` ou `~/.profile`) para persistência.
 
-3. **Using the Commands:**
-   After installation, you can run the commands from anywhere in your terminal:
-   - Use `llvm-prebuilt` to download and install pre-built LLVM versions.
-   - Use `llvmup` to choose between a pre-built installation or a build-from-source:
-     - To install a pre-built release:
-       ```bash
-       llvmup [additional arguments...]
-       ```
-     - To build from source:
-       ```bash
-       llvmup --from-source [additional arguments...]
-       ```
-   - Use `llvm-activate <version>` to activate a specific LLVM version (bash function - no manual sourcing needed).
-   - Use `llvm-deactivate` to revert the activation (bash function).
-   - Use `llvm-vscode-activate <version>` to update your VSCode workspace settings with the selected LLVM configuration (bash function).
-   - Use `llvm-status` to check which LLVM version is currently active (bash function).
-   - Use `llvm-list` to see all installed LLVM versions (bash function).
+3. **Usando os Comandos:**
+   Após a instalação, você pode executar os comandos de qualquer lugar no seu terminal:
+   - Use `llvmup` para instalar versões LLVM
+   - Use `llvm-activate <version>` para ativar uma versão específica
+   - Use `llvm-deactivate` para reverter a ativação
+   - Use `llvm-vscode-activate <version>` para configurar integração VSCode
+   - Use `llvm-status` para verificar versão ativa
+   - Use `llvm-list` para ver todas as versões instaladas
+   - Use `llvm-help` para guia completo de uso
 
-## Windows Scripts
+## 🗑️ Script de Desinstalação (uninstall.sh)
 
-For Windows users, PowerShell scripts are provided to manage the LLVM toolchains:
+Para remoção completa do gerenciador LLVM, um script de desinstalação (`uninstall.sh`) é fornecido. Este script remove todos os componentes instalados e limpa configurações de perfil.
 
-- **Download-Llvm.ps1:**
-  - Fetches available LLVM releases from the GitHub API.
-  - Allows you to select a release.
-  - Downloads the Windows 64-bit NSIS installer for the selected release.
-  - Runs the installer in silent mode, installing the LLVM toolchain into `%USERPROFILE%\.llvm\toolchains\<version>`.
+### Como Usar o Script de Desinstalação
 
-- **Activate-Llvm.ps1:**
-  - A PowerShell script that **must be sourced** to modify the current session's environment.
-  - Activates a specific LLVM version in a PowerShell session.
-  - Updates environment variables (`PATH`, `CC`, and `CXX`) and modifies the PowerShell prompt.
-  - Checks if another LLVM version is already active and prevents reactivation until the current one is deactivated.
-  - Usage: `. .\Activate-Llvm.ps1 <version>`
+1. **Execute o Desinstalador:**
+   ```bash
+   ./uninstall.sh
+   ```
+   Isto irá:
+   - Remover todos os scripts do gerenciador LLVM de `$HOME/.local/bin`
+   - Remover arquivos de bash completion
+   - Limpar configuração do perfil shell (remove carregamento de funções LLVM de `.bashrc` ou `.profile`)
+   - Fornecer instruções para limpeza manual se necessário
 
-- **Deactivate-Llvm.ps1:**
-  - A PowerShell script that **must be sourced** to modify the current session's environment.
-  - Reverts the changes made by `Activate-Llvm.ps1`.
-  - Restores the original environment variables and PowerShell prompt.
-  - Usage: `. .\Deactivate-Llvm.ps1`
+2. **Nota:** O desinstalador preserva suas instalações de toolchain LLVM em `~/.llvm/toolchains/`. Se quiser remover completamente todas as instalações LLVM, você pode executar manualmente:
+   ```bash
+   rm -rf ~/.llvm
+   ```
 
-- **Activate-LlvmVsCode.ps1:**
-  - PowerShell script for VSCode integration.
-  - Updates Windows-specific VSCode settings.
+## 🪟 Scripts Windows
 
-## Files
+Para usuários Windows, scripts PowerShell são fornecidos para gerenciar toolchains LLVM:
 
-- **llvm-prebuilt (Linux):**
-  - Interacts with the GitHub API to list available LLVM releases.
-  - Allows you to choose a version for download and installation.
-  - Downloads, extracts, and installs the selected LLVM release into `~/.llvm/toolchains/<version>`.
+- **Download-Llvm.ps1**: Busca releases LLVM e instala versões Windows
+- **Activate-Llvm.ps1**: Ativa versão específica LLVM no PowerShell (deve ser sourced)
+- **Deactivate-Llvm.ps1**: Reverte mudanças feitas pelo Activate-Llvm.ps1
+- **Activate-LlvmVsCode.ps1**: Script PowerShell para integração VSCode
 
-- **llvm-build (Linux):**
-  - Implements a build-from-source workflow.
-  - Shallow clones the LLVM project at the selected release into `~/.llvm/sources/<tag>`.
-  - Configures, builds, and installs LLVM (using Ninja) to `~/.llvm/toolchains/source-<version>`.
+## 🆕 Novos Recursos na Versão Mais Recente
 
-- **llvmup (Linux):**
-  - A wrapper script that accepts an optional `--from-source` flag.
-  - If `--from-source` is passed, it calls the build-from-source script.
-  - Otherwise, it calls the pre-built release manager (`llvm-prebuilt`).
+### Funções Bash para Uso Simplificado
+- **Sem sourcing manual**: Use `llvm-activate <version>` diretamente
+- **Carregamento automático**: Funções automaticamente disponíveis em novos terminais
+- **Usabilidade aprimorada**: Funções adicionais como `llvm-status`, `llvm-list`, e `llvm-help`
+- **TAB completion**: Todas as funções suportam auto-completar para nomes de versões
+- **Fallbacks graciosos**: Se scripts estiverem faltando, funções mostram avisos úteis
 
-- **llvm-activate (Linux):**
-  - A script that **must be sourced** to modify the current shell's environment.
-  - Activates a specific LLVM version for the current shell session.
-  - Updates environment variables and modifies the shell prompt.
-  - Prevents multiple activations until deactivation.
-  - Usage: `source llvm-activate <version>` or use the `llvm-activate <version>` bash function
+### Processo de Instalação Melhorado
+- **Configuração automática de perfil**: Perfil shell configurado automaticamente durante instalação
+- **Detecção inteligente**: Instalador escolhe o melhor arquivo de perfil ou cria um se necessário
+- **Instalação segura**: Verifica configuração existente antes de fazer mudanças
+- **Desinstalação limpa**: Desinstalador remove todos os rastros incluindo configuração de perfil
 
-- **llvm-deactivate (Linux):**
-  - A script that **must be sourced** to modify the current shell's environment.
-  - Reverts the changes made by `llvm-activate`.
-  - Restores the original environment variables and shell prompt.
-  - Usage: `source llvm-deactivate` or use the `llvm-deactivate` bash function
+### Melhor Experiência do Usuário
+- **Interface consistente**: Todas as operações usam chamadas de função simples
+- **Verificação de status**: `llvm-status` mostra versão ativa atual e caminho
+- **Listagem de versões**: `llvm-list` mostra versões instaladas com indicador de ativo
+- **Tratamento de erros**: Melhores mensagens de erro e orientação ao usuário
+- **Interface visual rica**: Feedback com emojis e formatação visual atraente
 
-- **llvm-vscode-activate (Linux):**
-  - Updates VSCode workspace settings for LLVM integration.
-  - Configures compiler paths, clangd settings, and environment variables.
-  - Usage: Direct execution or use the `llvm-vscode-activate <version>` bash function
+## 🤝 Contribuindo
 
-- **llvm-functions.sh (Linux):**
-  - Provides convenient bash functions for LLVM management.
-  - Automatically loaded in new terminal sessions after installation.
-  - Functions include: `llvm-activate`, `llvm-deactivate`, `llvm-vscode-activate`, `llvm-status`, `llvm-list`.
-  - Includes tab completion for version names.
-  - Graceful error handling with fallbacks.
+Sinta-se à vontade para contribuir com este projeto:
+1. Relatando bugs
+2. Sugerindo novos recursos
+3. Enviando pull requests
+4. Melhorando documentação
 
-- **llvmup-completion.sh (Linux):**
-  - Provides bash completion for llvmup commands.
-  - Supports completion of versions, options, and subcommands.
+## 📄 Licença
 
-- **Download-Llvm.ps1 (Windows):**
-  - PowerShell script for downloading and installing LLVM releases.
-  - Handles Windows-specific installation requirements.
+Este projeto está licenciado sob a Licença MIT - veja o arquivo [LICENSE](LICENSE) para detalhes.
 
-- **Activate-LlvmVsCode.ps1 (Windows):**
-  - PowerShell script for VSCode integration.
-  - Updates Windows-specific VSCode settings.
+## 🔗 Links Úteis
 
-## Contributing
+- [Repositório GitHub](https://github.com/Fabio3rs/llvmup)
+- [LLVM Project](https://llvm.org/)
+- [Documentação LLVM](https://llvm.org/docs/)
+- [Clang Documentation](https://clang.llvm.org/docs/)
 
-Feel free to contribute to this project by:
-1. Reporting bugs
-2. Suggesting new features
-3. Submitting pull requests
-4. Improving documentation
+---
 
-## New Features in Latest Version
-
-### Bash Functions for Simplified Usage
-- **No more manual sourcing**: Use `llvm-activate <version>` directly instead of `source llvm-activate <version>`
-- **Automatic loading**: Functions are automatically available in new terminal sessions
-- **Enhanced usability**: Additional functions like `llvm-status` and `llvm-list` for better version management
-- **Tab completion**: All functions support tab completion for version names
-- **Graceful fallbacks**: If scripts are missing, functions show helpful warnings instead of errors
-
-### Improved Installation Process
-- **Automatic profile configuration**: Shell profile is automatically configured during installation
-- **Smart detection**: Installer chooses the best profile file (`.bashrc` or `.profile`) or creates one if needed
-- **Safe installation**: Checks for existing configuration before making changes
-- **Clean uninstallation**: Uninstaller removes all traces including profile configuration
-
-### Better User Experience
-- **Consistent interface**: All operations use simple function calls
-- **Status checking**: `llvm-status` shows current active version and path
-- **Version listing**: `llvm-list` shows installed versions with active indicator
-- **Error handling**: Better error messages and user guidance
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+**💡 Dica**: Para obter ajuda completa sobre todos os comandos disponíveis, execute `llvm-help` após a instalação!
