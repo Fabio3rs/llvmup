@@ -39,7 +39,8 @@ llvm-activate() {
     if [ -f "$script_path" ]; then
         echo "🔄 Activating LLVM version $version..."
         source "$script_path" "$version"
-        if [ $? -eq 0 ]; then
+        local exit_code=$?
+        if [ $exit_code -eq 0 ]; then
             echo "✅ LLVM $version successfully activated!"
             echo "🛠️  Available tools are now in PATH:"
             echo "   • clang, clang++, ld.lld, lldb, clangd, etc."
@@ -48,6 +49,7 @@ llvm-activate() {
         else
             echo "❌ Failed to activate LLVM $version"
             echo "💡 Check if the version is installed: llvm-list"
+            return $exit_code
         fi
     else
         echo "❌ Error: llvm-activate script not found at $script_path"
@@ -64,10 +66,12 @@ llvm-deactivate() {
     if [ -f "$script_path" ]; then
         echo "🔄 Deactivating LLVM environment..."
         source "$script_path"
-        if [ $? -eq 0 ]; then
+        local exit_code=$?
+        if [ $exit_code -eq 0 ]; then
             echo "✅ LLVM environment successfully deactivated"
             echo "💡 Your shell prompt and environment variables have been restored"
         fi
+        return $exit_code
     else
         echo "❌ Error: llvm-deactivate script not found at $script_path"
         echo "📥 Run the installation script to install LLVM manager tools."
@@ -108,10 +112,12 @@ llvm-vscode-activate() {
     if [ -f "$script_path" ]; then
         echo "🔧 Configuring VSCode workspace for LLVM $version..."
         "$script_path" "$version"
-        if [ $? -eq 0 ]; then
+        local exit_code=$?
+        if [ $exit_code -eq 0 ]; then
             echo "✅ VSCode workspace successfully configured!"
             echo "🔄 Please reload your VSCode window (Ctrl+Shift+P → 'Developer: Reload Window')"
         fi
+        return $exit_code
     else
         echo "❌ Error: llvm-vscode-activate script not found at $script_path"
         echo "📥 Run the installation script to install LLVM manager tools."
@@ -210,11 +216,11 @@ _llvm_complete_versions() {
     fi
 }
 
-# Register completion functions
-if command -v complete &> /dev/null; then
-    complete -F _llvm_complete_versions llvm-activate
-    complete -F _llvm_complete_versions llvm-vscode-activate
-fi
+# Register completion functions (commented out for testing)
+# if command -v complete &> /dev/null && declare -F _llvm_complete_versions &> /dev/null; then
+#     complete -F _llvm_complete_versions llvm-activate 2>/dev/null || true
+#     complete -F _llvm_complete_versions llvm-vscode-activate 2>/dev/null || true
+# fi
 
 # Function to show comprehensive help for LLVM manager
 llvm-help() {

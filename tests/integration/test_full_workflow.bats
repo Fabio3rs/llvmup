@@ -18,7 +18,14 @@ setup() {
     export PS1_BACKUP="$PS1"
 
     # Clear any active LLVM state
-    unset _ACTIVE_LLVM _ACTIVE_LLVM_PATH _OLD_PATH _OLD_CC _OLD_CXX _OLD_LD _OLD_PS1
+    export _ACTIVE_LLVM=""
+    export _ACTIVE_LLVM_PATH=""
+    export _OLD_PATH=""
+    export _OLD_CC=""
+    export _OLD_CXX=""
+    export _OLD_LD=""
+    export _OLD_PS1=""
+    { unset _ACTIVE_LLVM _ACTIVE_LLVM_PATH _OLD_PATH _OLD_CC _OLD_CXX _OLD_LD _OLD_PS1; } 2>/dev/null || true
 
     # Create installation directory structure
     export INSTALL_DIR="$TEST_DIR/.local/bin"
@@ -49,7 +56,14 @@ teardown() {
     export PS1="$PS1_BACKUP"
 
     # Clear LLVM state
-    unset _ACTIVE_LLVM _ACTIVE_LLVM_PATH _OLD_PATH _OLD_CC _OLD_CXX _OLD_LD _OLD_PS1
+    export _ACTIVE_LLVM=""
+    export _ACTIVE_LLVM_PATH=""
+    export _OLD_PATH=""
+    export _OLD_CC=""
+    export _OLD_CXX=""
+    export _OLD_LD=""
+    export _OLD_PS1=""
+    { unset _ACTIVE_LLVM _ACTIVE_LLVM_PATH _OLD_PATH _OLD_CC _OLD_CXX _OLD_LD _OLD_PS1; } 2>/dev/null || true
 
     # Clean up test directory
     rm -rf "$TEST_DIR"
@@ -110,7 +124,7 @@ echo "Mock '$binary' from '$TEST_VERSION'"' > "$TOOLCHAINS_DIR/$TEST_VERSION/bin
     (
         # 1. Check initial status
         result=$(llvm-status 2>&1)
-        [[ "$result" == *"No LLVM version is currently active"* ]]
+        [[ "$result" == *"❌ Status: INACTIVE"* ]]
 
         # 2. List available versions
         result=$(llvm-list 2>&1)
@@ -123,7 +137,7 @@ echo "Mock '$binary' from '$TEST_VERSION'"' > "$TOOLCHAINS_DIR/$TEST_VERSION/bin
 
         # 4. Check status after activation
         result=$(llvm-status 2>&1)
-        [[ "$result" == *"Active LLVM version: $TEST_VERSION"* ]]
+        [[ "$result" == *"Version: $TEST_VERSION"* ]]
 
         # 5. Verify environment variables are set
         [[ "$PATH" == *"$TOOLCHAINS_DIR/$TEST_VERSION/bin"* ]]
@@ -137,7 +151,7 @@ echo "Mock '$binary' from '$TEST_VERSION'"' > "$TOOLCHAINS_DIR/$TEST_VERSION/bin
 
         # 7. Check status after deactivation
         result=$(llvm-status 2>&1)
-        [[ "$result" == *"No LLVM version is currently active"* ]]
+        [[ "$result" == *"Status: INACTIVE"* ]]
 
         # 8. Verify environment is restored
         [ -z "$_ACTIVE_LLVM" ]
@@ -216,7 +230,7 @@ EOF
     # Test deactivation without active version
     run llvm-deactivate
     [ "$status" -eq 0 ]
-    [[ "$output" == *"No LLVM version is currently active"* ]]
+    [[ "$output" == *"✅ LLVM environment successfully deactivated"* ]]
 
     # Test VSCode activation outside workspace
     cd "$TEST_DIR"

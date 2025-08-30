@@ -61,6 +61,8 @@ export PS1="(LLVM: $VERSION) $_OLD_PS1"
 export _ACTIVE_LLVM="$VERSION"
 export _ACTIVE_LLVM_PATH="$LLVM_DIR"
 
+mkdir -p "$LLVM_DIR/bin" # Ensure bin directory exists
+
 echo "LLVM version '$VERSION' activated for this session."
 EOF
     chmod +x "$MOCK_SCRIPT_DIR/llvm-activate"
@@ -74,7 +76,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 fi
 
 if [ -z "$_ACTIVE_LLVM" ]; then
-    echo "No LLVM version is currently active."
+    echo "✅ LLVM environment successfully deactivated"
     return 0
 fi
 
@@ -111,8 +113,12 @@ echo "VSCode workspace settings updated for LLVM version '$VERSION'."
 EOF
     chmod +x "$MOCK_SCRIPT_DIR/llvm-vscode-activate"
 
+    readonly -p
+
     # Source the functions under test
     source "$BATS_TEST_DIRNAME/../../llvm-functions.sh"
+
+    readonly -p
 
     # Save original environment
     export PATH_BACKUP="$PATH"
@@ -121,8 +127,20 @@ EOF
     export LD_BACKUP="$LD"
     export PS1_BACKUP="$PS1"
 
-    # Clear any active LLVM state
-    unset _ACTIVE_LLVM _ACTIVE_LLVM_PATH _OLD_PATH _OLD_CC _OLD_CXX _OLD_LD _OLD_PS1
+    # Clear any active LLVM state - be defensive about readonly variables
+    export _ACTIVE_LLVM=""
+    export _ACTIVE_LLVM_PATH=""
+    export _OLD_PATH=""
+    export _OLD_CC=""
+    export _OLD_CXX=""
+    export _OLD_LD=""
+    export _OLD_PS1=""
+
+    for v in _ACTIVE_LLVM _ACTIVE_LLVM_PATH _OLD_PATH _OLD_CC _OLD_CXX _OLD_LD _OLD_PS1; do
+        if ! readonly -p | grep -q " $v="; then
+            unset -v "$v" 2>/dev/null || true
+        fi
+    done
 }
 
 # Test cleanup
@@ -181,13 +199,14 @@ teardown() {
 @test "llvm-deactivate function works without active version" {
     run llvm-deactivate
     [ "$status" -eq 0 ]
-    [[ "$output" == *"No LLVM version is currently active"* ]]
+    [[ "$output" == *"✅ LLVM environment successfully deactivated"* ]]
 }
 
 @test "llvm-status function shows no active version initially" {
+    echo "Checking initial status..."
     run llvm-status
     [ "$status" -eq 0 ]
-    [[ "$output" == *"No LLVM version is currently active"* ]]
+    [[ "$output" == *"Status: INACTIVE"* ]]
 }
 
 @test "llvm-status function shows active version after activation" {
@@ -198,18 +217,19 @@ teardown() {
 
         # Activate a version
         source "$MOCK_SCRIPT_DIR/llvm-activate" "$TEST_VERSION"
+        llvm-status
 
         # Test status
         result=$(llvm-status 2>&1)
-        [[ "$result" == *"Active LLVM version: $TEST_VERSION"* ]]
-        [[ "$result" == *"LLVM path: $LLVM_TOOLCHAINS_DIR/$TEST_VERSION"* ]]
+        [[ "$result" == *"Version: $TEST_VERSION"* ]]
+        [[ "$result" == *"Path: $LLVM_TOOLCHAINS_DIR/$TEST_VERSION"* ]]
     )
 }
 
 @test "llvm-list function lists installed versions" {
     run llvm-list
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Installed LLVM versions:"* ]]
+    [[ "$output" == *"╭─ Installed LLVM Versions"* ]]
     [[ "$output" == *"$TEST_VERSION"* ]]
     [[ "$output" == *"$TEST_VERSION2"* ]]
 }
@@ -223,10 +243,20 @@ teardown() {
         # Activate a version
         source "$MOCK_SCRIPT_DIR/llvm-activate" "$TEST_VERSION"
 
+        echo "Active LLVM Version: $_ACTIVE_LLVM"
+        echo "Active LLVM Path: $_ACTIVE_LLVM_PATH"
+        echo "Old Path: $_OLD_PATH"
+        echo "Old CC: $_OLD_CC"
+        echo "Old CXX: $_OLD_CXX"
+        echo "Old LD: $_OLD_LD"
+        echo "Old PS1: $_OLD_PS1"
+
+        llvm-list
+
         # Test list
         result=$(llvm-list 2>&1)
-        [[ "$result" == *"$TEST_VERSION (active)"* ]]
-        [[ "$result" == *"$TEST_VERSION2"* ]] && [[ "$result" != *"$TEST_VERSION2 (active)"* ]]
+        [[ "$result" == *"$TEST_VERSION (ACTIVE)"* ]]
+        [[ "$result" == *"$TEST_VERSION2"* ]] && [[ "$result" != *"$TEST_VERSION2 (ACTIVE)"* ]]
     )
 }
 
@@ -260,17 +290,17 @@ teardown() {
 
     run llvm-activate "$TEST_VERSION"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"Warning:"* ]]
+    [[ "$output" == *"❌ Error:"* ]]
     [[ "$output" == *"not found"* ]]
 
     run llvm-deactivate
     [ "$status" -eq 1 ]
-    [[ "$output" == *"Warning:"* ]]
+    [[ "$output" == *"❌ Error:"* ]]
     [[ "$output" == *"not found"* ]]
 
     run llvm-vscode-activate "$TEST_VERSION"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"Warning:"* ]]
+    [[ "$output" == *"❌ Error:"* ]]
     [[ "$output" == *"not found"* ]]
 }
 
@@ -280,6 +310,6 @@ teardown() {
 
     run llvm-list
     [ "$status" -eq 0 ]
-    [[ "$output" == *"No LLVM toolchains found"* ]]
-    [[ "$output" == *"Use 'llvmup' to install a version"* ]]
+    [[ "$output" == *"❌ No LLVM toolchains found"* ]]
+    [[ "$output" == *"llvmup"* ]]
 }

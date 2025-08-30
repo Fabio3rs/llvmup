@@ -68,7 +68,7 @@ teardown() {
 @test "llvm-status shows no active version initially" {
     run llvm-status
     [ "$status" -eq 0 ]
-    [[ "$output" == *"No LLVM version is currently active"* ]]
+    [[ "$output" == *"❌ Status: INACTIVE"* ]]
 }
 
 @test "llvm-list shows installed versions" {
