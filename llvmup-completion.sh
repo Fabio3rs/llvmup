@@ -1,73 +1,68 @@
 #!/bin/bash
-# llvmup-completion.sh - Bash completion for llvmup
+# llvmup-completion.sh - Bash completion for llvmup and LLVM functions
 #
-# This completion script supports the following subcommands:
-#   install [--from-source] <tag> : completes the LLVM release tags.
-#   activate <tag>               : completes installed LLVM versions (from ~/.llvm/toolchains)
-#   build <tag>                  : equivalent to "install --from-source <tag>"
-#   deactivate, help             : complete these general options.
+# This completion script supports:
+#   llvmup [--from-source] [--verbose] [--quiet] [--help] [version]
+#
+# The script also extends the completion already defined in llvm-functions.sh
+# for llvm-activate and llvm-vscode-activate functions.
 #
 # Note: For demonstration purposes, the tag list is obtained by a git ls-remote
 # call on the official LLVM repository. In a production setting you might want to
 # cache this result to improve performance.
 
 _llvmup_completions() {
-    local cur prev subcmd opts tags
+    local cur prev opts versions tags
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
-    subcmd="${COMP_WORDS[1]}"
 
-    case "$subcmd" in
-        install)
-            if [[ "${COMP_WORDS[2]}" == "--from-source" ]]; then
-                if [ $COMP_CWORD -eq 3 ]; then
-                    # Complete tag list for source build.
-                    tags=$(git ls-remote --tags "https://github.com/llvm/llvm-project.git" \
-                           | grep 'refs/tags/llvmorg-' | sed 's/.*refs\/tags\///; s/\^{}//' | sort -V | uniq)
-                    COMPREPLY=( $(compgen -W "$tags" -- "$cur") )
-                    return 0
-                fi
-            else
-                if [ $COMP_CWORD -eq 2 ]; then
-                    # Complete prebuilt tag list, prefixed by --from-source.
-                    tags=$(git ls-remote --tags "https://github.com/llvm/llvm-project.git" \
-                           | grep 'refs/tags/llvmorg-' | sed 's/.*refs\/tags\///; s/\^{}//' | sort -V | uniq)
-                    COMPREPLY=( $(compgen -W "--from-source $tags" -- "$cur") )
-                    return 0
-                fi
+    # Handle flags and options
+    case "$prev" in
+        --from-source|--verbose|--quiet|--help)
+            # After flags, we can complete with LLVM versions or more flags
+            opts="--from-source --verbose --quiet --help"
+            if [ -d "$HOME/.llvm/toolchains" ]; then
+                versions=$(find "$HOME/.llvm/toolchains" -maxdepth 1 -type d -exec basename {} \; | grep -v "^toolchains$" | sort)
+                opts="$opts $versions"
             fi
-            ;;
-        activate)
-            if [ $COMP_CWORD -eq 2 ]; then
-                # Complete with the list of installed LLVM versions (directories in ~/.llvm/toolchains)
-                if [ -d "$HOME/.llvm/toolchains" ]; then
-                    opts=$(ls "$HOME/.llvm/toolchains")
-                    COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
-                fi
-                return 0
-            fi
-            ;;
-        deactivate|help)
-            opts="install activate deactivate build help"
-            COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
-            return 0
-            ;;
-        build)
-            # build is equivalent to "install --from-source"
-            if [ $COMP_CWORD -eq 2 ]; then
-                tags=$(git ls-remote --tags "https://github.com/llvm/llvm-project.git" \
-                       | grep 'refs/tags/llvmorg-' | sed 's/.*refs\/tags\///; s/\^{}//' | sort -V | uniq)
-                COMPREPLY=( $(compgen -W "$tags" -- "$cur") )
-                return 0
-            fi
-            ;;
-        *)
-            opts="install activate deactivate build help"
             COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
             return 0
             ;;
     esac
+
+    # If the current word starts with '-', complete with flags
+    if [[ "$cur" == -* ]]; then
+        opts="--from-source --verbose --quiet --help"
+        COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
+        return 0
+    fi
+
+    # For version completion, check if we already have flags
+    local has_flags=0
+    for word in "${COMP_WORDS[@]:1:$((COMP_CWORD-1))}"; do
+        if [[ "$word" == --* ]]; then
+            has_flags=1
+            break
+        fi
+    done
+
+    # If no version specified yet, complete with flags and available versions
+    if [ -d "$HOME/.llvm/toolchains" ]; then
+        versions=$(find "$HOME/.llvm/toolchains" -maxdepth 1 -type d -exec basename {} \; | grep -v "^toolchains$" | sort)
+        if [ $has_flags -eq 0 ]; then
+            opts="--from-source --verbose --quiet --help $versions"
+        else
+            opts="$versions"
+        fi
+        COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
+    else
+        # No installed versions, just complete with flags
+        if [ $has_flags -eq 0 ]; then
+            opts="--from-source --verbose --quiet --help"
+            COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
+        fi
+    fi
 }
 
 complete -F _llvmup_completions llvmup

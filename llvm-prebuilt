@@ -312,11 +312,6 @@ else
     echo "DONE"
 fi
 
-log_info "✅ Extraction completed successfully!"
-        exit 1
-    fi
-fi
-
 # Identify the extracted folder (assuming the tarball contains a single main folder)
 log_verbose "Identifying extracted directory structure..."
 EXTRACTED_DIR=$(tar -tf "$DEST_FILE" | head -1 | cut -d/ -f1)
