@@ -11,9 +11,18 @@ Describe "Activate-LlvmVsCode" {
             [CmdletBinding()]
             param (
                 [Parameter(Mandatory)]
-                [string]$Version
+                [string]$Version,
+                [string]$WorkingDirectory = $testDir
             )
-            . $scriptPath -Version $Version
+            # Ensure we're in the correct directory for the test
+            Push-Location
+            try {
+                Set-Location $WorkingDirectory
+                . $scriptPath -Version $Version
+            }
+            finally {
+                Pop-Location
+            }
         }
 
         #––– Test fixtures
@@ -64,12 +73,11 @@ Describe "Activate-LlvmVsCode" {
 
     Context "When executed outside VSCode workspace" {
         It "Should throw an error when not in VSCode workspace" {
-            Set-Location $env:USERPROFILE
-            Remove-Item -Path $vscodeDir -Recurse -Force -ErrorAction SilentlyContinue
-            { Test-ActivateLlvmVsCode -Version $testVersion } |
+            # Create a directory without .vscode
+            $tempDir = Join-Path $testDir 'no-vscode'
+            New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
+            { Test-ActivateLlvmVsCode -Version $testVersion -WorkingDirectory $tempDir } |
                 Should -Throw -ExpectedMessage '*VSCode workspace*'
-            Set-Location $testDir
-            New-Item -ItemType Directory -Path $vscodeDir -Force | Out-Null
         }
     }
 
