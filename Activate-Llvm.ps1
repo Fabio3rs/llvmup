@@ -8,17 +8,17 @@ param (
     [string]$Version
 )
 
-$toolchainsDir = Join-Path $env:USERPROFILE ".llvm\toolchains"
+$toolchainsDir = Join-Path $env:USERPROFILE ".llvm/toolchains"
 
 # If no version is specified, list installed versions
 if (-not $Version) {
-    Write-Output "Installed versions in $toolchainsDir:"
+    Write-Output "Installed versions in ${toolchainsDir}:"
     if (Test-Path $toolchainsDir) {
         Get-ChildItem -Directory $toolchainsDir | ForEach-Object {
             Write-Output "  - $($_.Name)"
         }
     } else {
-        Write-Output "No versions installed in $toolchainsDir."
+        Write-Output "No versions installed in ${toolchainsDir}."
     }
     return
 }
@@ -27,7 +27,7 @@ $llvmDir = Join-Path $toolchainsDir $Version
 
 # Check if the version is installed
 if (-not (Test-Path $llvmDir)) {
-    Write-Error "Version '$Version' is not installed in $toolchainsDir."
+    Write-Error "Version '$Version' is not installed in ${toolchainsDir}."
     return 1
 }
 
@@ -48,15 +48,15 @@ if (-not $env:_OLD_PATH) {
 }
 
 # Update PATH to include the selected LLVM's bin directory
-$env:PATH = "$($llvmDir)\bin;$env:PATH"
+$env:PATH = "$($llvmDir)/bin;$env:PATH"
 
 # Update compiler variables (CC and CXX)
-$env:CC = Join-Path $llvmDir "bin\clang.exe"
-$env:CXX = Join-Path $llvmDir "bin\clang++.exe"
+$env:CC = Join-Path $llvmDir "bin/clang.exe"
+$env:CXX = Join-Path $llvmDir "bin/clang++.exe"
 
 # Update LD if lld exists
-if (Test-Path (Join-Path $llvmDir "bin\lld.exe")) {
-    $env:LD = Join-Path $llvmDir "bin\lld.exe"
+if (Test-Path (Join-Path $llvmDir "bin/lld.exe")) {
+    $env:LD = Join-Path $llvmDir "bin/lld.exe"
 }
 
 # Modify the prompt to indicate active LLVM version

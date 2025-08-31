@@ -7,27 +7,29 @@ param (
     [string]$Version
 )
 
-# Check if already activated
-if ($env:LLVM_ACTIVE_VERSION) {
-    Write-Error "LLVM version '$env:LLVM_ACTIVE_VERSION' is already active. Please deactivate it first."
-    return 1
+# Check if USERPROFILE is set (required for cross-platform compatibility)
+if (-not $env:USERPROFILE) {
+    throw "USERPROFILE environment variable is not set. This script requires a user profile directory."
 }
 
-$toolchainsDir = Join-Path $env:USERPROFILE ".llvm\toolchains"
+# Check if already activated
+if ($env:LLVM_ACTIVE_VERSION) {
+    throw "LLVM version '$env:LLVM_ACTIVE_VERSION' is already active. Please deactivate it first."
+}
+
+$toolchainsDir = Join-Path $env:USERPROFILE ".llvm/toolchains"
 $llvmDir = Join-Path $toolchainsDir $Version
 $binDir = Join-Path $llvmDir "bin"
 
 # Check if the version is installed
 if (-not (Test-Path $llvmDir)) {
-    Write-Error "Version '$Version' is not installed in $toolchainsDir."
-    return 1
+    throw "Version '$Version' is not installed in $toolchainsDir."
 }
 
 # Check if we're in a VSCode workspace
 $vscodeDir = ".vscode"
 if (-not (Test-Path $vscodeDir)) {
-    Write-Error "Not in a VSCode workspace. Please run this script from your project root."
-    return 1
+    throw "Not in a VSCode workspace. Please run this script from your project root."
 }
 
 # Create settings.json if it doesn't exist
@@ -42,7 +44,7 @@ $settings = Get-Content $settingsPath | ConvertFrom-Json
 # Update settings
 $settings | Add-Member -NotePropertyName "cmake.additionalCompilerSearchDirs" -NotePropertyValue @("$binDir") -Force
 $settings | Add-Member -NotePropertyName "clangd.path" -NotePropertyValue (Join-Path $binDir "clangd.exe") -Force
-$settings | Add-Member -NotePropertyName "clangd.fallbackFlags" -NotePropertyValue @("-I$($llvmDir)\include") -Force
+$settings | Add-Member -NotePropertyName "clangd.fallbackFlags" -NotePropertyValue @("-I$($llvmDir)/include") -Force
 
 # Update cmake.configureEnvironment
 if (-not $settings.'cmake.configureEnvironment') {
