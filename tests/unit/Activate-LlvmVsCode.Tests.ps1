@@ -18,7 +18,14 @@ Describe "Activate-LlvmVsCode" {
             Push-Location
             try {
                 Set-Location $WorkingDirectory
-                . $scriptPath -Version $Version
+                # Use try-catch to properly handle exceptions from dot-sourced script
+                try {
+                    . $scriptPath -Version $Version
+                }
+                catch {
+                    # Re-throw the exception to ensure it can be caught by Should -Throw
+                    throw $_.Exception.Message
+                }
             }
             finally {
                 Pop-Location
@@ -28,7 +35,7 @@ Describe "Activate-LlvmVsCode" {
         #––– Test fixtures
         $Script:testDir       = 'TestDrive:\test'
         $Script:vscodeDir     = Join-Path $testDir '.vscode'
-        $Script:toolchainsDir = Join-Path $testDir '.llvm\toolchains'
+        $Script:toolchainsDir = Join-Path $testDir '.llvm/toolchains'
         $Script:testVersion   = 'llvmorg-15.0.0'
         $Script:versionDir    = Join-Path $toolchainsDir $testVersion
         $Script:binDir        = Join-Path $versionDir 'bin'
@@ -47,6 +54,10 @@ Describe "Activate-LlvmVsCode" {
         $script:originalCXX   = $env:CXX
         $script:originalLD    = $env:LD
         $script:originalPWD   = $PWD
+        $script:originalVSCodeCWD = $env:VSCODE_CWD
+
+        #––– Mock VSCode environment variables
+        $env:VSCODE_CWD = $testDir
 
         #––– Change to test directory to simulate VSCode workspace
         Set-Location $testDir
@@ -59,6 +70,7 @@ Describe "Activate-LlvmVsCode" {
         $env:CXX  = $script:originalCXX
         $env:LD   = $script:originalLD
         $env:LLVM_ACTIVE_VERSION = $null
+        $env:VSCODE_CWD = $script:originalVSCodeCWD
         Set-Location $script:originalPWD
 
         Remove-Item -Path $script:testDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -73,11 +85,19 @@ Describe "Activate-LlvmVsCode" {
 
     Context "When executed outside VSCode workspace" {
         It "Should throw an error when not in VSCode workspace" {
-            # Create a directory without .vscode
+            # Create a directory without .vscode and clear VSCode environment
             $tempDir = Join-Path $testDir 'no-vscode'
             New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
-            { Test-ActivateLlvmVsCode -Version $testVersion -WorkingDirectory $tempDir } |
-                Should -Throw -ExpectedMessage '*VSCode workspace*'
+            # Temporarily clear VSCode environment variables to simulate non-VSCode environment
+            $originalVSCodeCWD = $env:VSCODE_CWD
+            $env:VSCODE_CWD = $null
+            try {
+                { Test-ActivateLlvmVsCode -Version $testVersion -WorkingDirectory $tempDir } |
+                    Should -Throw -ExpectedMessage '*VSCode workspace*'
+            }
+            finally {
+                $env:VSCODE_CWD = $originalVSCodeCWD
+            }
         }
     }
 
