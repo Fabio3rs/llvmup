@@ -20,6 +20,8 @@ This is a proof-of-concept test version and may contain bugs. Use at your own ri
 ### Linux
 
 #### 1. Installation
+
+##### Standard Installation
 ```bash
 # Clone the repository
 git clone https://github.com/Fabio3rs/llvmup.git
@@ -31,6 +33,23 @@ cd llvmup
 # Restart terminal or reload profile
 source ~/.bashrc
 ```
+
+##### Custom Installation Paths
+```bash
+# Install to custom location
+LLVMUP_PREFIX=/opt/llvmup ./install.sh
+
+# System-wide installation (requires sudo)
+LLVMUP_SYSTEM_INSTALL=1 ./install.sh
+
+# User installation with custom directory
+LLVMUP_INSTALL_DIR=$HOME/bin ./install.sh
+
+# Interactive installation helper
+./install-examples.sh
+```
+
+For advanced installation options and troubleshooting, see [INSTALL.md](INSTALL.md).
 
 #### 2. Installing an LLVM version
 ```bash
@@ -137,6 +156,48 @@ llvm-help                  # Show complete usage guide
 ```bash
 llvm-vscode-activate <ver>  # Configure VSCode integration
 ```
+
+## ⚙️ Installation Configuration
+
+LLVMUP supports flexible installation paths through environment variables:
+
+### Environment Variables
+```bash
+# Installation prefix (default: ~/.local)
+LLVMUP_PREFIX=/opt/llvmup
+
+# Specific installation directory (overrides PREFIX)
+LLVMUP_INSTALL_DIR=$HOME/bin
+
+# Shell completion directory
+LLVMUP_COMPLETION_DIR=/usr/share/bash-completion/completions
+
+# System-wide installation (requires sudo)
+LLVMUP_SYSTEM_INSTALL=1
+```
+
+### Installation Examples
+```bash
+# User installation (default)
+./install.sh
+
+# Custom user location
+LLVMUP_PREFIX=$HOME/tools ./install.sh
+
+# System-wide installation
+sudo LLVMUP_SYSTEM_INSTALL=1 ./install.sh
+
+# Custom installation directory
+LLVMUP_INSTALL_DIR=/usr/local/bin ./install.sh
+```
+
+### Interactive Helper
+Use the interactive installation helper for guided setup:
+```bash
+./install-examples.sh
+```
+
+For complete installation documentation, see [INSTALL.md](INSTALL.md).
 
 ### 🎯 Intuitive Visual Interface
 
@@ -341,26 +402,39 @@ To facilitate the use of LLVM version manager tools from anywhere, an installati
    - Use `llvm-list` to see all installed versions
    - Use `llvm-help` for complete usage guide
 
-## 🗑️ Uninstallation Script (uninstall.sh)
+## 🗑️ Uninstallation
 
 For complete removal of the LLVM manager, an uninstallation script (`uninstall.sh`) is provided. This script removes all installed components and cleans up profile configurations.
 
-### How to Use the Uninstallation Script
+### Standard Uninstallation
+```bash
+./uninstall.sh
+```
 
-1. **Run the Uninstaller:**
-   ```bash
-   ./uninstall.sh
-   ```
-   This will:
-   - Remove all LLVM manager scripts from `$HOME/.local/bin`
-   - Remove bash completion files
-   - Clean up shell profile configuration (removes LLVM functions loading from `.bashrc` or `.profile`)
-   - Provide instructions for manual cleanup if needed
+### Custom Uninstallation
+If you used custom installation paths, use the same environment variables:
+```bash
+# Uninstall from custom prefix
+LLVMUP_PREFIX=/opt/llvmup ./uninstall.sh
 
-2. **Note:** The uninstaller preserves your LLVM toolchain installations in `~/.llvm/toolchains/`. If you want to completely remove all LLVM installations, you can manually run:
-   ```bash
-   rm -rf ~/.llvm
-   ```
+# System-wide uninstallation (requires sudo)
+sudo LLVMUP_SYSTEM_INSTALL=1 ./uninstall.sh
+
+# Custom installation directory
+LLVMUP_INSTALL_DIR=/usr/local/bin ./uninstall.sh
+```
+
+### What Gets Removed
+The uninstaller will:
+- Remove all LLVM manager scripts from the installation directory
+- Remove bash completion files
+- Clean up shell profile configuration (with backup)
+- Provide instructions for manual cleanup if needed
+
+**Note:** The uninstaller preserves your LLVM toolchain installations in `~/.llvm/toolchains/`. To completely remove all LLVM installations:
+```bash
+rm -rf ~/.llvm
+```
 
 ## 🪟 Windows Scripts
 
