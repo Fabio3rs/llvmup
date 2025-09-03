@@ -205,14 +205,50 @@ llvm-list() {
     echo "╰────────────────────────────────────────────────────────────╯"
 }
 
-# Completion function for llvm-activate and llvm-vscode-activate
+# Enhanced completion function for llvm-activate and llvm-vscode-activate
 _llvm_complete_versions() {
     local toolchains_dir="$HOME/.llvm/toolchains"
     local cur="${COMP_WORDS[COMP_CWORD]}"
 
     if [ -d "$toolchains_dir" ]; then
         local versions=$(find "$toolchains_dir" -maxdepth 1 -type d -exec basename {} \; | grep -v "^toolchains$" | sort)
+
+        # Add context information for better UX
+        if [ -z "$versions" ]; then
+            # Show helpful message when no versions installed
+            echo >&2
+            echo "💡 No LLVM versions installed yet. Use 'llvmup install' to install versions." >&2
+            return 0
+        fi
+
+        # Check for default and active versions to provide better context
+        local default_version=""
+        local active_version="$_ACTIVE_LLVM"
+
+        if [ -L "$HOME/.llvm/default" ]; then
+            default_version=$(basename "$(readlink "$HOME/.llvm/default" 2>/dev/null)" 2>/dev/null)
+        fi
+
+        # Show status indicators in stderr (doesn't affect completion)
+        if [ "$COMP_CWORD" -eq 1 ] && [ ${#COMP_WORDS[@]} -eq 2 ] && [ -z "$cur" ]; then
+            echo >&2
+            echo "💡 Available versions:" >&2
+            while IFS= read -r version; do
+                local status=""
+                if [ "$version" = "$default_version" ]; then
+                    status="⭐ (default)"
+                elif [ "$version" = "$active_version" ]; then
+                    status="🟢 (active)"
+                fi
+                echo "   📦 $version $status" >&2
+            done <<< "$versions"
+            echo >&2
+        fi
+
         COMPREPLY=($(compgen -W "$versions" -- "$cur"))
+    else
+        echo >&2
+        echo "💡 LLVM toolchains directory not found. Install LLVM versions first." >&2
     fi
 }
 
