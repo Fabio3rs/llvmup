@@ -1,0 +1,34 @@
+# .llvmup-config - LLVM project configuration file
+#
+# This file defines LLVM version and build settings for the current project
+# Place it in your project root directory
+#
+# Format: INI-style configuration
+
+[version]
+# Default LLVM version to use for this project
+default = "llvmorg-21.1.0"
+
+[build]
+# Custom name for the installation
+name = "21.1.0-release"
+
+# CMake flags for custom builds (array format)
+cmake_flags = [
+  "-DCMAKE_BUILD_TYPE=Release",
+  "-DLLVM_ENABLE_PROJECTS=clang;lld;lldb",
+  "-DLLVM_ENABLE_RUNTIMES=libcxx;libcxxabi"
+]
+
+[components]
+# Components to include in custom builds (array format)
+include = ["clang", "lld", "lldb", "compiler-rt"]
+
+[profile]
+# Build profile: minimal, full, custom
+type = "full"
+
+[project]
+# Project-specific settings
+auto_activate = true
+cmake_preset = "Release"

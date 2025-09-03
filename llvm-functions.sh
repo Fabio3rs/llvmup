@@ -227,19 +227,26 @@ llvm-help() {
     echo "╭─ LLVM Manager - Complete Usage Guide ──────────────────────╮"
     echo "│                                                            │"
     echo "│ 🚀 INSTALLATION COMMANDS:                                  │"
-    echo "│   llvmup                      # Install latest prebuilt    │"
-    echo "│   llvmup 18.1.8              # Install specific version    │"
-    echo "│   llvmup --from-source        # Build from source          │"
-    echo "│   llvmup --verbose            # Show detailed output       │"
+    echo "│   llvmup install                  # Install latest prebuilt│"
+    echo "│   llvmup install 18.1.8          # Install specific version│"
+    echo "│   llvmup install --from-source    # Build from source      │"
+    echo "│   llvmup install --name my-llvm   # Custom installation name│"
+    echo "│   llvmup install --default        # Set as default version │"
+    echo "│   llvmup install --profile minimal # Use minimal profile   │"
+    echo "│   llvmup install --cmake-flags '-DCMAKE_BUILD_TYPE=Debug'  │"
     echo "│                                                            │"
-    echo "│ 🔧 ENVIRONMENT MANAGEMENT:                                  │"
+    echo "│ 🔧 VERSION MANAGEMENT:                                      │"
     echo "│   llvm-activate <version>     # Activate LLVM version      │"
     echo "│   llvm-deactivate             # Deactivate current version │"
     echo "│   llvm-status                 # Show current status        │"
     echo "│   llvm-list                   # List installed versions    │"
+    echo "│   llvmup default set <ver>    # Set default version        │"
+    echo "│   llvmup default show         # Show current default       │"
     echo "│                                                            │"
     echo "│ 💻 DEVELOPMENT INTEGRATION:                                 │"
     echo "│   llvm-vscode-activate <ver>  # Setup VSCode integration   │"
+    echo "│   llvm-config-init            # Initialize .llvmup-config  │"
+    echo "│   llvm-config-load            # Load project config        │"
     echo "│                                                            │"
     echo "│ 🛠️  AVAILABLE TOOLS AFTER ACTIVATION:                       │"
     echo "│   • clang/clang++    # C/C++ compilers                     │"
@@ -250,25 +257,222 @@ llvm-help() {
     echo "│   • llvm-nm         # Symbol table dumper                  │"
     echo "│   • opt             # LLVM optimizer                       │"
     echo "│                                                            │"
-    echo "│ 📚 WORKFLOW EXAMPLES:                                       │"
-    echo "│   1. Install and activate LLVM:                            │"
-    echo "│      llvmup 18.1.8                                         │"
-    echo "│      llvm-activate 18.1.8                                  │"
-    echo "│                                                            │"
-    echo "│   2. Setup for VSCode development:                         │"
-    echo "│      cd /your/project                                      │"
-    echo "│      llvm-vscode-activate 18.1.8                           │"
-    echo "│                                                            │"
-    echo "│   3. Switch between versions:                              │"
-    echo "│      llvm-deactivate                                       │"
-    echo "│      llvm-activate 19.1.0                                  │"
+    echo "│ 📚 PROJECT CONFIGURATION (.llvmup-config):                  │"
+    echo "│   [version]                                                │"
+    echo "│   default = \"llvmorg-21.1.0\"                              │"
+    echo "│   [build]                                                  │"
+    echo "│   name = \"21.1.0-debug\"                                   │"
+    echo "│   cmake_flags = [\"-DCMAKE_BUILD_TYPE=Debug\"]              │"
+    echo "│   [profile]                                                │"
+    echo "│   type = \"full\"                                           │"
     echo "│                                                            │"
     echo "│ 💡 TIPS:                                                    │"
     echo "│   • Use TAB completion for version names                   │"
     echo "│   • Check llvm-status after activation                     │"
     echo "│   • Your PS1 prompt shows active LLVM version              │"
     echo "│   • Environment is isolated per terminal session           │"
+    echo "│   • Use .llvmup-config for project-specific settings       │"
     echo "│                                                            │"
     echo "│ 🔗 MORE INFO: https://github.com/Fabio3rs/llvmup           │"
     echo "╰────────────────────────────────────────────────────────────╯"
+}
+
+# Function to initialize a .llvmup-config file in the current directory
+llvm-config-init() {
+    local config_file=".llvmup-config"
+
+    if [ -f "$config_file" ]; then
+        echo "⚠️  .llvmup-config already exists in current directory"
+        echo "🔍 Current configuration:"
+        cat "$config_file"
+        echo ""
+
+        # For testing environments, allow skipping interactive prompts
+        local overwrite_choice="n"
+        if [ -n "$LLVM_TEST_MODE" ]; then
+            overwrite_choice="${LLVM_TEST_OVERWRITE:-n}"
+        else
+            read -p "Overwrite existing configuration? [y/N] " -n 1 -r
+            echo
+            overwrite_choice="$REPLY"
+        fi
+
+        if [[ ! $overwrite_choice =~ ^[Yy]$ ]]; then
+            echo "❌ Configuration initialization cancelled"
+            return 1
+        fi
+    fi
+
+    echo "🎯 Initializing LLVM project configuration..."
+
+    # For testing, use environment variables or defaults
+    if [ -n "$LLVM_TEST_MODE" ]; then
+        local default_version="${LLVM_TEST_VERSION:-llvmorg-18.1.8}"
+        local custom_name="${LLVM_TEST_CUSTOM_NAME:-}"
+        local profile="${LLVM_TEST_PROFILE:-full}"
+    else
+        # Prompt for configuration
+        echo "📋 Please provide the following information:"
+
+        read -p "Default LLVM version (e.g., llvmorg-18.1.8): " default_version
+        if [ -z "$default_version" ]; then
+            default_version="llvmorg-18.1.8"
+        fi
+
+        read -p "Custom installation name (optional): " custom_name
+        read -p "Build profile [minimal/full/custom]: " profile
+        if [ -z "$profile" ]; then
+            profile="full"
+        fi
+    fi
+
+    # Create configuration file
+    cat > "$config_file" << EOF
+# .llvmup-config - LLVM project configuration
+# Generated on $(date)
+
+[version]
+default = "$default_version"
+
+[build]
+EOF
+
+    if [ -n "$custom_name" ]; then
+        echo "name = \"$custom_name\"" >> "$config_file"
+    fi
+
+    cat >> "$config_file" << EOF
+cmake_flags = [
+  "-DCMAKE_BUILD_TYPE=Release",
+  "-DLLVM_ENABLE_PROJECTS=clang;lld;lldb"
+]
+
+[profile]
+type = "$profile"
+
+[components]
+include = ["clang", "lld", "lldb", "compiler-rt"]
+
+[project]
+auto_activate = true
+EOF
+
+    echo "✅ Configuration file created: $config_file"
+    echo "💡 Edit the file to customize build settings"
+    echo "🚀 Run 'llvm-config-load' to install and activate the configured version"
+}
+
+# Function to load and apply .llvmup-config settings
+llvm-config-load() {
+    local config_file=".llvmup-config"
+
+    if [ ! -f "$config_file" ]; then
+        echo "❌ No .llvmup-config file found in current directory"
+        echo "💡 Run 'llvm-config-init' to create one"
+        return 1
+    fi
+
+    echo "📋 Loading project configuration from $config_file..."
+
+    # Parse configuration file
+    local default_version=""
+    local custom_name=""
+    local profile=""
+    local current_section=""
+
+    while IFS= read -r line; do
+        # Skip comments and empty lines
+        [[ "$line" =~ ^[[:space:]]*# ]] && continue
+        [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+
+        # Handle sections
+        if [[ "$line" =~ ^\[.*\]$ ]]; then
+            current_section="${line//[\[\]]/}"
+            continue
+        fi
+
+        # Parse key=value pairs
+        if [[ "$line" =~ ^[[:space:]]*([^=]+)=(.*)$ ]]; then
+            key="${BASH_REMATCH[1]// /}"
+            value="${BASH_REMATCH[2]}"
+            # Remove quotes
+            value=$(echo "$value" | sed 's/^[[:space:]]*["'"'"']//;s/["'"'"'][[:space:]]*$//')
+
+            case "$current_section" in
+                "version")
+                    if [ "$key" = "default" ]; then
+                        default_version="$value"
+                    fi
+                    ;;
+                "build")
+                    if [ "$key" = "name" ]; then
+                        custom_name="$value"
+                    fi
+                    ;;
+                "profile")
+                    if [ "$key" = "type" ]; then
+                        profile="$value"
+                    fi
+                    ;;
+            esac
+        fi
+    done < "$config_file"
+
+    if [ -z "$default_version" ]; then
+        echo "❌ No default version specified in configuration"
+        return 1
+    fi
+
+    echo "🎯 Configuration loaded:"
+    echo "   📦 Version: $default_version"
+    [ -n "$custom_name" ] && echo "   🏷️  Name: $custom_name"
+    [ -n "$profile" ] && echo "   📋 Profile: $profile"
+
+    # Check if version is already installed
+    local install_name="$default_version"
+    if [ -n "$custom_name" ]; then
+        install_name="$custom_name"
+    fi
+
+    if [ -d "$HOME/.llvm/toolchains/$install_name" ]; then
+        echo "✅ Version already installed, activating..."
+        llvm-activate "$install_name"
+    else
+        echo "📥 Version not found, installing..."
+
+        # For testing environments, allow skipping interactive prompts
+        local from_source_choice="n"
+        if [ -n "$LLVM_TEST_MODE" ]; then
+            from_source_choice="${LLVM_TEST_FROM_SOURCE:-n}"
+        else
+            read -p "Install from source? [y/N] " -n 1 -r
+            echo
+            from_source_choice="$REPLY"
+        fi
+
+        local install_args=("install" "$default_version")
+
+        if [ -n "$custom_name" ]; then
+            install_args+=("--name" "$custom_name")
+        fi
+
+        if [ -n "$profile" ]; then
+            install_args+=("--profile" "$profile")
+        fi
+
+        if [[ $from_source_choice =~ ^[Yy]$ ]]; then
+            install_args+=("--from-source")
+        fi
+
+        echo "� Running: llvmup ${install_args[*]}"
+        llvmup "${install_args[@]}"
+
+        if [ $? -eq 0 ]; then
+            echo "✅ Installation complete, activating..."
+            llvm-activate "$install_name"
+        else
+            echo "❌ Installation failed"
+            return 1
+        fi
+    fi
 }

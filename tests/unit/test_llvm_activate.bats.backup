@@ -1,0 +1,106 @@
+#!/usr/bin/env bats
+
+# Test setup for bash functions testing (using llvm-functions.sh)
+setup() {
+    # Create temporary test directories
+    export TEST_DIR=$(mktemp -d)
+    export HOME_BACKUP="$HOME"
+    export HOME="$TEST_DIR"
+    export TOOLCHAINS_DIR="$TEST_DIR/.llvm/toolchains"
+    export TEST_VERSION="llvmorg-19.1.7"
+    export TEST_VERSION2="llvmorg-20.1.0"
+
+    # Create mock LLVM toolchains
+    mkdir -p "$TOOLCHAINS_DIR/$TEST_VERSION/bin"
+    mkdir -p "$TOOLCHAINS_DIR/$TEST_VERSION2/bin"
+
+    # Create mock LLVM binaries
+    for binary in clang clang++ clangd lld llvm-config lldb; do
+        echo '#!/bin/bash
+echo "Mock '$binary' version 19.1.7"' > "$TOOLCHAINS_DIR/$TEST_VERSION/bin/$binary"
+        echo '#!/bin/bash
+echo "Mock '$binary' version 20.1.0"' > "$TOOLCHAINS_DIR/$TEST_VERSION2/bin/$binary"
+        chmod +x "$TOOLCHAINS_DIR/$TEST_VERSION/bin/$binary"
+        chmod +x "$TOOLCHAINS_DIR/$TEST_VERSION2/bin/$binary"
+    done
+
+    # Special case for lld (it's the binary name, not ld.lld)
+    echo '#!/bin/bash
+echo "Mock lld version 19.1.7"' > "$TOOLCHAINS_DIR/$TEST_VERSION/bin/lld"
+    echo '#!/bin/bash
+echo "Mock lld version 20.1.0"' > "$TOOLCHAINS_DIR/$TEST_VERSION2/bin/lld"
+    chmod +x "$TOOLCHAINS_DIR/$TEST_VERSION/bin/lld"
+    chmod +x "$TOOLCHAINS_DIR/$TEST_VERSION2/bin/lld"
+
+    # Create mock scripts in ~/.local/bin for the functions to find
+    mkdir -p "$TEST_DIR/.local/bin"
+
+    # Copy real scripts to mock location
+    cp "$BATS_TEST_DIRNAME/../../llvm-activate" "$TEST_DIR/.local/bin/"
+    cp "$BATS_TEST_DIRNAME/../../llvm-deactivate" "$TEST_DIR/.local/bin/"
+    cp "$BATS_TEST_DIRNAME/../../llvm-vscode-activate" "$TEST_DIR/.local/bin/"
+
+    # Source the functions
+    source "$BATS_TEST_DIRNAME/../../llvm-functions.sh"
+}
+
+# Test cleanup
+teardown() {
+    # Restore original environment
+    export HOME="$HOME_BACKUP"
+
+    # Clean up test directory
+    if [ -d "$TEST_DIR" ]; then
+        rm -rf "$TEST_DIR" 2>/dev/null || true
+    fi
+}
+
+@test "llvm-activate function shows usage when no argument provided" {
+    run llvm-activate
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"Usage: llvm-activate <version>"* ]]
+    [[ "$output" == *"$TEST_VERSION"* ]]
+}
+
+@test "llvm-activate function fails with non-existent version" {
+    run llvm-activate "nonexistent-version"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"not installed"* ]] || [[ "$output" == *"Error"* ]]
+}
+
+@test "llvm-activate function activates existing version successfully" {
+    # Test activation in a subshell to contain environment changes
+    (
+        llvm-activate "$TEST_VERSION"
+        result=$?
+        # Check that it succeeded
+        [ "$result" -eq 0 ]
+        # Check that environment variables are set
+        [[ "$PATH" == *"$TOOLCHAINS_DIR/$TEST_VERSION/bin"* ]]
+    )
+}
+
+@test "llvm-deactivate function works" {
+    # Test in a subshell
+    (
+        # First activate
+        llvm-activate "$TEST_VERSION"
+        # Then deactivate
+        llvm-deactivate
+        result=$?
+        [ "$result" -eq 0 ]
+    )
+}
+
+@test "llvm-status shows no active version initially" {
+    run llvm-status
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"No LLVM version is currently active"* ]]
+}
+
+@test "llvm-list shows installed versions" {
+    run llvm-list
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"$TEST_VERSION"* ]]
+    [[ "$output" == *"$TEST_VERSION2"* ]]
+} 

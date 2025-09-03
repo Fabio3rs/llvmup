@@ -1,0 +1,12 @@
+{
+  "cmake.additionalCompilerSearchDirs": [
+    "/home/fabio/.llvm/toolchains/source-llvmorg-20.1.0/bin"
+  ],
+  "clangd.path": "/home/fabio/.llvm/toolchains/source-llvmorg-20.1.0/bin/clangd",
+  "clangd.fallbackFlags": [
+    "-isystem /home/fabio/.llvm/toolchains/source-llvmorg-20.1.0/lib/clang/20/include"
+  ],
+  "cmake.configureEnvironment": {
+    "PATH": "/home/fabio/.llvm/toolchains/source-llvmorg-20.1.0/bin:/home/fabio/.node/bin:/home/fabio/.npm-global/bin:/home/fabio/.local/bin/zig:/home/fabio/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin"
+  }
+}

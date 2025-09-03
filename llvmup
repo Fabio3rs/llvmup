@@ -18,9 +18,79 @@ set -e
 SCRIPT_DIR="$(dirname "$0")"
 
 # Default values
+COMMAND=""
 FROM_SOURCE=0
 VERBOSE=0
 QUIET=0
+CMAKE_FLAGS=()
+CUSTOM_NAME=""
+SET_DEFAULT=0
+PROFILE=""
+COMPONENTS=()
+
+# Command handling
+handle_default_command() {
+    local sub_command="$1"
+    shift
+
+    case "$sub_command" in
+        set)
+            if [ $# -eq 0 ]; then
+                log_error "Missing version argument for 'default set'"
+                exit 1
+            fi
+            set_default_version "$1"
+            ;;
+        show)
+            show_default_version
+            ;;
+        *)
+            log_error "Unknown default subcommand: $sub_command"
+            log_info "Available subcommands: set, show"
+            exit 1
+            ;;
+    esac
+}
+
+set_default_version() {
+    local version="$1"
+    local default_link="$HOME/.llvm/default"
+    local version_path="$HOME/.llvm/toolchains/$version"
+
+    if [ ! -d "$version_path" ]; then
+        log_error "Version $version is not installed"
+        log_info "Use 'llvm-list' to see installed versions"
+        exit 1
+    fi
+
+    # Remove existing default link if it exists
+    if [ -L "$default_link" ] || [ -e "$default_link" ]; then
+        rm -f "$default_link"
+    fi
+
+    # Create new symbolic link
+    ln -s "$version_path" "$default_link"
+    log_info "✅ Default LLVM version set to: $version"
+    log_info "💡 Use 'llvm-activate \$(\$HOME/.llvm/default/bin/clang --version | head -1)' to activate"
+}
+
+show_default_version() {
+    local default_link="$HOME/.llvm/default"
+
+    if [ -L "$default_link" ] && [ -e "$default_link" ]; then
+        local target=$(readlink "$default_link")
+        local version=$(basename "$target")
+        log_info "📦 Current default LLVM version: $version"
+
+        if [ -x "$default_link/bin/clang" ]; then
+            local clang_version=$("$default_link/bin/clang" --version | head -1)
+            log_info "🔍 Clang version: $clang_version"
+        fi
+    else
+        log_info "❌ No default LLVM version is set"
+        log_info "💡 Use 'llvmup default set <version>' to set one"
+    fi
+}
 
 # Logging functions
 log_verbose() {
@@ -41,20 +111,36 @@ log_error() {
 
 usage() {
     cat <<EOF
-Usage: llvmup [--from-source] [-v|--verbose] [-q|--quiet] [-h|--help] [args...]
+Usage: llvmup [install] [OPTIONS] [VERSION]
 
-Options:
-  --from-source    Build LLVM from source instead of installing a pre-built release.
-  -v, --verbose    Enable verbose output for debugging.
-  -q, --quiet      Suppress non-essential output.
-  -h, --help       Show this help message.
+Commands:
+  install          Install an LLVM version (default command)
+  default          Manage default LLVM version
+  help             Show this help message
+
+Install Options:
+  --from-source    Build LLVM from source instead of installing a pre-built release
+  -c, --cmake-flags "<FLAGS>"  Pass additional CMake flags (can be repeated)
+  -n, --name <NAME>           Custom name for installation (e.g., 21.1.0-debug)
+  -d, --default               Set as global default version
+  -p, --profile <PROFILE>     Build profile: minimal, full, custom
+  --component <COMPONENT>     Install specific components (can be repeated)
+  -v, --verbose               Enable verbose output for debugging
+  -q, --quiet                 Suppress non-essential output
+  -h, --help                  Show this help message
 
 Examples:
-  llvmup                         # Install a pre-built LLVM release
-  llvmup --from-source          # Build LLVM from source
-  llvmup -v                     # Install with verbose output
-  llvmup --from-source -v       # Build from source with verbose output
-  llvmup -q 18.1.0              # Install specific version quietly
+  llvmup install                                    # Install latest pre-built
+  llvmup install 18.1.8                           # Install specific version
+  llvmup install --from-source                    # Build from source
+  llvmup install llvmorg-21.1.0 --from-source \\
+    -c "-DCMAKE_BUILD_TYPE=Debug" \\
+    -c "-DLLVM_ENABLE_PROJECTS=clang;lld" \\
+    -n "21.1.0-debug" --default                   # Custom build with name
+  llvmup install --profile minimal 18.1.8        # Install minimal profile
+  llvmup install --component clang --component lldb  # Specific components
+  llvmup default set 18.1.8                      # Set default version
+  llvmup default show                             # Show current default
 EOF
     exit 1
 }
@@ -62,12 +148,94 @@ EOF
 # Parse command line arguments
 remaining_args=()
 
+# Parse main command first
+if [[ $# -gt 0 ]] && [[ "$1" != -* ]]; then
+    case "$1" in
+        install|default|help)
+            COMMAND="$1"
+            shift
+            ;;
+        *)
+            # Default to install command if first arg is not a command
+            COMMAND="install"
+            ;;
+    esac
+else
+    # Default to install command
+    COMMAND="install"
+fi
+
+# Handle non-install commands early
+case "$COMMAND" in
+    help)
+        usage
+        ;;
+    default)
+        if [ $# -eq 0 ]; then
+            show_default_version
+        else
+            handle_default_command "$@"
+        fi
+        exit 0
+        ;;
+esac
+
+# Parse install command arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
         --from-source)
             FROM_SOURCE=1
             log_verbose "Option: Build from source enabled"
             shift
+            ;;
+        -c|--cmake-flags)
+            if [ $# -lt 2 ]; then
+                log_error "Option --cmake-flags requires an argument"
+                exit 1
+            fi
+            CMAKE_FLAGS+=("$2")
+            log_verbose "Option: CMake flags added: $2"
+            shift 2
+            ;;
+        -n|--name)
+            if [ $# -lt 2 ]; then
+                log_error "Option --name requires an argument"
+                exit 1
+            fi
+            CUSTOM_NAME="$2"
+            log_verbose "Option: Custom name set: $2"
+            shift 2
+            ;;
+        -d|--default)
+            SET_DEFAULT=1
+            log_verbose "Option: Set as default enabled"
+            shift
+            ;;
+        -p|--profile)
+            if [ $# -lt 2 ]; then
+                log_error "Option --profile requires an argument"
+                exit 1
+            fi
+            case "$2" in
+                minimal|full|custom)
+                    PROFILE="$2"
+                    log_verbose "Option: Profile set: $2"
+                    ;;
+                *)
+                    log_error "Invalid profile: $2 (must be: minimal, full, custom)"
+                    exit 1
+                    ;;
+            esac
+            shift 2
+            ;;
+        --component)
+            if [ $# -lt 2 ]; then
+                log_error "Option --component requires an argument"
+                exit 1
+            fi
+            COMPONENTS+=("$2")
+            log_verbose "Option: Component added: $2"
+            shift 2
             ;;
         -v|--verbose)
             VERBOSE=1
@@ -112,13 +280,39 @@ if [ "$QUIET" -eq 1 ]; then
     script_args+=("--quiet")
 fi
 
-# Add remaining arguments
+# Add custom name if specified
+if [ -n "$CUSTOM_NAME" ]; then
+    script_args+=("--name" "$CUSTOM_NAME")
+fi
+
+# Add profile if specified
+if [ -n "$PROFILE" ]; then
+    script_args+=("--profile" "$PROFILE")
+fi
+
+# Add cmake flags
+for flag in "${CMAKE_FLAGS[@]}"; do
+    script_args+=("--cmake-flags" "$flag")
+done
+
+# Add components
+for component in "${COMPONENTS[@]}"; do
+    script_args+=("--component" "$component")
+done
+
+# Add set default flag
+if [ "$SET_DEFAULT" -eq 1 ]; then
+    script_args+=("--default")
+fi
+
+# Add remaining arguments (version, etc.)
 script_args+=("${remaining_args[@]}")
 
 log_verbose "Arguments to pass to target script: ${script_args[*]}"
 
+# Execute appropriate script based on source flag
 if [ "$FROM_SOURCE" -eq 1 ]; then
-    log_info "Building LLVM from source..."
+    log_info "Building LLVM from source with custom options..."
     log_verbose "Executing: $SCRIPT_DIR/llvm-build ${script_args[*]}"
     exec "$SCRIPT_DIR/llvm-build" "${script_args[@]}"
 else
