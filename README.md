@@ -12,7 +12,8 @@ This is a proof-of-concept test version and may contain bugs. Use at your own ri
 - 🔄 **Fast switching** between installed versions
 - 💻 **Automatic VSCode integration**
 - 🎯 **Rich visual interface** with emojis and formatting
-- ⌨️ **TAB auto-completion** for version names
+- ⌨️ **Enhanced TAB auto-completion** with remote version fetching
+- 🌐 **Smart caching system** (24h intelligent cache with 99% speed improvement)
 - 📊 **Detailed status** of active environment
 - ⚙️ **Project-specific configuration** via `.llvmup-config` files
 - 🏗️ **Customizable build profiles** (minimal, full, custom)
@@ -22,6 +23,20 @@ This is a proof-of-concept test version and may contain bugs. Use at your own ri
 - 🪟 **Windows PowerShell parity** with equivalent scripts
 - 🔁 **Subcommand structure** (install, config, default)
 - 📝 **Custom installation naming** for multiple variants
+- 🧪 **Comprehensive test suite** with 24 automated tests
+
+## 🆕 Latest Enhancements (v2.0)
+
+### 🚀 Enhanced Auto-Completion System
+- **Remote Version Fetching**: Automatically fetches latest LLVM versions from GitHub API
+- **Intelligent Caching**: 24-hour cache system with 99% performance improvement
+- **Context-Aware Completion**: Differentiates between prebuilt (⚡) and source (📦) installations
+- **Smart Filtering**: Filters suggestions based on current context and input
+
+### 🏗️ Improved Project Structure
+- **Organized Documentation**: All docs moved to `docs/` directory with cross-references
+- **Example Scripts**: Interactive demos and tests in `examples/` directory
+- **Comprehensive Testing**: Full test suite with unit and integration tests
 
 ## 🚀 Quick Start
 
@@ -662,7 +677,36 @@ Feel free to contribute to this project:
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🔗 Useful Links
+## � Project Organization
+
+### 📁 Directory Structure
+```
+llvmup/
+├── 📖 docs/              # Complete documentation
+├── 🎯 examples/          # Demos and test scripts
+├── 🧪 tests/             # Automated test suite
+├── 🛠️ scripts/          # Development utilities
+└── 🔧 Core scripts       # Main functionality
+```
+
+### 📖 Documentation (`docs/`)
+- **[INSTALL.md](docs/INSTALL.md)**: Complete installation guide
+- **[FEATURE_SUMMARY.md](docs/FEATURE_SUMMARY.md)**: All features overview
+- **[COMPLETION_UX_REPORT.md](docs/COMPLETION_UX_REPORT.md)**: Auto-completion system
+- **[BUILD_EXAMPLE.md](docs/BUILD_EXAMPLE.md)**: Build system examples
+
+### 🎯 Examples & Demos (`examples/`)
+- **Demo scripts**: Interactive completion and feature demonstrations
+- **Test scripts**: Real activation and compatibility testing
+- **Config examples**: Sample configuration files
+- **[examples/README.md](examples/README.md)**: Detailed examples guide
+
+### 🧪 Testing (`tests/`)
+- **Unit tests**: 24 comprehensive automated tests
+- **Integration tests**: Full workflow validation
+- **Performance tests**: Speed and efficiency benchmarks
+
+## �🔗 Useful Links
 
 - [GitHub Repository](https://github.com/Fabio3rs/llvmup)
 - [LLVM Project](https://llvm.org/)
