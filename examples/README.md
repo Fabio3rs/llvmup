@@ -10,6 +10,9 @@ This directory contains example scripts, demonstrations, and configuration files
 - **`test-completion-summary.sh`**: Detailed test suite summary for completion
 - **`test-completion.sh`**: Interactive completion testing script
 
+### Build System Demos
+- **`demo-libc-wno-error.sh`**: Demonstration of LIBC_WNO_ERROR flag control
+
 ### System Testing
 - **`test-activation-flow.sh`**: Test the activation/deactivation workflow
 - **`test-compatibility.sh`**: Test system compatibility and requirements
@@ -31,6 +34,9 @@ This directory contains example scripts, demonstrations, and configuration files
 
 # Test activation workflow
 ./examples/test-real-activation.sh
+
+# LIBC_WNO_ERROR flag control demo
+./examples/demo-libc-wno-error.sh
 ```
 
 ### Using Configuration Example
@@ -55,12 +61,11 @@ llvmup config load
 - 🏠 Local version management
 - ⭐ Default version indicators
 
-### System Capabilities
-- 🔄 Full activation/deactivation cycle
-- 🛠️ Build customization options
-- 📦 Version management
-- 🎨 Rich terminal output with colors and emojis
-- 🔧 Configuration file support
+### Build System Capabilities
+- � Build customization options
+- 🏗️ Profile selection (minimal, full, custom)
+- ⚙️ CMake flags and component selection
+- 🎛️ LIBC_WNO_ERROR flag control
 
 ## 💡 Tips
 

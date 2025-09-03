@@ -14,6 +14,12 @@ All notable changes to LLVMUP will be documented in this file.
 - **IMPROVED**: Performance optimization with minimal API calls
 - **IMPROVED**: Fallback to local versions when remote unavailable
 
+#### Build System Improvements
+- **NEW**: LIBC_WNO_ERROR flag control with `--disable-libc-wno-error` option
+- **NEW**: Configuration file support for LIBC_WNO_ERROR control
+- **IMPROVED**: Better CMake flag management and visibility
+- **IMPROVED**: Enhanced verbose logging for build configuration
+
 #### Project Organization
 - **NEW**: Comprehensive `docs/` directory with organized documentation
 - **NEW**: `examples/` directory with interactive demos and test scripts

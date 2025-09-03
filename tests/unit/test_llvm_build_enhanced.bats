@@ -172,7 +172,7 @@ teardown() {
     run bash "$ORIGINAL_DIR/llvm-build" --profile full "$LLVM_TEST_VERSION"
     assert_success
     assert_output --partial "Profile: full"
-    assert_output --partial "clang;clang-tools-extra;lld;lldb"
+    assert_output --partial "Projects: all"
 }
 
 @test "llvm-build loads config file when present" {

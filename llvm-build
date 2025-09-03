@@ -23,6 +23,7 @@ CUSTOM_NAME=""
 SET_DEFAULT=0
 PROFILE=""
 COMPONENTS=()
+DISABLE_LIBC_WNO_ERROR=0
 
 # Test mode support
 if [ "$LLVM_TEST_MODE" = "1" ]; then
@@ -127,6 +128,12 @@ load_config() {
                                     done
                                 fi
                                 ;;
+                            "disable_libc_wno_error")
+                                if [ "$value" = "true" ]; then
+                                    DISABLE_LIBC_WNO_ERROR=1
+                                    log_verbose "Config: LIBC_WNO_ERROR flag disabled"
+                                fi
+                                ;;
                         esac
                         ;;
                     "profile")
@@ -221,6 +228,11 @@ while [[ $# -gt 0 ]]; do
             log_verbose "Component added: $2"
             shift 2
             ;;
+        --disable-libc-wno-error)
+            DISABLE_LIBC_WNO_ERROR=1
+            log_verbose "LIBC_WNO_ERROR flag disabled"
+            shift
+            ;;
         --list-only)
             export LLVM_LIST_ONLY=1
             log_verbose "List-only mode enabled"
@@ -237,6 +249,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --default                       Set as global default"
             echo "  --profile <minimal|full|custom> Build profile"
             echo "  --component <COMPONENT>         Install specific component"
+            echo "  --disable-libc-wno-error        Disable LIBC_WNO_ERROR=ON flag"
             echo "  --list-only                     List available versions and exit"
             echo "  -h, --help                      Show this help"
             echo ""
@@ -388,6 +401,13 @@ if [ "${#CMAKE_FLAGS[@]}" -gt 0 ]; then
     log_info "   🔧 Custom CMake flags: ${CMAKE_FLAGS[*]}"
 fi
 
+# Show LIBC_WNO_ERROR flag status
+if [ "$DISABLE_LIBC_WNO_ERROR" -eq 0 ]; then
+    log_verbose "Added LIBC_WNO_ERROR=ON flag"
+else
+    log_verbose "Skipped LIBC_WNO_ERROR=ON flag (disabled)"
+fi
+
 # Check if we're in mock mode
 if [ -n "$LLVM_TEST_MODE" ]; then
     log_info "🧪 Test mode: Mock build completed successfully!"
@@ -431,8 +451,15 @@ cmake_args=(
     -DCMAKE_C_FLAGS="-march=native -mtune=native"
     -DCMAKE_CXX_FLAGS="-march=native -mtune=native"
     -DCMAKE_INSTALL_PREFIX="$install_dir"
-    -DLIBC_WNO_ERROR=ON
 )
+
+# Add LIBC_WNO_ERROR flag if not disabled
+if [ "$DISABLE_LIBC_WNO_ERROR" -eq 0 ]; then
+    cmake_args+=(-DLIBC_WNO_ERROR=ON)
+    log_verbose "Added LIBC_WNO_ERROR=ON flag"
+else
+    log_verbose "Skipped LIBC_WNO_ERROR=ON flag (disabled)"
+fi
 
 # Add projects to build
 if [ -n "$projects_to_build" ]; then

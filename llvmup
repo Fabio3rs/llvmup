@@ -37,6 +37,7 @@ CUSTOM_NAME=""
 SET_DEFAULT=0
 PROFILE=""
 COMPONENTS=()
+DISABLE_LIBC_WNO_ERROR=0
 
 # Logging functions
 log_verbose() {
@@ -219,6 +220,7 @@ Install Options:
   -d, --default               Set as global default version
   -p, --profile <PROFILE>     Build profile: minimal, full, custom
   --component <COMPONENT>     Install specific components (can be repeated)
+  --disable-libc-wno-error    Disable LIBC_WNO_ERROR=ON flag
   -v, --verbose               Enable verbose output for debugging
   -q, --quiet                 Suppress non-essential output
   -h, --help                  Show this help message
@@ -331,6 +333,11 @@ while [[ $# -gt 0 ]]; do
             log_verbose "Option: Component added: $2"
             shift 2
             ;;
+        --disable-libc-wno-error)
+            DISABLE_LIBC_WNO_ERROR=1
+            log_verbose "Option: LIBC_WNO_ERROR flag disabled"
+            shift
+            ;;
         -v|--verbose)
             VERBOSE=1
             log_verbose "Option: Verbose output enabled"
@@ -397,6 +404,11 @@ done
 # Add set default flag
 if [ "$SET_DEFAULT" -eq 1 ]; then
     script_args+=("--default")
+fi
+
+# Add disable libc wno error flag
+if [ "$DISABLE_LIBC_WNO_ERROR" -eq 1 ]; then
+    script_args+=("--disable-libc-wno-error")
 fi
 
 # Add remaining arguments (version, etc.)

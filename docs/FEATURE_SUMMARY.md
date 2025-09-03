@@ -15,6 +15,7 @@
   - `full` (all - version-aware)
   - `custom` (user-defined)
 - ✅ **CMake flags support**: `--cmake-flags "flag"` (repeatable)
+- ✅ **LIBC_WNO_ERROR control**: `--disable-libc-wno-error` option
 - ✅ **Component selection**: `--component name` (repeatable)
 - ✅ **Custom naming**: `--name "custom-name"`
 - ✅ **Auto-default**: `--default` sets as system default
@@ -119,13 +120,36 @@ The README.md has been updated to accurately reflect ALL implemented features:
 - ✅ Advanced examples provided
 - ✅ Project workflow examples included
 
+## 🔧 **LIBC_WNO_ERROR Flag Control**
+
+The build system includes intelligent control over the `LIBC_WNO_ERROR=ON` CMake flag:
+
+### Default Behavior
+- **Enabled by default**: Helps avoid libc-related compilation issues
+- **Automatic inclusion**: Added to CMake arguments unless disabled
+
+### Control Options
+```bash
+# Command line control
+llvm-build --disable-libc-wno-error llvmorg-18.1.8
+
+# Configuration file control
+[build]
+disable_libc_wno_error = true
+```
+
+### Use Cases
+- **Keep enabled**: For most standard builds (default)
+- **Disable when**: Custom libc setup or specific distribution requirements
+- **Override**: Command line always overrides configuration file
+
 ## 🎉 **System Status: Production Ready**
 
 - **Core System**: Fully functional and tested
 - **Enhanced Features**: All working with comprehensive tests
 - **Cross-Platform**: Linux and Windows parity achieved
 - **Documentation**: Complete and accurate
-- **Testing**: Comprehensive coverage (65+ tests passing)
+- **Testing**: Comprehensive coverage (70+ tests passing)
 - **Installation**: Robust installer/uninstaller
 - **User Experience**: Rich visual interface with helpful guidance
 

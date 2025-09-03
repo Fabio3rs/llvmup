@@ -169,6 +169,7 @@ llvmup --quiet             # Suppress non-essential output
 llvmup install --from-source --cmake-flags "-DCMAKE_BUILD_TYPE=Debug" 18.1.8
 llvmup install --from-source --profile minimal --name "llvm-18-min" 18.1.8
 llvmup install --from-source --component clang --component lld 18.1.8
+llvmup install --from-source --disable-libc-wno-error 18.1.8  # Disable LIBC_WNO_ERROR flag
 llvmup install --from-source --default 18.1.8  # Set as default after build
 ```
 

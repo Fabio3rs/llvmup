@@ -16,6 +16,9 @@ LLVM_TEST_MODE=1 ./llvm-build --profile minimal --name "test-build" llvmorg-18.1
 ```bash
 # Build real do LLVM (pode levar horas!)
 ./llvm-build --profile minimal --cmake-flags "-DCMAKE_BUILD_TYPE=Release" --name "llvm-18-minimal" --default llvmorg-18.1.8
+
+# Build sem a flag LIBC_WNO_ERROR (pode ser necessário para algumas distribuições)
+./llvm-build --disable-libc-wno-error --profile minimal llvmorg-18.1.8
 ```
 
 ### 3. Listar Versões Disponíveis
@@ -28,9 +31,38 @@ LLVM_TEST_MODE=1 ./llvm-build --profile minimal --name "test-build" llvmorg-18.1
 # Criar configuração
 llvmup config init
 
-# Editar .llvmup-config e depois
+# Exemplo de configuração para desabilitar LIBC_WNO_ERROR
+cat > .llvmup-config << 'EOF'
+[build]
+name = "custom-llvm-18"
+disable_libc_wno_error = true
+cmake_flags = ["-DCMAKE_BUILD_TYPE=Release"]
+
+[profile]
+type = "minimal"
+EOF
+
+# Build usando configuração
 ./llvm-build llvmorg-18.1.8
 ```
+
+## Controle da Flag LIBC_WNO_ERROR
+
+Por padrão, o LLVM é compilado com `-DLIBC_WNO_ERROR=ON` para evitar erros relacionados à libc. Esta flag pode ser controlada:
+
+### Via Linha de Comando
+```bash
+# Desabilitar a flag via linha de comando
+./llvm-build --disable-libc-wno-error llvmorg-18.1.8
+```
+
+### Via Arquivo de Configuração
+```ini
+[build]
+disable_libc_wno_error = true  # Define como true para desabilitar a flag
+```
+
+**Nota**: A linha de comando sempre tem prioridade sobre o arquivo de configuração.
 
 ## Perfis Disponíveis
 

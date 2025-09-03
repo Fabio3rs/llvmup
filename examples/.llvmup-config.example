@@ -20,6 +20,9 @@ cmake_flags = [
   "-DLLVM_ENABLE_RUNTIMES=libcxx;libcxxabi"
 ]
 
+# Disable LIBC_WNO_ERROR=ON flag (set to true to disable)
+disable_libc_wno_error = false
+
 [components]
 # Components to include in custom builds (array format)
 include = ["clang", "lld", "lldb", "compiler-rt"]
