@@ -216,11 +216,11 @@ _llvm_complete_versions() {
     fi
 }
 
-# Register completion functions (commented out for testing)
-# if command -v complete &> /dev/null && declare -F _llvm_complete_versions &> /dev/null; then
-#     complete -F _llvm_complete_versions llvm-activate 2>/dev/null || true
-#     complete -F _llvm_complete_versions llvm-vscode-activate 2>/dev/null || true
-# fi
+# Register completion functions
+if command -v complete &> /dev/null && declare -F _llvm_complete_versions &> /dev/null; then
+    complete -F _llvm_complete_versions llvm-activate 2>/dev/null || true
+    complete -F _llvm_complete_versions llvm-vscode-activate 2>/dev/null || true
+fi
 
 # Function to show comprehensive help for LLVM manager
 llvm-help() {
