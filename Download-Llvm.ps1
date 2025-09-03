@@ -1,11 +1,36 @@
-# Download-Llvm.ps1: Manages the download and installation of LLVM versions from the GitHub API.
+# Download-Llvm.ps1: Enhanced LLVM version manager for Windows with custom build support
 # Requirements: PowerShell v5 or later
 # Usage:
-#   . Download-Llvm.ps1 [version]
+#   . Download-Llvm.ps1 [version] [-CMakeFlags <flags>] [-Name <name>] [-Default] [-Profile <profile>] [-Component <component>]
 
 param (
     [Parameter(Mandatory = $false)]
-    [string]$Version
+    [string]$Version,
+
+    [Parameter(Mandatory = $false)]
+    [string[]]$CMakeFlags = @(),
+
+    [Parameter(Mandatory = $false)]
+    [string]$Name,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$Default,
+
+    [Parameter(Mandatory = $false)]
+    [ValidateSet("minimal", "full", "custom")]
+    [string]$Profile,
+
+    [Parameter(Mandatory = $false)]
+    [string[]]$Component = @(),
+
+    [Parameter(Mandatory = $false)]
+    [switch]$FromSource,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$Verbose,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$Help
 )
 
 # Check PowerShell version
@@ -179,3 +204,51 @@ try {
 }
 
 Write-Output "Run '. Activate-Llvm.ps1 $selectedTag' to activate the installed version."
+
+# Show help if requested
+if ($Help) {
+    Write-Output "LLVMUP: Enhanced LLVM Version Manager for Windows"
+    Write-Output ""
+    Write-Output "Usage:"
+    Write-Output "  Download-Llvm.ps1 [version] [options]"
+    Write-Output ""
+    Write-Output "Options:"
+    Write-Output "  -Version <version>      LLVM version to install (e.g., 'llvmorg-18.1.8')"
+    Write-Output "  -CMakeFlags <flags>     Additional CMake flags (can be specified multiple times)"
+    Write-Output "  -Name <name>            Custom name for installation"
+    Write-Output "  -Default                Set as default LLVM version"
+    Write-Output "  -Profile <profile>      Build profile: minimal, full, custom"
+    Write-Output "  -Component <component>  Specific components to install"
+    Write-Output "  -FromSource             Build from source (requires build tools)"
+    Write-Output "  -Verbose                Enable verbose output"
+    Write-Output "  -Help                   Show this help message"
+    Write-Output ""
+    Write-Output "Examples:"
+    Write-Output "  Download-Llvm.ps1 llvmorg-18.1.8"
+    Write-Output "  Download-Llvm.ps1 -Profile minimal llvmorg-18.1.8"
+    Write-Output "  Download-Llvm.ps1 -CMakeFlags '-DCMAKE_BUILD_TYPE=Debug' -Name '18.1.8-debug'"
+    exit 0
+}
+
+# Logging functions
+function Write-LogInfo {
+    param([string]$Message)
+    Write-Output "ℹ️  $Message"
+}
+
+function Write-LogSuccess {
+    param([string]$Message)
+    Write-Output "✅ $Message"
+}
+
+function Write-LogError {
+    param([string]$Message)
+    Write-Error "❌ $Message"
+}
+
+function Write-LogVerbose {
+    param([string]$Message)
+    if ($Verbose) {
+        Write-Output "[VERBOSE] $Message"
+    }
+}

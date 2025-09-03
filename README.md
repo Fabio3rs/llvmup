@@ -14,6 +14,14 @@ This is a proof-of-concept test version and may contain bugs. Use at your own ri
 - 🎯 **Rich visual interface** with emojis and formatting
 - ⌨️ **TAB auto-completion** for version names
 - 📊 **Detailed status** of active environment
+- ⚙️ **Project-specific configuration** via `.llvmup-config` files
+- 🏗️ **Customizable build profiles** (minimal, full, custom)
+- 🔧 **CMake flags support** for advanced builds
+- 🎯 **Default version management** with symlinks
+- 📋 **Component selection** for targeted installations
+- 🪟 **Windows PowerShell parity** with equivalent scripts
+- 🔁 **Subcommand structure** (install, config, default)
+- 📝 **Custom installation naming** for multiple variants
 
 ## 🚀 Quick Start
 
@@ -141,6 +149,12 @@ llvmup 18.1.8              # Install specific version
 llvmup --from-source        # Build from source
 llvmup --verbose            # Show detailed output
 llvmup --quiet             # Suppress non-essential output
+
+# Enhanced build options (from source)
+llvmup install --from-source --cmake-flags "-DCMAKE_BUILD_TYPE=Debug" 18.1.8
+llvmup install --from-source --profile minimal --name "llvm-18-min" 18.1.8
+llvmup install --from-source --component clang --component lld 18.1.8
+llvmup install --from-source --default 18.1.8  # Set as default after build
 ```
 
 ### 🔧 Environment Management
@@ -152,10 +166,29 @@ llvm-list                  # List installed versions
 llvm-help                  # Show complete usage guide
 ```
 
+### ⚙️ Configuration Management
+```bash
+llvmup config init         # Create .llvmup-config file
+llvmup config load         # Load and install from config
+llvm-config-init           # Initialize config (function)
+llvm-config-load           # Load config (function)
+```
+
+### 🎯 Default Version Management
+```bash
+llvmup default set <version>  # Set default LLVM version
+llvmup default show           # Show current default version
+```
+
 ### 💻 Development Integration
 ```bash
 llvm-vscode-activate <ver>  # Configure VSCode integration
 ```
+
+### 🏗️ Build Profiles
+- **minimal**: Only `clang` and `lld` (fastest build)
+- **full**: All available LLVM projects (comprehensive)
+- **custom**: User-defined components via config or flags
 
 ## ⚙️ Installation Configuration
 
@@ -270,19 +303,139 @@ llvm-activate 19.1.0
 llvm-status
 ```
 
-### 🛠️ Building from Source
+### 🛠️ Building from Source with Custom Options
 ```bash
-# 1. Build specific version
-llvmup --from-source 18.1.8
+# 1. Basic build from source
+llvmup install --from-source 18.1.8
 
-# 2. Build with verbose output
-llvmup --from-source --verbose
+# 2. Minimal build (faster)
+llvmup install --from-source --profile minimal 18.1.8
 
-# 3. Activate the built version
-llvm-activate source-llvmorg-18.1.8
+# 3. Custom build with specific flags
+llvmup install --from-source --cmake-flags "-DCMAKE_BUILD_TYPE=Debug" --name "llvm-18-debug" 18.1.8
+
+# 4. Build specific components only
+llvmup install --from-source --component clang --component lld 18.1.8
+
+# 5. Build and set as default
+llvmup install --from-source --profile full --default 18.1.8
+```
+
+### ⚙️ Project Configuration Workflow
+```bash
+# 1. Initialize configuration in project
+cd /my/cpp/project
+llvmup config init
+
+# 2. Edit .llvmup-config file as needed
+# Configure build settings, profiles, cmake flags, etc.
+
+# 3. Install and activate based on config
+llvmup config load
+
+# 4. Verify installation
+llvm-status
+```
+
+### 🎯 Default Version Management
+```bash
+# 1. Set a version as system default
+llvmup default set 18.1.8
+
+# 2. Check current default
+llvmup default show
+
+# 3. Use default in new terminals (automatic)
+# New terminals will have the default version available
 ```
 
 ## 🔧 Advanced Features
+
+### 📋 Project Configuration Files
+LLVMUP supports project-specific configuration through `.llvmup-config` files:
+
+```ini
+# .llvmup-config - LLVM project configuration
+
+[version]
+default = "llvmorg-18.1.8"
+
+[build]
+name = "my-custom-llvm"
+cmake_flags = [
+  "-DCMAKE_BUILD_TYPE=Debug",
+  "-DCMAKE_CXX_STANDARD=17"
+]
+
+[profile]
+type = "minimal"  # or "full", "custom"
+
+[components]
+include = ["clang", "lld", "lldb"]
+
+[project]
+auto_activate = true
+```
+
+### 🏗️ Build Customization Options
+
+#### CMake Flags Support
+```bash
+# Single flag
+llvmup install --from-source --cmake-flags "-DCMAKE_BUILD_TYPE=Debug" 18.1.8
+
+# Multiple flags
+llvmup install --from-source \
+  --cmake-flags "-DCMAKE_BUILD_TYPE=Debug" \
+  --cmake-flags "-DCMAKE_CXX_STANDARD=17" \
+  18.1.8
+```
+
+#### Build Profiles
+- **minimal**: `clang;lld` - Essential compiler and linker only
+- **full**: `all` - All available LLVM projects (automatic version-aware)
+- **custom**: User-defined via `--component` flags or config file
+
+#### Component Selection
+```bash
+# Install specific components
+llvmup install --from-source --component clang --component lld --component lldb 18.1.8
+```
+
+#### Custom Installation Names
+```bash
+# Custom name for build
+llvmup install --from-source --name "llvm-18-debug" --cmake-flags "-DCMAKE_BUILD_TYPE=Debug" 18.1.8
+```
+
+### 🎯 Default Version System
+LLVMUP can manage system-wide default versions:
+
+```bash
+# Set default (creates symlinks)
+llvmup default set 18.1.8
+
+# Check current default
+llvmup default show
+
+# New terminals automatically have default available
+```
+
+### 🪟 Windows PowerShell Support
+Enhanced Windows support with equivalent PowerShell scripts:
+
+```powershell
+# Configuration management
+.\Llvm-Config.ps1 -Command init
+.\Llvm-Config.ps1 -Command load
+
+# Default version management
+.\Llvm-Default.ps1 -Command set -Version "18.1.8"
+.\Llvm-Default.ps1 -Command show
+
+# Enhanced downloads with build options
+.\Download-Llvm.ps1 -CMakeFlags "-DCMAKE_BUILD_TYPE=Debug" -Name "llvm-18-debug" -Profile minimal
+```
 
 ### TAB Auto-completion
 ```bash
@@ -318,43 +471,73 @@ llvm-status
 - **Windows**: Downloads LLVM NSIS installer and silently installs to `%USERPROFILE%\.llvm\toolchains\<version>`
 - Marks already installed versions when listing available releases
 
-### 🛠️ **Build From Source (Linux)**
-- Compiles LLVM from source code using build script
+### 🛠️ **Enhanced Build From Source**
+- **Subcommand structure**: `llvmup install --from-source` with advanced options
+- **Build profiles**: minimal (clang+lld), full (all projects), custom (user-defined)
+- **CMake flags support**: `--cmake-flags` for custom build configuration
+- **Component selection**: `--component` for specific LLVM projects
+- **Custom naming**: `--name` for multiple build variants
+- **Auto-default**: `--default` to set as system default after build
+- **Version-aware builds**: Automatic handling of LLVM project changes across versions
 - Shallow clone of LLVM repository for selected release tag to `~/.llvm/sources/<tag>`
-- Configuration, compilation and installation using Ninja to `~/.llvm/toolchains/source-<version>`
-- Use wrapper command with `--from-source` flag for source builds
+- Configuration, compilation and installation using Ninja to `~/.llvm/toolchains/<name>`
+
+### ⚙️ **Project Configuration System**
+- **Configuration files**: `.llvmup-config` with INI-style format
+- **Array support**: cmake_flags and components as arrays
+- **Subcommands**: `llvmup config init` and `llvmup config load`
+- **Profile integration**: Automatic profile selection from config
+- **Override capability**: Command line options override config file settings
+
+### 🎯 **Default Version Management**
+- **Subcommands**: `llvmup default set <version>` and `llvmup default show`
+- **Symbolic links**: Automatic creation of default version links
+- **Cross-platform**: Linux symlinks, Windows junction points
+- **Shell integration**: New terminals automatically have access to default version
 
 ### 🔄 **Version Activation**
 - **Linux**: Activate a specific LLVM version using bash function `llvm-activate <version>` (no manual sourcing required):
   - Updates `PATH` to include selected LLVM's `bin` directory
   - Backs up and sets `CC`, `CXX`, and `LD` to point to LLVM binaries
   - Modifies terminal prompt (`PS1`) to indicate active LLVM version
-- **Windows**: Use PowerShell scripts (`Activate-Llvm.ps1`) to update environment variables
+- **Windows**: Use PowerShell scripts with enhanced parameter support
 - Scripts prevent activation of new version if one is already active until deactivation
 
 ### ❌ **Version Deactivation**
 - **Linux**: Reverts environment changes using bash function `llvm-deactivate`, restoring original `PATH`, `CC`, `CXX`, `LD`, and `PS1` values
-- **Windows**: Use PowerShell scripts (`Deactivate-Llvm.ps1`) to restore original environment variables
+- **Windows**: Use PowerShell scripts to restore original environment variables
 
-### 💻 **VSCode Integration**
+### 💻 **Enhanced VSCode Integration**
 - **Linux**: Use `llvm-vscode-activate <version>` to merge LLVM-specific settings into `.vscode/settings.json`:
   - `cmake.additionalCompilerSearchDirs`
   - `clangd.path`
   - `clangd.fallbackFlags`
   - `cmake.configureEnvironment` (with updated `PATH`)
-- **Windows**: Use PowerShell script to merge settings into `.vscode\settings.json`
+  - `cmake.debuggerPath` and debugger environment
+- **Windows**: Use PowerShell script with equivalent functionality
 - Integration preserves pre-existing VSCode settings
 
 ### ⌨️ **Command Auto-completion**
-- **Linux**: Bash completion script (`llvmup-completion.sh`) installed to provide TAB completion for:
+- **Linux**: Enhanced bash completion script for:
   - Available LLVM versions
-  - Command options
-  - Subcommands
-- **LLVM Functions**: Bash functions also provide TAB completion for installed versions
+  - Subcommands (install, config, default)
+  - All command options and flags
+  - Installed versions for activation
+- **Function completion**: All LLVM functions support TAB completion
 
-### 🎯 **Wrapper Command**
-- Wrapper script `llvmup` that accepts optional `--from-source` flag
-- When used, calls build-from-source script; otherwise uses pre-built release manager
+### 🪟 **Windows PowerShell Parity**
+- **Llvm-Config.ps1**: Configuration management equivalent
+- **Llvm-Default.ps1**: Default version management equivalent
+- **Download-Llvm.ps1**: Enhanced with all build options (CMakeFlags, Profile, Component, etc.)
+- **Parameter validation**: PowerShell parameter sets and validation
+- **Junction links**: Windows-specific default version management
+
+### 🎯 **Enhanced Wrapper System**
+- **Subcommand structure**: `llvmup <command> [options]` format
+- **Commands**: install (default), config, default
+- **Backward compatibility**: Original `llvmup --from-source` still works
+- **Enhanced options**: All new build customization features
+- **Intelligent routing**: Commands route to appropriate scripts/functions
 
 ### 🔧 **Profile Integration**
 - Installation script automatically configures your shell profile (`.bashrc` or `.profile`) to load LLVM functions

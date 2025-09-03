@@ -379,6 +379,40 @@ llvm-config-load() {
     local custom_name=""
     local profile=""
     local current_section=""
+    local cmake_flags=()
+    local components=()
+    local in_array=0
+    local array_type=""
+
+    # Helper function to parse array content
+    parse_array_content() {
+        local content="$1"
+        local section="$2"
+        local key="$3"
+
+        # Remove quotes and whitespace, split by comma
+        content=$(echo "$content" | sed 's/[[:space:]]*["'"'"']//g; s/["'"'"'][[:space:]]*//g')
+
+        # Split by comma and add to appropriate array
+        IFS=',' read -ra items <<< "$content"
+        for item in "${items[@]}"; do
+            item=$(echo "$item" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            [ -z "$item" ] && continue
+
+            case "$section" in
+                "build")
+                    if [ "$key" = "cmake_flags" ]; then
+                        cmake_flags+=("$item")
+                    fi
+                    ;;
+                "components")
+                    if [ "$key" = "include" ]; then
+                        components+=("$item")
+                    fi
+                    ;;
+            esac
+        done
+    }
 
     while IFS= read -r line; do
         # Skip comments and empty lines
@@ -388,6 +422,37 @@ llvm-config-load() {
         # Handle sections
         if [[ "$line" =~ ^\[.*\]$ ]]; then
             current_section="${line//[\[\]]/}"
+            in_array=0
+            continue
+        fi
+
+        # Handle array start
+        if [[ "$line" =~ ^[[:space:]]*([^=]+)=[[:space:]]*\[ ]]; then
+            key="${BASH_REMATCH[1]// /}"
+            in_array=1
+            array_type="$key"
+
+            # Check if array is closed on same line
+            if [[ "$line" =~ \] ]]; then
+                # Extract array content
+                content=$(echo "$line" | sed -n 's/.*\[\(.*\)\].*/\1/p')
+                parse_array_content "$content" "$current_section" "$key"
+                in_array=0
+            fi
+            continue
+        fi
+
+        # Handle array continuation
+        if [ "$in_array" -eq 1 ]; then
+            if [[ "$line" =~ \] ]]; then
+                # End of array
+                content=$(echo "$line" | sed 's/].*//')
+                parse_array_content "$content" "$current_section" "$array_type"
+                in_array=0
+            else
+                # Array item
+                parse_array_content "$line" "$current_section" "$array_type"
+            fi
             continue
         fi
 
@@ -395,7 +460,7 @@ llvm-config-load() {
         if [[ "$line" =~ ^[[:space:]]*([^=]+)=(.*)$ ]]; then
             key="${BASH_REMATCH[1]// /}"
             value="${BASH_REMATCH[2]}"
-            # Remove quotes
+            # Remove quotes and whitespace
             value=$(echo "$value" | sed 's/^[[:space:]]*["'"'"']//;s/["'"'"'][[:space:]]*$//')
 
             case "$current_section" in
@@ -427,6 +492,44 @@ llvm-config-load() {
     echo "   📦 Version: $default_version"
     [ -n "$custom_name" ] && echo "   🏷️  Name: $custom_name"
     [ -n "$profile" ] && echo "   📋 Profile: $profile"
+    [ ${#cmake_flags[@]} -gt 0 ] && echo "   🔧 CMake flags: ${cmake_flags[*]}"
+    [ ${#components[@]} -gt 0 ] && echo "   📦 Components: ${components[*]}"
+
+    # Apply configuration by building command
+    local cmd_args=("$default_version")
+    [ -n "$custom_name" ] && cmd_args+=(--name "$custom_name")
+    [ -n "$profile" ] && cmd_args+=(--profile "$profile")
+
+    for flag in "${cmake_flags[@]}"; do
+        cmd_args+=(--cmake-flags "$flag")
+    done
+
+    for comp in "${components[@]}"; do
+        cmd_args+=(--component "$comp")
+    done
+
+    echo "💡 To install with these settings, run:"
+    echo "   llvmup install --from-source ${cmd_args[*]}"
+
+    # In test mode, don't prompt for installation
+    if [ -n "$LLVM_TEST_MODE" ]; then
+        echo "🧪 Test mode: skipping installation"
+        return 0
+    fi
+
+    # Ask if user wants to install now
+    read -p "🤔 Install now? [y/N]: " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo "🚀 Installing LLVM with project configuration..."
+        if command -v llvmup >/dev/null 2>&1; then
+            llvmup install --from-source "${cmd_args[@]}"
+        else
+            echo "❌ llvmup command not found in PATH"
+            echo "💡 Make sure LLVM manager is installed and in your PATH"
+            return 1
+        fi
+    fi
 
     # Check if version is already installed
     local install_name="$default_version"

@@ -8,21 +8,82 @@
 #   - llvmup          : Wrapper command to choose between source build or pre-built install (use --from-source for source build).
 #   - llvmup-completion.sh : Bash completion script for llvmup commands.
 #
-# The scripts are copied to $HOME/.local/bin. Make sure that this directory is in your PATH.
+# Environment Variables for Customization:
+#   LLVMUP_PREFIX       : Base installation prefix (default: $HOME/.local)
+#   LLVMUP_INSTALL_DIR  : Directory for executable scripts (default: $LLVMUP_PREFIX/bin)
+#   LLVMUP_COMPLETION_DIR: Directory for bash completion (default: $LLVMUP_PREFIX/share/bash-completion/completions)
+#   LLVMUP_SYSTEM_INSTALL: Set to 1 for system-wide installation (requires sudo)
+#
+# Examples:
+#   ./install.sh                              # Install to ~/.local/bin (default)
+#   LLVMUP_PREFIX=/usr/local ./install.sh     # Install to /usr/local/bin
+#   LLVMUP_SYSTEM_INSTALL=1 ./install.sh      # System-wide install to /usr/local
+#   LLVMUP_INSTALL_DIR=/opt/llvmup ./install.sh  # Custom installation directory
 #
 # Usage:
 #   ./install.sh
 
 set -e
 
-# Define the installation directory.
-INSTALL_DIR="$HOME/.local/bin"
-COMPLETION_DIR="$HOME/.local/share/bash-completion/completions"
+# Color output functions
+print_info() {
+    echo -e "\033[1;34m[INFO]\033[0m $1"
+}
+
+print_success() {
+    echo -e "\033[1;32m[SUCCESS]\033[0m $1"
+}
+
+print_warning() {
+    echo -e "\033[1;33m[WARNING]\033[0m $1"
+}
+
+print_error() {
+    echo -e "\033[1;31m[ERROR]\033[0m $1"
+}
+
+# Determine installation directories based on environment variables
+if [ -n "$LLVMUP_SYSTEM_INSTALL" ] && [ "$LLVMUP_SYSTEM_INSTALL" = "1" ]; then
+    # System-wide installation
+    DEFAULT_PREFIX="/usr/local"
+    REQUIRES_SUDO=true
+    print_info "System-wide installation mode enabled"
+else
+    # User installation (default)
+    DEFAULT_PREFIX="$HOME/.local"
+    REQUIRES_SUDO=false
+fi
+
+# Set prefix
+PREFIX="${LLVMUP_PREFIX:-$DEFAULT_PREFIX}"
+
+# Set installation directories
+INSTALL_DIR="${LLVMUP_INSTALL_DIR:-$PREFIX/bin}"
+COMPLETION_DIR="${LLVMUP_COMPLETION_DIR:-$PREFIX/share/bash-completion/completions}"
 FUNCTIONS_FILE="$INSTALL_DIR/llvm-functions.sh"
 
-echo "Creating installation directories..."
-mkdir -p "$INSTALL_DIR"
-mkdir -p "$COMPLETION_DIR"
+print_info "Installation Configuration:"
+print_info "  Prefix: $PREFIX"
+print_info "  Install Directory: $INSTALL_DIR"
+print_info "  Completion Directory: $COMPLETION_DIR"
+print_info "  Functions File: $FUNCTIONS_FILE"
+print_info "  System Install: $($REQUIRES_SUDO && echo "Yes (requires sudo)" || echo "No")"
+
+# Check for sudo if required
+if [ "$REQUIRES_SUDO" = true ]; then
+    if ! command -v sudo >/dev/null 2>&1; then
+        print_error "System installation requires sudo, but sudo is not available"
+        exit 1
+    fi
+    print_warning "This installation requires sudo privileges"
+    SUDO_CMD="sudo"
+else
+    SUDO_CMD=""
+fi
+
+print_info "Creating installation directories..."
+$SUDO_CMD mkdir -p "$INSTALL_DIR"
+$SUDO_CMD mkdir -p "$COMPLETION_DIR"
 
 # Define an associative array mapping source filenames to target filenames.
 declare -A scripts=(
@@ -35,73 +96,79 @@ declare -A scripts=(
     ["llvm-functions.sh"]="llvm-functions.sh"
 )
 
-echo "Copying scripts to $INSTALL_DIR..."
+print_info "Copying scripts to $INSTALL_DIR..."
 for src in "${!scripts[@]}"; do
     if [ ! -f "$src" ]; then
-        echo "Error: Script '$src' not found in the current directory."
+        print_error "Script '$src' not found in the current directory."
         exit 1
     fi
-    cp "$src" "$INSTALL_DIR/${scripts[$src]}"
+    $SUDO_CMD cp "$src" "$INSTALL_DIR/${scripts[$src]}"
+    print_info "  Installed: ${scripts[$src]}"
 done
 
-echo "Installing bash completion..."
+print_info "Installing bash completion..."
 if [ -f "llvmup-completion.sh" ]; then
-    cp "llvmup-completion.sh" "$COMPLETION_DIR/llvmup"
-    echo "Bash completion installed to $COMPLETION_DIR/llvmup"
+    $SUDO_CMD cp "llvmup-completion.sh" "$COMPLETION_DIR/llvmup"
+    print_success "Bash completion installed to $COMPLETION_DIR/llvmup"
 fi
 
-echo "Making scripts executable..."
-chmod +x "$INSTALL_DIR/llvm-prebuilt" "$INSTALL_DIR/llvm-activate" "$INSTALL_DIR/llvm-deactivate" "$INSTALL_DIR/llvm-vscode-activate" "$INSTALL_DIR/llvm-build" "$INSTALL_DIR/llvmup"
+print_info "Making scripts executable..."
+$SUDO_CMD chmod +x "$INSTALL_DIR/llvm-prebuilt" "$INSTALL_DIR/llvm-activate" "$INSTALL_DIR/llvm-deactivate" "$INSTALL_DIR/llvm-vscode-activate" "$INSTALL_DIR/llvm-build" "$INSTALL_DIR/llvmup"
 
 # Also make uninstall script executable if it exists
 if [ -f "uninstall.sh" ]; then
     chmod +x uninstall.sh
 fi
 
-# Function to add source line to profile if not already present
+# Function to safely add source line to profile with markers for safe removal
 add_to_profile() {
     local profile_file="$1"
-    local source_line="# LLVM Manager Functions
-if [ -f \"$FUNCTIONS_FILE\" ]; then
-    source \"$FUNCTIONS_FILE\"
-fi
-"
 
     if [ -f "$profile_file" ]; then
-        if ! grep -q "llvm-functions.sh" "$profile_file"; then
-            echo "" >> "$profile_file"
-            echo "$source_line" >> "$profile_file"
-            echo "Added LLVM functions to $profile_file"
-            return 0
-        else
-            echo "LLVM functions already configured in $profile_file"
+        # Check if already configured (check for either old or new format)
+        if grep -q "llvm-functions.sh" "$profile_file"; then
+            print_info "LLVM functions already configured in $profile_file"
             return 1
         fi
+
+        # Add configuration with clear start/end markers for safe removal
+        cat >> "$profile_file" << EOF
+
+# LLVM Manager Functions - Start
+# Auto-generated by LLVMUP installer - safe to remove
+if [ -f "$FUNCTIONS_FILE" ]; then
+    source "$FUNCTIONS_FILE"
+fi
+# LLVM Manager Functions - End
+EOF
+        print_success "Added LLVM functions to $profile_file with safety markers"
+        return 0
     fi
     return 1
 }
 
-# Try to add to user's profile files
-echo "Configuring shell profile..."
-profile_configured=false
+# Configure shell profile (only for user installations)
+if [ "$REQUIRES_SUDO" = false ]; then
+    print_info "Configuring shell profile..."
+    profile_configured=false
 
-# Try .bashrc first (most common for interactive bash)
-if add_to_profile "$HOME/.bashrc"; then
-    profile_configured=true
-fi
-
-# If .bashrc doesn't exist or wasn't modified, try .profile
-if [ "$profile_configured" = false ]; then
-    if add_to_profile "$HOME/.profile"; then
+    # Try .bashrc first (most common for interactive bash)
+    if add_to_profile "$HOME/.bashrc"; then
         profile_configured=true
     fi
-fi
 
-# If neither exists, create .bashrc
-if [ "$profile_configured" = false ]; then
-    if [ ! -f "$HOME/.bashrc" ] && [ ! -f "$HOME/.profile" ]; then
-        echo "Creating $HOME/.bashrc..."
-        cat > "$HOME/.bashrc" << EOF
+    # If .bashrc doesn't exist or wasn't modified, try .profile
+    if [ "$profile_configured" = false ]; then
+        if add_to_profile "$HOME/.profile"; then
+            profile_configured=true
+        fi
+    fi
+
+    # If neither exists, create .bashrc
+    if [ "$profile_configured" = false ]; then
+        if [ ! -f "$HOME/.bashrc" ] && [ ! -f "$HOME/.profile" ]; then
+            print_info "Creating $HOME/.bashrc..."
+            cat > "$HOME/.bashrc" << EOF
 # ~/.bashrc: executed by bash(1) for non-login shells.
 
 # Source global definitions
@@ -118,45 +185,77 @@ if [ -f "$FUNCTIONS_FILE" ]; then
 fi
 
 EOF
-        echo "Created $HOME/.bashrc with LLVM functions"
-        profile_configured=true
+            print_success "Created $HOME/.bashrc with LLVM functions"
+            profile_configured=true
+        fi
     fi
+else
+    print_info "System installation detected - skipping user profile configuration"
+    print_warning "For system-wide installations, users need to manually source the functions:"
+    print_warning "  Add 'source $FUNCTIONS_FILE' to their shell profile"
+    profile_configured=false
 fi
 
-echo "Installation complete!"
+print_success "Installation complete!"
+echo ""
 
 # Check if INSTALL_DIR is in PATH.
 if ! echo "$PATH" | grep -q "$INSTALL_DIR"; then
-    echo "Warning: $INSTALL_DIR is not in your PATH."
-    echo "To add it temporarily for this session, run:"
-    echo "  export PATH=\"$INSTALL_DIR:\$PATH\""
-    echo "To add it permanently, add the above line to your ~/.bashrc or ~/.profile file."
+    print_warning "$INSTALL_DIR is not in your PATH."
+    if [ "$REQUIRES_SUDO" = true ]; then
+        print_info "For system-wide installations, the path should be automatically available."
+        print_info "If not, ask your system administrator to ensure $INSTALL_DIR is in the system PATH."
+    else
+        print_info "To add it temporarily for this session, run:"
+        echo "  export PATH=\"$INSTALL_DIR:\$PATH\""
+        print_info "To add it permanently, add the above line to your ~/.bashrc or ~/.profile file."
+    fi
 else
-    echo "$INSTALL_DIR is already in your PATH."
+    print_success "$INSTALL_DIR is already in your PATH."
 fi
 
-# Check if bash-completion is installed
-if ! command -v bash-completion &> /dev/null; then
-    echo "Note: bash-completion is not installed. To enable command completion, install bash-completion:"
+# Check if bash-completion is working
+if [ -z "$BASH_COMPLETION_VERSINFO" ] && [ ! -f /etc/bash_completion ] && [ ! -f /usr/share/bash-completion/bash_completion ]; then
+    print_warning "bash-completion may not be installed or enabled. To enable command completion:"
     echo "  Ubuntu/Debian: sudo apt-get install bash-completion"
     echo "  Fedora: sudo dnf install bash-completion"
     echo "  macOS: brew install bash-completion"
+    echo "  Then restart your shell or run: source /etc/bash_completion"
+else
+    print_success "bash-completion appears to be available"
 fi
 
-echo "You can now use the following commands from any terminal:"
-echo "  llvmup              : Wrapper command (use --from-source to build from source)"
+print_info "Available LLVMUP commands:"
+echo "  llvmup              : Main wrapper command (use --from-source to build from source)"
 echo "  llvm-prebuilt       : Download and install pre-built LLVM releases"
-echo "  llvm-activate       : Activate a selected LLVM version (bash function)"
-echo "  llvm-deactivate     : Deactivate the active LLVM version (bash function)"
-echo "  llvm-vscode-activate: Update VSCode workspace settings (bash function)"
-echo "  llvm-status         : Show current LLVM status (bash function)"
-echo "  llvm-list           : List installed LLVM versions (bash function)"
+echo "  llvm-build          : Build LLVM from source with custom options"
 echo ""
-if [ "$profile_configured" = true ]; then
-    echo "LLVM functions have been added to your shell profile."
-    echo "Start a new terminal session or run 'source ~/.bashrc' (or ~/.profile) to use the functions."
+print_info "Available LLVM functions (after sourcing):"
+echo "  llvm-activate       : Activate a selected LLVM version"
+echo "  llvm-deactivate     : Deactivate the active LLVM version"
+echo "  llvm-vscode-activate: Update VSCode workspace settings"
+echo "  llvm-status         : Show current LLVM status"
+echo "  llvm-list           : List installed LLVM versions"
+echo "  llvm-config-init    : Initialize .llvmup-config file"
+echo "  llvm-config-load    : Load project configuration"
+echo ""
+
+if [ "$REQUIRES_SUDO" = false ]; then
+    if [ "$profile_configured" = true ]; then
+        print_success "LLVM functions have been added to your shell profile."
+        print_info "Start a new terminal session or run 'source ~/.bashrc' (or ~/.profile) to use the functions."
+    else
+        print_warning "Could not automatically configure shell profile."
+        print_info "To manually enable LLVM functions, add this line to your ~/.bashrc or ~/.profile:"
+        echo "  source \"$FUNCTIONS_FILE\""
+    fi
 else
-    echo "Could not automatically configure shell profile."
-    echo "To manually enable LLVM functions, add this line to your ~/.bashrc or ~/.profile:"
+    print_info "System-wide installation completed."
+    print_info "Users can enable LLVM functions by adding this to their shell profile:"
     echo "  source \"$FUNCTIONS_FILE\""
+    print_info "Or create a system-wide configuration in /etc/profile.d/"
 fi
+
+echo ""
+print_success "🚀 LLVMUP is now installed and ready to use!"
+print_info "📚 Run 'llvmup --help' or 'llvm-help' for more information."

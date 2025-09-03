@@ -51,20 +51,23 @@ log_error() {
 # Profile definitions
 get_profile_projects() {
     local profile="$1"
+    local version="$2"
+
     case "$profile" in
         minimal)
             echo "clang;lld"
             ;;
         full)
-            echo "clang;clang-tools-extra;lld;lldb;compiler-rt;libcxx;libcxxabi;openmp"
+            # Use "all" for full profile - let LLVM decide what's available
+            echo "all"
             ;;
         custom)
             # Will be determined by components or .llvmup-config
             echo ""
             ;;
         "")
-            # Default - same as full for now
-            echo "clang;clang-tools-extra;lld;lldb;compiler-rt;libcxx;libcxxabi;openmp"
+            # Default - use all available projects
+            echo "all"
             ;;
         *)
             log_error "Unknown profile: $profile"
@@ -97,8 +100,10 @@ load_config() {
                 key="${BASH_REMATCH[1]// /}"
                 value="${BASH_REMATCH[2]}"
                 # Remove quotes and trim whitespace
-                value=$(echo "$value" | sed 's/^[[:space:]]*["'"'"']//;s/["'"'"'][[:space:]]*$//' | xargs)
- 
+                value=$(echo "$value" | sed 's/^[[:space:]]*["'"'"']//;s/["'"'"'][[:space:]]*$//')
+                # Additional cleanup for xargs
+                value=$(echo "$value" | tr -d '"' | xargs 2>/dev/null || echo "$value")
+
                 case "$current_section" in
                     "build")
                         case "$key" in
@@ -114,8 +119,11 @@ load_config() {
                                     IFS=',' read -ra flags_array <<< "$flags_str"
                                     for flag in "${flags_array[@]}"; do
                                         flag=$(echo "$flag" | sed 's/^[[:space:]]*["'"'"']//;s/["'"'"'][[:space:]]*$//')
-                                        CMAKE_FLAGS+=("$flag")
-                                        log_verbose "Config: CMake flag added: $flag"
+                                        flag=$(echo "$flag" | tr -d '"' | xargs 2>/dev/null || echo "$flag")
+                                        if [ -n "$flag" ]; then
+                                            CMAKE_FLAGS+=("$flag")
+                                            log_verbose "Config: CMake flag added: $flag"
+                                        fi
                                     done
                                 fi
                                 ;;
@@ -135,8 +143,11 @@ load_config() {
                                 IFS=',' read -ra components_array <<< "$components_str"
                                 for component in "${components_array[@]}"; do
                                     component=$(echo "$component" | sed 's/^[[:space:]]*["'"'"']//;s/["'"'"'][[:space:]]*$//')
-                                    COMPONENTS+=("$component")
-                                    log_verbose "Config: Component added: $component"
+                                    component=$(echo "$component" | tr -d '"' | xargs 2>/dev/null || echo "$component")
+                                    if [ -n "$component" ]; then
+                                        COMPONENTS+=("$component")
+                                        log_verbose "Config: Component added: $component"
+                                    fi
                                 done
                             fi
                         fi
@@ -355,26 +366,129 @@ if [ -n "$CUSTOM_NAME" ]; then
     build_name="$CUSTOM_NAME"
 fi
 
+# Extract major version number for version-specific configuration
+major_version=$(echo "$selectedTag" | sed 's/llvmorg-\([0-9]*\).*/\1/')
+
 # Determine projects to build
 projects_to_build=""
 if [ -n "$PROFILE" ]; then
-    projects_to_build=$(get_profile_projects "$PROFILE")
+    projects_to_build=$(get_profile_projects "$PROFILE" "$selectedTag")
 elif [ "${#COMPONENTS[@]}" -gt 0 ]; then
     projects_to_build=$(IFS=';'; echo "${COMPONENTS[*]}")
 else
-    projects_to_build=$(get_profile_projects "")
+    projects_to_build=$(get_profile_projects "" "$selectedTag")
 fi
 
 log_info "🔧 Build Configuration:"
-log_info "   📦 Version: $selectedTag"
+log_info "   📦 Version: $selectedTag (LLVM $major_version)"
 log_info "   🏷️  Name: $build_name"
 log_info "   📋 Profile: ${PROFILE:-default}"
 log_info "   🧩 Projects: $projects_to_build"
-
-echo "✅ Mock build completed successfully!"
-echo "📁 LLVM $build_name would be installed to: $TOOLCHAINS_DIR/$build_name"
-echo "🚀 To activate: llvm-activate $build_name"
-
-if [ "$SET_DEFAULT" -eq 1 ]; then
-    echo "🔗 This version would be set as default"
+if [ "${#CMAKE_FLAGS[@]}" -gt 0 ]; then
+    log_info "   🔧 Custom CMake flags: ${CMAKE_FLAGS[*]}"
 fi
+
+# Check if we're in mock mode
+if [ -n "$LLVM_TEST_MODE" ]; then
+    log_info "🧪 Test mode: Mock build completed successfully!"
+    log_info "📁 LLVM $build_name would be installed to: $TOOLCHAINS_DIR/$build_name"
+    log_info "🚀 To activate: llvm-activate $build_name"
+
+    if [ "$SET_DEFAULT" -eq 1 ]; then
+        log_info "🔗 This version would be set as default"
+    fi
+    exit 0
+fi
+
+# Real build process starts here
+log_info "🏗️  Starting real LLVM build process..."
+
+# Prepare source directory
+target_source_dir="$SOURCES_DIR/$selectedTag"
+mkdir -p "$SOURCES_DIR"
+
+if [ -d "$target_source_dir" ]; then
+    log_info "📁 Source for version $selectedTag already exists at $target_source_dir"
+else
+    log_info "📥 Cloning LLVM project (tag: $selectedTag) with depth 1..."
+    git clone --depth 1 --branch "$selectedTag" "$REPO_URL" "$target_source_dir"
+fi
+
+# Create build directory
+build_dir="$target_source_dir/build"
+install_dir="$TOOLCHAINS_DIR/$build_name"
+
+log_info "🗂️  Creating build directory: $build_dir"
+mkdir -p "$build_dir"
+mkdir -p "$TOOLCHAINS_DIR"
+
+# Prepare CMake arguments
+cmake_args=(
+    -S "$target_source_dir/llvm"
+    -B "$build_dir"
+    -G Ninja
+    -DCMAKE_BUILD_TYPE=Release
+    -DCMAKE_C_FLAGS="-march=native -mtune=native"
+    -DCMAKE_CXX_FLAGS="-march=native -mtune=native"
+    -DCMAKE_INSTALL_PREFIX="$install_dir"
+    -DLIBC_WNO_ERROR=ON
+)
+
+# Add projects to build
+if [ -n "$projects_to_build" ]; then
+    cmake_args+=(-DLLVM_ENABLE_PROJECTS="$projects_to_build")
+else
+    # Default: build all available projects
+    cmake_args+=(-DLLVM_ENABLE_PROJECTS="all")
+fi
+
+# Add custom CMake flags
+for flag in "${CMAKE_FLAGS[@]}"; do
+    cmake_args+=("$flag")
+    log_verbose "Added CMake flag: $flag"
+done
+
+log_info "🔧 Configuring build with CMake (using Ninja generator)..."
+log_verbose "CMake command: cmake ${cmake_args[*]}"
+
+cmake "${cmake_args[@]}"
+
+log_info "🔨 Building LLVM (this may take a while)..."
+log_info "💡 Tip: This process can take 30+ minutes depending on your system"
+
+# Determine number of parallel jobs
+if command -v nproc >/dev/null 2>&1; then
+    jobs=$(nproc)
+elif [ -f /proc/cpuinfo ]; then
+    jobs=$(grep -c ^processor /proc/cpuinfo)
+else
+    jobs=4  # fallback
+fi
+
+log_info "🚀 Using $jobs parallel build jobs"
+cmake --build "$build_dir" -- -j "$jobs"
+
+log_info "📦 Installing LLVM to $install_dir..."
+cmake --build "$build_dir" --target install
+
+log_info "✅ Build and installation complete!"
+log_info "📁 LLVM version $selectedTag has been installed in $install_dir"
+log_info "🚀 To activate: llvm-activate $build_name"
+
+# Set as default if requested
+if [ "$SET_DEFAULT" -eq 1 ]; then
+    if [ -f "$HOME/.local/bin/llvm-activate" ]; then
+        log_info "🔗 Setting $build_name as default version..."
+        # Use the llvm functions to set default
+        source "$HOME/.local/share/llvm-manager/llvm-functions.sh" 2>/dev/null || true
+        if command -v llvm-set-default >/dev/null 2>&1; then
+            llvm-set-default "$build_name"
+        else
+            log_info "💡 To set as default later, run: llvmup default set $build_name"
+        fi
+    else
+        log_info "💡 To set as default, run: llvmup default set $build_name"
+    fi
+fi
+
+log_info "🎉 LLVM $build_name build completed successfully!"

@@ -2,13 +2,23 @@
 # llvmup: A wrapper script for LLVM installation management.
 #
 # Usage:
-#   llvmup [--from-source] [-v|--verbose] [-q|--quiet] [-h|--help] [args...]
+#   llvmup [install] [--from-source] [-v|--verbose] [-q|--quiet] [-h|--help] [args...]
+#   llvmup default <set|show> [version]
+#   llvmup config <init|load>
 #
 # Options:
-#   --from-source    Build LLVM from source instead of installing a pre-built release.
-#   -v, --verbose    Enable verbose output for debugging.
-#   -q, --quiet      Suppress non-essential output.
-#   -h, --help       Show this help message.
+#   install              Install LLVM version (default command if version specified)
+#   default              Manage default LLVM version
+#   config               Manage project configuration
+#   --from-source        Build LLVM from source instead of installing a pre-built release.
+#   -v, --verbose        Enable verbose output for debugging.
+#   -q, --quiet          Suppress non-essential output.
+#   -h, --help           Show this help message.
+#   -c, --cmake-flags    Pass additional CMake flags (can be repeated)
+#   -n, --name           Custom name for installation
+#   -d, --default        Set as default version
+#   -p, --profile        Build profile: minimal, full, custom
+#   --component          Install specific components (can be repeated)
 #
 # All scripts (llvm-prebuilt, llvm-build, llvm-activate, llvm-deactivate, llvm-vscode-activate)
 # should reside in the same directory as this script.
@@ -28,7 +38,63 @@ SET_DEFAULT=0
 PROFILE=""
 COMPONENTS=()
 
-# Command handling
+# Logging functions
+log_verbose() {
+    if [ "$VERBOSE" -eq 1 ] && [ "$QUIET" -eq 0 ]; then
+        echo "[VERBOSE] $*" >&2
+    fi
+}
+
+log_info() {
+    if [ "$QUIET" -eq 0 ]; then
+        echo "ℹ️  $*" >&2
+    fi
+}
+
+log_error() {
+    echo "❌ $*" >&2
+}
+
+log_success() {
+    if [ "$QUIET" -eq 0 ]; then
+        echo "✅ $*" >&2
+    fi
+}
+
+# Command handling functions
+handle_config_command() {
+    local sub_command="$1"
+    shift
+
+    case "$sub_command" in
+        init)
+            # Call llvm-config-init function
+            if command -v llvm-config-init >/dev/null 2>&1; then
+                llvm-config-init "$@"
+            else
+                log_error "llvm-config-init function not available"
+                log_info "Make sure LLVM functions are loaded in your shell"
+                exit 1
+            fi
+            ;;
+        load)
+            # Call llvm-config-load function
+            if command -v llvm-config-load >/dev/null 2>&1; then
+                llvm-config-load "$@"
+            else
+                log_error "llvm-config-load function not available"
+                log_info "Make sure LLVM functions are loaded in your shell"
+                exit 1
+            fi
+            ;;
+        *)
+            log_error "Unknown config subcommand: $sub_command"
+            log_info "Available subcommands: init, load"
+            exit 1
+            ;;
+    esac
+}
+
 handle_default_command() {
     local sub_command="$1"
     shift
@@ -92,7 +158,35 @@ show_default_version() {
     fi
 }
 
-# Logging functions
+# Check if first argument is a subcommand
+case "${1:-}" in
+    install)
+        COMMAND="install"
+        shift
+        ;;
+    default)
+        COMMAND="default"
+        shift
+        handle_default_command "$@"
+        exit $?
+        ;;
+    config)
+        COMMAND="config"
+        shift
+        handle_config_command "$@"
+        exit $?
+        ;;
+    -*|""|[0-9]*|llvmorg-*)
+        # If starts with dash, empty, or looks like version, treat as install
+        COMMAND="install"
+        ;;
+    *)
+        # Unknown subcommand, treat as version for install
+        COMMAND="install"
+        ;;
+esac
+
+# Parse command line options
 log_verbose() {
     if [ "$VERBOSE" -eq 1 ] && [ "$QUIET" -eq 0 ]; then
         echo "[VERBOSE] $*" >&2
