@@ -7,6 +7,105 @@
 #   llvm-deactivate           - Deactivate current LLVM version
 #   llvm-vscode-activate <version> - Activate LLVM for VSCode
 
+# =============================================================================
+# LOGGING FUNCTIONS
+# =============================================================================
+
+QUIET_MODE=${QUIET_MODE:-0}
+QUIET_SUCCESS=${QUIET_SUCCESS:-0}
+
+# Log error messages (always shown)
+log_error() {
+    if [ "$QUIET_MODE" -eq 1 ]; then
+        return
+    fi
+    echo "❌ $*" >&2
+}
+
+# Log warning messages (always shown)
+log_warn() {
+    if [ "$QUIET_MODE" -eq 1 ]; then
+        return
+    fi
+    echo "⚠️  $*" >&2
+}
+
+# Log success messages (always shown)
+log_success() {
+    if [ "$QUIET_SUCCESS" -eq 1 ] || [ "$QUIET_MODE" -eq 1 ]; then
+        return
+    fi
+    echo "✅ $*"
+}
+
+# Log info messages (only in verbose mode or test mode)
+log_info() {
+    if [ "$QUIET_MODE" -eq 1 ]; then
+        return
+    fi
+    if [ -n "$LLVM_VERBOSE" ] || [ -n "$LLVM_TEST_MODE" ]; then
+        echo "💡 $*"
+    fi
+}
+
+# Log debug messages (only in verbose mode or test mode)
+log_debug() {
+    if [ "$QUIET_MODE" -eq 1 ]; then
+        return
+    fi
+    if [ -n "$LLVM_VERBOSE" ] || [ -n "$LLVM_TEST_MODE" ]; then
+        echo "🔍 $*"
+    fi
+}
+
+# Log progress messages (only in verbose mode or test mode)
+log_progress() {
+    if [ "$QUIET_MODE" -eq 1 ]; then
+        return
+    fi
+    if [ -n "$LLVM_VERBOSE" ] || [ -n "$LLVM_TEST_MODE" ]; then
+        echo "🔄 $*"
+    fi
+}
+
+# Log configuration messages (only in verbose mode or test mode)
+log_config() {
+    if [ "$QUIET_MODE" -eq 1 ]; then
+        return
+    fi
+    if [ -n "$LLVM_VERBOSE" ] || [ -n "$LLVM_TEST_MODE" ]; then
+        echo "🎯 $*"
+    fi
+}
+
+# Log tips and suggestions (only in verbose mode or test mode)
+log_tip() {
+    if [ "$QUIET_MODE" -eq 1 ]; then
+        return
+    fi
+    if [ -n "$LLVM_VERBOSE" ] || [ -n "$LLVM_TEST_MODE" ]; then
+        echo "💡 $*"
+    fi
+}
+
+# =============================================================================
+# VERBOSE MODE CONTROL
+# =============================================================================
+
+# Enable verbose logging for this session
+llvm-verbose-on() {
+    export LLVM_VERBOSE=1
+    log_success "Verbose mode enabled for LLVM functions"
+    log_info "All informational messages will now be shown"
+    log_tip "Use 'llvm-verbose-off' to disable verbose mode"
+}
+
+# Disable verbose logging for this session
+llvm-verbose-off() {
+    unset LLVM_VERBOSE
+    echo "✅ Verbose mode disabled for LLVM functions"
+}
+
 # Function to activate an LLVM version
 llvm-activate() {
     if [ $# -eq 0 ]; then
@@ -29,7 +128,7 @@ llvm-activate() {
         echo "📦 Installed versions:"
         llvm-list
         echo ""
-        echo "💡 Tip: Use TAB completion to auto-complete version names"
+        log_tip "Use TAB completion to auto-complete version names"
         return 1
     fi
 
@@ -37,24 +136,24 @@ llvm-activate() {
     local script_path="$HOME/.local/bin/llvm-activate"
 
     if [ -f "$script_path" ]; then
-        echo "🔄 Activating LLVM version $version..."
+        log_progress "Activating LLVM version $version..."
         source "$script_path" "$version"
         local exit_code=$?
         if [ $exit_code -eq 0 ]; then
-            echo "✅ LLVM $version successfully activated!"
-            echo "🛠️  Available tools are now in PATH:"
-            echo "   • clang, clang++, ld.lld, lldb, clangd, etc."
-            echo "💡 Tip: Your shell prompt now shows the active LLVM version"
-            echo "📊 Use 'llvm-status' to see detailed information"
+            log_success "LLVM $version successfully activated!"
+            log_info "Available tools are now in PATH:"
+            log_info "  • clang, clang++, ld.lld, lldb, clangd, etc."
+            log_tip "Your shell prompt now shows the active LLVM version"
+            log_tip "Use 'llvm-status' to see detailed information"
         else
-            echo "❌ Failed to activate LLVM $version"
-            echo "💡 Check if the version is installed: llvm-list"
+            log_error "Failed to activate LLVM $version"
+            log_tip "Check if the version is installed: llvm-list"
             return $exit_code
         fi
     else
-        echo "❌ Error: llvm-activate script not found at $script_path"
-        echo "📥 Run the installation script to install LLVM manager tools."
-        echo "   ./install.sh"
+        log_error "llvm-activate script not found at $script_path"
+        log_tip "Run the installation script to install LLVM manager tools."
+        log_tip "  ./install.sh"
         return 1
     fi
 }
@@ -64,18 +163,18 @@ llvm-deactivate() {
     local script_path="$HOME/.local/bin/llvm-deactivate"
 
     if [ -f "$script_path" ]; then
-        echo "🔄 Deactivating LLVM environment..."
+        log_progress "Deactivating LLVM environment..."
         source "$script_path"
         local exit_code=$?
         if [ $exit_code -eq 0 ]; then
-            echo "✅ LLVM environment successfully deactivated"
-            echo "💡 Your shell prompt and environment variables have been restored"
+            log_success "LLVM environment successfully deactivated"
+            log_tip "Your shell prompt and environment variables have been restored"
         fi
         return $exit_code
     else
-        echo "❌ Error: llvm-deactivate script not found at $script_path"
-        echo "📥 Run the installation script to install LLVM manager tools."
-        echo "   ./install.sh"
+        log_error "llvm-deactivate script not found at $script_path"
+        log_tip "Run the installation script to install LLVM manager tools."
+        log_tip "  ./install.sh"
         return 1
     fi
 }
@@ -101,8 +200,8 @@ llvm-vscode-activate() {
         echo "📦 Installed versions:"
         llvm-list
         echo ""
-        echo "💡 Tip: Run this from your VSCode workspace root directory"
-        echo "🔧 After running, reload VSCode window for changes to take effect"
+        log_tip "Run this from your VSCode workspace root directory"
+        log_tip "After running, reload VSCode window for changes to take effect"
         return 1
     fi
 
@@ -110,18 +209,18 @@ llvm-vscode-activate() {
     local script_path="$HOME/.local/bin/llvm-vscode-activate"
 
     if [ -f "$script_path" ]; then
-        echo "🔧 Configuring VSCode workspace for LLVM $version..."
+        log_progress "Configuring VSCode workspace for LLVM $version..."
         "$script_path" "$version"
         local exit_code=$?
         if [ $exit_code -eq 0 ]; then
-            echo "✅ VSCode workspace successfully configured!"
-            echo "🔄 Please reload your VSCode window (Ctrl+Shift+P → 'Developer: Reload Window')"
+            log_success "VSCode workspace successfully configured!"
+            log_tip "Please reload your VSCode window (Ctrl+Shift+P → 'Developer: Reload Window')"
         fi
         return $exit_code
     else
-        echo "❌ Error: llvm-vscode-activate script not found at $script_path"
-        echo "📥 Run the installation script to install LLVM manager tools."
-        echo "   ./install.sh"
+        log_error "llvm-vscode-activate script not found at $script_path"
+        log_tip "Run the installation script to install LLVM manager tools."
+        log_tip "  ./install.sh"
         return 1
     fi
 }
@@ -320,10 +419,10 @@ llvm-config-init() {
     local config_file=".llvmup-config"
 
     if [ -f "$config_file" ]; then
-        echo "⚠️  .llvmup-config already exists in current directory"
-        echo "🔍 Current configuration:"
-        cat "$config_file"
-        echo ""
+        log_warn ".llvmup-config already exists in current directory"
+        log_debug "Current configuration:"
+        log_debug "$(cat "$config_file")"
+        log_debug ""
 
         # For testing environments, allow skipping interactive prompts
         local overwrite_choice="n"
@@ -336,12 +435,12 @@ llvm-config-init() {
         fi
 
         if [[ ! $overwrite_choice =~ ^[Yy]$ ]]; then
-            echo "❌ Configuration initialization cancelled"
+            log_error "Configuration initialization cancelled"
             return 1
         fi
     fi
 
-    echo "🎯 Initializing LLVM project configuration..."
+    log_config "Initializing LLVM project configuration..."
 
     # For testing, use environment variables or defaults
     if [ -n "$LLVM_TEST_MODE" ]; then
@@ -363,9 +462,9 @@ llvm-config-init() {
         fi
 
         if [ ${#installed_versions[@]} -gt 0 ]; then
-            echo "📦 Found installed LLVM versions:"
+            log_info "Found installed LLVM versions:"
             for i in "${!installed_versions[@]}"; do
-                echo "  $((i+1)). ${installed_versions[i]}"
+                log_info "  $((i+1)). ${installed_versions[i]}"
             done
             suggested_version="${installed_versions[0]}"
             echo ""
@@ -374,15 +473,15 @@ llvm-config-init() {
                 default_version="$suggested_version"
             fi
         else
-            echo "❌ No LLVM versions currently installed"
-            echo "🔍 Would you like to see available remote versions to choose from?"
+            log_error "No LLVM versions currently installed"
+            log_debug "Would you like to see available remote versions to choose from?"
             read -p "List remote versions? [Y/n]: " -n 1 -r
             echo
 
             if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-                echo "🌐 Fetching available LLVM versions from GitHub..."
+                log_progress "Fetching available LLVM versions from GitHub..."
                 if command -v curl >/dev/null 2>&1; then
-                    echo "💡 Latest available versions:"
+                    log_tip "Latest available versions:"
                     local remote_versions=$(curl -s "https://api.github.com/repos/llvm/llvm-project/releases?per_page=10" | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4 2>/dev/null)
                     if [ -n "$remote_versions" ]; then
                         echo "$remote_versions" | head -10 | while IFS= read -r version; do
@@ -390,16 +489,16 @@ llvm-config-init() {
                         done
                         echo ""
                     else
-                        echo "⚠️  Unable to fetch remote versions from GitHub"
-                        echo "💡 You can use versions like: llvmorg-18.1.8, llvmorg-17.0.6, llvmorg-16.0.6"
+                        log_warn "Unable to fetch remote versions from GitHub"
+                        log_tip "You can use versions like: llvmorg-18.1.8, llvmorg-17.0.6, llvmorg-16.0.6"
                     fi
                 elif command -v llvm-prebuilt >/dev/null 2>&1; then
-                    echo "💡 You can check available versions by running:"
-                    echo "  llvmup install"
-                    echo "💡 Common versions: llvmorg-18.1.8, llvmorg-17.0.6, llvmorg-16.0.6"
+                    log_tip "You can check available versions by running:"
+                    log_tip "  llvmup install"
+                    log_tip "Common versions: llvmorg-18.1.8, llvmorg-17.0.6, llvmorg-16.0.6"
                 else
-                    echo "⚠️  Unable to fetch remote versions"
-                    echo "💡 Common versions: llvmorg-18.1.8, llvmorg-17.0.6, llvmorg-16.0.6"
+                    log_warn "Unable to fetch remote versions"
+                    log_tip "Common versions: llvmorg-18.1.8, llvmorg-17.0.6, llvmorg-16.0.6"
                 fi
             fi
 
@@ -448,9 +547,9 @@ auto_activate = true
 cmake_preset = "Release"
 EOF
 
-    echo "✅ Configuration file created: $config_file"
-    echo "💡 Edit the file to customize build settings"
-    echo "🚀 Run 'llvm-config-load' to install and activate the configured version"
+    log_success "Configuration file created: $config_file"
+    log_tip "Edit the file to customize build settings"
+    log_tip "Run 'llvm-config-load' to install and activate the configured version"
 }
 
 # Function to load and parse .llvmup-config settings
@@ -458,12 +557,12 @@ llvm-config-load() {
     local config_file=".llvmup-config"
 
     if [ ! -f "$config_file" ]; then
-        echo "❌ No .llvmup-config file found in current directory"
-        echo "💡 Run 'llvm-config-init' to create one"
+        log_error "No .llvmup-config file found in current directory"
+        log_tip "Run 'llvm-config-init' to create one"
         return 1
     fi
 
-    echo "📋 Loading project configuration from $config_file..."
+    log_progress "Loading project configuration from $config_file..."
 
     # Initialize global variables for config
     LLVM_CONFIG_VERSION=""
@@ -616,7 +715,7 @@ llvm-config-load() {
     done < "$config_file"
 
     if [ -z "$LLVM_CONFIG_VERSION" ]; then
-        echo "❌ No default version specified in configuration"
+        log_error "No default version specified in configuration"
         return 1
     fi
 
@@ -640,27 +739,27 @@ llvm-config-load() {
                 LLVM_CONFIG_CMAKE_FLAGS+=("-DLLVM_ENABLE_ASSERTIONS=OFF")
                 ;;
             *)
-                echo "⚠️  Unknown cmake_preset: $LLVM_CONFIG_CMAKE_PRESET (ignoring)"
+                log_warn "Unknown cmake_preset: $LLVM_CONFIG_CMAKE_PRESET (ignoring)"
                 ;;
         esac
     fi
 
-    echo "🎯 Configuration loaded:"
-    echo "   📦 Version: $LLVM_CONFIG_VERSION"
-    [ -n "$LLVM_CONFIG_NAME" ] && echo "   🏷️  Name: $LLVM_CONFIG_NAME"
-    [ -n "$LLVM_CONFIG_PROFILE" ] && echo "   📋 Profile: $LLVM_CONFIG_PROFILE"
-    [ ${#LLVM_CONFIG_CMAKE_FLAGS[@]} -gt 0 ] && echo "   🔧 CMake flags: ${LLVM_CONFIG_CMAKE_FLAGS[*]}"
-    [ ${#LLVM_CONFIG_COMPONENTS[@]} -gt 0 ] && echo "   📦 Components: ${LLVM_CONFIG_COMPONENTS[*]}"
-    [ -n "$LLVM_CONFIG_CMAKE_PRESET" ] && echo "   🎨 CMake preset: $LLVM_CONFIG_CMAKE_PRESET"
+    log_config "Configuration loaded:"
+    log_info "   📦 Version: $LLVM_CONFIG_VERSION"
+    [ -n "$LLVM_CONFIG_NAME" ] && log_info "   🏷️  Name: $LLVM_CONFIG_NAME"
+    [ -n "$LLVM_CONFIG_PROFILE" ] && log_info "   📋 Profile: $LLVM_CONFIG_PROFILE"
+    [ ${#LLVM_CONFIG_CMAKE_FLAGS[@]} -gt 0 ] && log_debug "CMake flags: ${LLVM_CONFIG_CMAKE_FLAGS[*]}"
+    [ ${#LLVM_CONFIG_COMPONENTS[@]} -gt 0 ] && log_debug "Components: ${LLVM_CONFIG_COMPONENTS[*]}"
+    [ -n "$LLVM_CONFIG_CMAKE_PRESET" ] && log_debug "CMake preset: $LLVM_CONFIG_CMAKE_PRESET"
     if [ "$LLVM_CONFIG_AUTO_ACTIVATE" = "true" ]; then
-        echo "   🔄 Auto-activate: enabled"
+        log_debug "Auto-activate: enabled"
     elif [ "$LLVM_CONFIG_AUTO_ACTIVATE" = "false" ]; then
-        echo "   🔄 Auto-activate: disabled"
+        log_debug "Auto-activate: disabled"
     fi
 
-    echo "💡 Next steps:"
-    echo "   • llvm-config-apply    - Install with these settings"
-    echo "   • llvm-config-activate - Activate if already installed"
+    log_tip "Next steps:"
+    log_tip "  • llvm-config-apply    - Install with these settings"
+    log_tip "  • llvm-config-activate - Activate if already installed"
     return 0
 }
 
@@ -668,7 +767,7 @@ llvm-config-load() {
 llvm-config-apply() {
     # Check if config is loaded
     if [ -z "$LLVM_CONFIG_VERSION" ]; then
-        echo "❌ No configuration loaded. Run 'llvm-config-load' first"
+        log_error "No configuration loaded. Run 'llvm-config-load' first"
         return 1
     fi
 
@@ -685,12 +784,12 @@ llvm-config-apply() {
         cmd_args+=(--component "$comp")
     done
 
-    echo "💡 Installing with settings:"
-    echo "   llvmup install --from-source ${cmd_args[*]}"
+    log_tip "Installing with settings:"
+    log_tip "  llvmup install --from-source ${cmd_args[*]}"
 
     # In test mode, don't prompt for installation
     if [ -n "$LLVM_TEST_MODE" ]; then
-        echo "🧪 Test mode: skipping installation"
+        log_debug "Test mode: skipping installation"
         return 0
     fi
 
@@ -698,21 +797,21 @@ llvm-config-apply() {
     read -p "🤔 Install now? [y/N]: " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        echo "🚀 Installing LLVM with project configuration..."
+        log_progress "Installing LLVM with project configuration..."
         if command -v llvmup >/dev/null 2>&1; then
             llvmup install --from-source "${cmd_args[@]}"
             if [ $? -eq 0 ]; then
-                echo "✅ Installation complete!"
-                echo "💡 Use 'llvm-config-activate' to activate the version"
+                log_success "Installation complete!"
+                log_tip "Use 'llvm-config-activate' to activate the version"
             fi
         else
-            echo "❌ llvmup command not found in PATH"
-            echo "💡 Make sure LLVM manager is installed and in your PATH"
+            log_error "llvmup command not found in PATH"
+            log_tip "Make sure LLVM manager is installed and in your PATH"
             return 1
         fi
     else
-        echo "💡 To install later, run: llvmup install --from-source ${cmd_args[*]}"
-        echo "💡 To activate if already installed, run: llvm-config-activate"
+        log_tip "To install later, run: llvmup install --from-source ${cmd_args[*]}"
+        log_tip "To activate if already installed, run: llvm-config-activate"
     fi
 }
 
@@ -720,18 +819,18 @@ llvm-config-apply() {
 llvm-config-activate() {
     # Check if config is loaded
     if [ -z "$LLVM_CONFIG_VERSION" ]; then
-        echo "❌ No configuration loaded. Run 'llvm-config-load' first"
+        log_error "No configuration loaded. Run 'llvm-config-load' first"
         return 1
     fi
 
     # Determine installation name (same logic as apply)
     local installation_name="${LLVM_CONFIG_VERSION}"
 
-    echo "🎯 Activating LLVM configuration:"
-    echo "   Version: $LLVM_CONFIG_VERSION"
-    [ -n "$LLVM_CONFIG_NAME" ] && echo "   Name: $LLVM_CONFIG_NAME"
-    [ -n "$LLVM_CONFIG_PROFILE" ] && echo "   Profile: $LLVM_CONFIG_PROFILE"
-    echo "   Installation: $installation_name"
+    log_config "Activating LLVM configuration:"
+    log_info "   Version: $LLVM_CONFIG_VERSION"
+    [ -n "$LLVM_CONFIG_NAME" ] && log_debug "Name: $LLVM_CONFIG_NAME"
+    [ -n "$LLVM_CONFIG_PROFILE" ] && log_debug "Profile: $LLVM_CONFIG_PROFILE"
+    log_debug "Installation: $installation_name"
 
     # Try to activate the installation
     if command -v llvm-activate >/dev/null 2>&1; then
@@ -739,31 +838,39 @@ llvm-config-activate() {
         local activate_result=$?
 
         if [ $activate_result -eq 0 ]; then
-            echo "✅ LLVM $installation_name activated successfully"
+            log_success "LLVM $installation_name activated successfully"
 
             # Display current activated version info if verbose
-            if [ -n "$LLVM_CONFIG_VERBOSE" ] || [ "$1" = "--verbose" ]; then
-                echo "📋 Active LLVM environment:"
+            if [ -n "$LLVM_CONFIG_VERBOSE" ] || [ "$1" = "--verbose" ] || [ -n "$LLVM_VERBOSE" ] || [ -n "$LLVM_TEST_MODE" ]; then
+                log_debug "Active LLVM environment:"
                 command -v clang && clang --version | head -1
-                command -v llvm-config && echo "LLVM Config: $(llvm-config --version)"
+                command -v llvm-config && log_debug "LLVM Config: $(llvm-config --version)"
             fi
         else
-            echo "❌ Failed to activate LLVM $installation_name"
-            echo "💡 Make sure the installation exists with: llvm-list"
+            log_error "Failed to activate LLVM $installation_name"
+            log_tip "Make sure the installation exists with: llvm-list"
             return $activate_result
         fi
     else
-        echo "❌ llvm-activate command not found in PATH"
-        echo "💡 Make sure LLVM manager is installed and in your PATH"
+        log_error "llvm-activate command not found in PATH"
+        log_tip "Make sure LLVM manager is installed and in your PATH"
         return 1
     fi
 }
 
 llvm-autoactivate() {
     if [ -f ".llvmup-config" ]; then
+        BACKUP_QUIET_SUCCESS=$QUIET_SUCCESS
+        QUIET_SUCCESS=1
         llvm-config-load
         if [ "$LLVM_CONFIG_AUTO_ACTIVATE" = "true" ]; then
             llvm-config-activate
         fi
+        QUIET_SUCCESS=$BACKUP_QUIET_SUCCESS
     fi
 }
+
+if [ -z "$LLVMUP_DISABLE_AUTOACTIVATE" ] && [ -z "$LLVMUP_AUTOACTIVATED" ]; then
+    llvm-autoactivate
+    export LLVMUP_AUTOACTIVATED=1
+fi
