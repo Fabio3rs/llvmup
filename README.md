@@ -23,7 +23,7 @@ This is a proof-of-concept test version and may contain bugs. Use at your own ri
 - 🪟 **Windows PowerShell parity** with equivalent scripts
 - 🔁 **Subcommand structure** (install, config, default)
 - 📝 **Custom installation naming** for multiple variants
-- 🧪 **Comprehensive test suite** with 24 automated tests
+- 🧪 **Test suite** with 24+ automated tests
 - 🔄 **LIBC_WNO_ERROR control** for compatibility with different systems
 - ♻️ **CMake reconfiguration** with `--reconfigure` flag for clean rebuilds
 - 🎨 **Enhanced logging system** with verbose/quiet mode controls
@@ -43,10 +43,10 @@ This is a proof-of-concept test version and may contain bugs. Use at your own ri
 - **Better Error Handling**: Clear error messages and recovery suggestions
 - **Variable Trimming**: Robust config parsing with proper whitespace handling
 
-### 🪟 **Complete Windows Parity**
-- **Unified PowerShell Script**: `Install-Llvm.ps1` with all bash features
+### 🪟 **Windows PowerShell Support**
+- **Unified PowerShell Script**: `Install-Llvm.ps1` with most bash features
 - **Enhanced Logging**: Same intelligent logging system in PowerShell
-- **Full Config Support**: Complete config management with load/apply/activate
+- **Config Support**: Config management with load/apply/activate
 - **Force Reconfiguration**: `-Reconfigure` parameter for clean rebuilds
 
 ## 🆕 Previous Enhancements (v2.0)
@@ -60,7 +60,7 @@ This is a proof-of-concept test version and may contain bugs. Use at your own ri
 ### 🏗️ Improved Project Structure
 - **Organized Documentation**: All docs moved to `docs/` directory with cross-references
 - **Example Scripts**: Interactive demos and tests in `examples/` directory
-- **Comprehensive Testing**: Full test suite with unit and integration tests
+- **Extensive Testing**: Test suite with unit and integration tests
 
 ## 🚀 Latest Features (v3.0)
 
@@ -77,10 +77,10 @@ This is a proof-of-concept test version and may contain bugs. Use at your own ri
 - **Variable Trimming**: Robust parsing with whitespace and quote handling
 
 ### 🪟 **Windows PowerShell Enhancements**
-- **Complete Parity**: All bash features now available in PowerShell
+- **Feature Parity**: Most bash features now available in PowerShell
 - **Enhanced Logging**: Same intelligent logging system as bash version
 - **Force Reconfiguration**: `-Reconfigure` switch for PowerShell builds
-- **Config Management**: Full config system with load/apply/activate functions
+- **Config Management**: Config system with load/apply/activate functions
 
 ## 🚀 Quick Start
 
@@ -149,7 +149,7 @@ llvm-status
 # List all installed versions
 llvm-list
 
-# Get complete help
+# Get detailed help
 llvm-help
 ```
 
@@ -238,7 +238,7 @@ llvm-activate <version>      # Activate an LLVM version
 llvm-deactivate            # Deactivate current version
 llvm-status                # Show detailed current status
 llvm-list                  # List installed versions
-llvm-help                  # Show complete usage guide
+llvm-help                  # Show detailed usage guide
 ```
 
 ### ⚙️ Configuration Management
@@ -309,7 +309,7 @@ Use the interactive installation helper for guided setup:
 ./install-examples.sh
 ```
 
-For complete installation documentation, see [INSTALL.md](INSTALL.md).
+For detailed installation documentation, see [INSTALL.md](INSTALL.md).
 
 ### 🎯 Intuitive Visual Interface
 
@@ -537,7 +537,7 @@ llvmup --<TAB><TAB>         # List available options
 ```
 
 ### Detailed Status Verification
-The `llvm-status` command provides complete information about the active environment:
+The `llvm-status` command provides detailed information about the active environment:
 
 ```bash
 llvm-status
@@ -624,7 +624,7 @@ llvm-status
 - **Function completion**: All LLVM functions support TAB completion
 
 ### 🪟 **Windows PowerShell Parity**
-- **Install-Llvm.ps1**: Complete installation management with all build options
+- **Install-Llvm.ps1**: Installation management with advanced build options
   - Configuration management (`config init`, `config load`, `config apply`, `config activate`)
   - Enhanced build options (`-DisableLibcWnoError`, `-Reconfigure`, `-Verbose`)
   - Default version management (`default set`, `default show`)
@@ -684,7 +684,7 @@ To facilitate the use of LLVM version manager tools from anywhere, an installati
    - Use `llvm-vscode-activate <version>` to configure VSCode integration
    - Use `llvm-status` to check active version
    - Use `llvm-list` to see all installed versions
-   - Use `llvm-help` for complete usage guide
+   - Use `llvm-help` for detailed usage guide
 
 ## 🗑️ Uninstallation
 
@@ -768,7 +768,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ### 📁 Directory Structure
 ```
 llvmup/
-├── 📖 docs/              # Complete documentation
+├── 📖 docs/              # Extensive documentation
 ├── 🎯 examples/          # Demos and test scripts
 ├── 🧪 tests/             # Automated test suite
 ├── 🛠️ scripts/          # Development utilities
@@ -776,7 +776,7 @@ llvmup/
 ```
 
 ### 📖 Documentation (`docs/`)
-- **[INSTALL.md](docs/INSTALL.md)**: Complete installation guide
+- **[INSTALL.md](docs/INSTALL.md)**: Detailed installation guide
 - **[FEATURE_SUMMARY.md](docs/FEATURE_SUMMARY.md)**: All features overview
 - **[COMPLETION_UX_REPORT.md](docs/COMPLETION_UX_REPORT.md)**: Auto-completion system
 - **[BUILD_EXAMPLE.md](docs/BUILD_EXAMPLE.md)**: Build system examples
@@ -790,7 +790,7 @@ llvmup/
 - **[examples/README.md](examples/README.md)**: Detailed examples guide
 
 ### 🧪 Testing (`tests/`)
-- **Unit tests**: 24+ comprehensive automated tests (BATS framework)
+- **Unit tests**: 24+ automated tests (BATS framework)
 - **Integration tests**: Full workflow validation and cross-platform compatibility
 - **PowerShell tests**: Windows-specific functionality validation
 - **LIBC_WNO_ERROR tests**: Warning flag control system validation
@@ -807,14 +807,16 @@ llvmup/
 
 ## 📊 Project Status
 
-**✅ v3.0 - Complete Feature Set**
-- Cross-platform parity (Linux + Windows PowerShell)
+**🧪 v3.0 - Proof-of-Concept with Advanced Features**
+- Cross-platform support (Linux + Windows PowerShell)
 - Enhanced logging with specialized functions
 - LIBC_WNO_ERROR flag control system
 - CMake force reconfiguration capability
-- Comprehensive test coverage (24+ tests)
-- Complete documentation in `docs/` folder
+- Test coverage (24+ tests)
+- Extensive documentation in `docs/` folder
+
+⚠️ **Note**: This is experimental software. Features may change or contain bugs.
 
 ---
 
-**💡 Tip**: For complete help on all available commands, run `llvm-help` after installation!
+**💡 Tip**: For detailed help on available commands, run `llvm-help` after installation!
