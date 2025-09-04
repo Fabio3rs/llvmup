@@ -479,6 +479,15 @@ llvm-config-load() {
     local in_array=0
     local array_type=""
 
+    # Helper function to trim whitespace from a string
+    trim() {
+        local var="$1"
+        # Remove leading and trailing whitespace
+        var="${var#"${var%%[![:space:]]*}"}"
+        var="${var%"${var##*[![:space:]]}"}"
+        echo "$var"
+    }
+
     # Helper function to parse array content
     parse_array_content() {
         local content="$1"
@@ -491,7 +500,7 @@ llvm-config-load() {
         # Split by comma and add to appropriate array
         IFS=',' read -ra items <<< "$content"
         for item in "${items[@]}"; do
-            item=$(echo "$item" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            item=$(trim "$item")
             [ -z "$item" ] && continue
 
             case "$section" in
@@ -557,48 +566,49 @@ llvm-config-load() {
             value="${BASH_REMATCH[2]}"
             # Remove quotes and whitespace
             value=$(echo "$value" | sed 's/^[[:space:]]*["'"'"']//;s/["'"'"'][[:space:]]*$//')
+            value=$(trim "$value")
 
             # Handle simple format (without sections) or section-based format
             case "$current_section" in
                 "") # Simple format
                     case "$key" in
                         "version")
-                            LLVM_CONFIG_VERSION="$value"
+                            LLVM_CONFIG_VERSION=$(trim "$value")
                             ;;
                         "name")
-                            LLVM_CONFIG_NAME="$value"
+                            LLVM_CONFIG_NAME=$(trim "$value")
                             ;;
                         "profile")
-                            LLVM_CONFIG_PROFILE="$value"
+                            LLVM_CONFIG_PROFILE=$(trim "$value")
                             ;;
                         "auto_activate")
-                            LLVM_CONFIG_AUTO_ACTIVATE="$value"
+                            LLVM_CONFIG_AUTO_ACTIVATE=$(trim "$value")
                             ;;
                         "cmake_preset")
-                            LLVM_CONFIG_CMAKE_PRESET="$value"
+                            LLVM_CONFIG_CMAKE_PRESET=$(trim "$value")
                             ;;
                     esac
                     ;;
                 "version")
                     if [ "$key" = "default" ]; then
-                        LLVM_CONFIG_VERSION="$value"
+                        LLVM_CONFIG_VERSION=$(trim "$value")
                     fi
                     ;;
                 "build")
                     if [ "$key" = "name" ]; then
-                        LLVM_CONFIG_NAME="$value"
+                        LLVM_CONFIG_NAME=$(trim "$value")
                     fi
                     ;;
                 "profile")
                     if [ "$key" = "type" ]; then
-                        LLVM_CONFIG_PROFILE="$value"
+                        LLVM_CONFIG_PROFILE=$(trim "$value")
                     fi
                     ;;
                 "project")
                     if [ "$key" = "auto_activate" ]; then
-                        LLVM_CONFIG_AUTO_ACTIVATE="$value"
+                        LLVM_CONFIG_AUTO_ACTIVATE=$(trim "$value")
                     elif [ "$key" = "cmake_preset" ]; then
-                        LLVM_CONFIG_CMAKE_PRESET="$value"
+                        LLVM_CONFIG_CMAKE_PRESET=$(trim "$value")
                     fi
                     ;;
             esac
@@ -715,10 +725,7 @@ llvm-config-activate() {
     fi
 
     # Determine installation name (same logic as apply)
-    local installation_name="llvm-${LLVM_CONFIG_VERSION}"
-    if [ -n "$LLVM_CONFIG_NAME" ]; then
-        installation_name="llvm-${LLVM_CONFIG_VERSION}-${LLVM_CONFIG_NAME}"
-    fi
+    local installation_name="${LLVM_CONFIG_VERSION}"
 
     echo "🎯 Activating LLVM configuration:"
     echo "   Version: $LLVM_CONFIG_VERSION"
@@ -749,5 +756,14 @@ llvm-config-activate() {
         echo "❌ llvm-activate command not found in PATH"
         echo "💡 Make sure LLVM manager is installed and in your PATH"
         return 1
+    fi
+}
+
+llvm-autoactivate() {
+    if [ -f ".llvmup-config" ]; then
+        llvm-config-load
+        if [ "$LLVM_CONFIG_AUTO_ACTIVATE" = "true" ]; then
+            llvm-config-activate
+        fi
     fi
 }
