@@ -19,7 +19,7 @@ log_error() {
     if [ "$QUIET_MODE" -eq 1 ]; then
         return
     fi
-    echo "❌ $*" >&2
+    echo "❌ Error: $*" >&2
 }
 
 # Log warning messages (always shown)
@@ -869,6 +869,11 @@ llvm-autoactivate() {
         QUIET_SUCCESS=$BACKUP_QUIET_SUCCESS
     fi
 }
+
+# Se estiver ativo LLVM_TEST_MODE, não faça auto-ativação
+if [ -n "$LLVM_TEST_MODE" ]; then
+    return
+fi
 
 if [ -z "$LLVMUP_DISABLE_AUTOACTIVATE" ] && [ -z "$LLVMUP_AUTOACTIVATED" ]; then
     llvm-autoactivate
