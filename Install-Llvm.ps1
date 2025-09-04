@@ -18,6 +18,7 @@ param (
     [string]$Profile,
     [string[]]$Component = @(),
     [switch]$DisableLibcWnoError,
+    [switch]$Reconfigure,
     [switch]$Verbose,
     [switch]$Quiet,
     [switch]$Help
@@ -145,6 +146,7 @@ Install Options:
   -Profile        Build profile: minimal, full, custom
   -Component      Install specific components (can be repeated)
   -DisableLibcWnoError  Disable LIBC_WNO_ERROR=ON flag
+  -Reconfigure    Force CMake to reconfigure the build if CMakeCache.txt exists
   -Verbose        Enable verbose output for debugging
   -Quiet          Suppress non-essential output
   -Help           Show this help message
@@ -166,6 +168,7 @@ Examples:
   .\Install-Llvm.ps1 install -Profile minimal llvmorg-18.1.8  # Install minimal profile
   .\Install-Llvm.ps1 install -Component clang -Component lldb  # Specific components
   .\Install-Llvm.ps1 install -DisableLibcWnoError             # Disable LIBC_WNO_ERROR flag
+  .\Install-Llvm.ps1 install -FromSource -Reconfigure         # Force CMake reconfiguration
   .\Install-Llvm.ps1 config init                              # Initialize project config
   .\Install-Llvm.ps1 config apply                             # Install from config
   .\Install-Llvm.ps1 default set llvmorg-18.1.8              # Set default version
@@ -391,7 +394,8 @@ function Install-LlvmVersion {
         [bool]$SetAsDefault,
         [string]$BuildProfile,
         [string[]]$ComponentsArray,
-        [bool]$DisableLibcWnoErrorFlag = $false
+        [bool]$DisableLibcWnoErrorFlag = $false,
+        [bool]$ForceReconfigure = $false
     )
 
     # Load config file if it exists
@@ -413,7 +417,7 @@ function Install-LlvmVersion {
     Write-InfoLog "🚀 Installing LLVM version: $VersionToInstall"
 
     if ($BuildFromSource) {
-        return Install-FromSource -Version $VersionToInstall -CmakeFlags $CmakeFlagsArray -Name $CustomName -SetDefault $SetAsDefault -Profile $BuildProfile -Components $ComponentsArray -DisableLibcWnoError $DisableLibcWnoErrorFlag
+        return Install-FromSource -Version $VersionToInstall -CmakeFlags $CmakeFlagsArray -Name $CustomName -SetDefault $SetAsDefault -Profile $BuildProfile -Components $ComponentsArray -DisableLibcWnoError $DisableLibcWnoErrorFlag -ForceReconfigure $ForceReconfigure
     } else {
         return Install-PreBuilt -Version $VersionToInstall -Name $CustomName -SetDefault $SetAsDefault
     }
@@ -452,7 +456,8 @@ function Install-FromSource {
         [bool]$SetDefault,
         [string]$Profile,
         [string[]]$Components,
-        [bool]$DisableLibcWnoError = $false
+        [bool]$DisableLibcWnoError = $false,
+        [bool]$ForceReconfigure = $false
     )
 
     Write-InfoLog "🔨 Building LLVM $Version from source..."
@@ -540,6 +545,19 @@ function Install-FromSource {
     }
 
     Write-VerboseLog "CMake command: cmake $($cmakeArgs -join ' ')"
+
+    # Force reconfiguration if requested and CMakeCache.txt exists
+    $buildDir = "$script:SOURCES_DIR\$Version\build"
+    $cmakeCachePath = "$buildDir\CMakeCache.txt"
+    if ($ForceReconfigure -and (Test-Path $cmakeCachePath)) {
+        Write-InfoLog "♻️  Forcing CMake reconfiguration..."
+        Remove-Item $cmakeCachePath -Force -ErrorAction SilentlyContinue
+        $cmakeFilesPath = "$buildDir\CMakeFiles"
+        if (Test-Path $cmakeFilesPath) {
+            Remove-Item $cmakeFilesPath -Force -Recurse -ErrorAction SilentlyContinue
+        }
+        Write-VerboseLog "Removed CMakeCache.txt and CMakeFiles directory"
+    }
 
     # TODO: Implement actual source build logic
     # This would involve git clone, cmake configure, build, and install
@@ -850,14 +868,14 @@ switch ($Command.ToLower()) {
         }
     }
     "install" {
-        $result = Install-LlvmVersion -VersionToInstall $Version -BuildFromSource $FromSource -CmakeFlagsArray $CmakeFlags -CustomName $Name -SetAsDefault $Default -BuildProfile $Profile -ComponentsArray $Component -DisableLibcWnoErrorFlag $DisableLibcWnoError
+        $result = Install-LlvmVersion -VersionToInstall $Version -BuildFromSource $FromSource -CmakeFlagsArray $CmakeFlags -CustomName $Name -SetAsDefault $Default -BuildProfile $Profile -ComponentsArray $Component -DisableLibcWnoErrorFlag $DisableLibcWnoError -ForceReconfigure $Reconfigure
         if (-not $result) {
             exit 1
         }
     }
     default {
         # Default to install command
-        $result = Install-LlvmVersion -VersionToInstall $Command -BuildFromSource $FromSource -CmakeFlagsArray $CmakeFlags -CustomName $Name -SetAsDefault $Default -BuildProfile $Profile -ComponentsArray $Component -DisableLibcWnoErrorFlag $DisableLibcWnoError
+        $result = Install-LlvmVersion -VersionToInstall $Command -BuildFromSource $FromSource -CmakeFlagsArray $CmakeFlags -CustomName $Name -SetAsDefault $Default -BuildProfile $Profile -ComponentsArray $Component -DisableLibcWnoErrorFlag $DisableLibcWnoError -ForceReconfigure $Reconfigure
         if (-not $result) {
             exit 1
         }

@@ -39,6 +39,12 @@
 - Aplicação automática de flags CMAKE baseadas no preset
 - Configuração via `cmake_preset` na seção `[project]`
 
+### 8. **Força Reconfiguration do CMake**
+- Novo parâmetro: `-Reconfigure`
+- Remove `CMakeCache.txt` e `CMakeFiles` se existirem
+- Força o CMake a reconfigurar o build completamente
+- Funcionalidade idêntica ao `--reconfigure` da versão bash
+
 ## 🆕 Comandos Adicionados
 
 ### Config Management
@@ -66,6 +72,9 @@
 
 # Build usando perfil mínimo
 .\Install-Llvm.ps1 install -FromSource -Profile minimal
+
+# Forçar reconfiguration do CMake
+.\Install-Llvm.ps1 install -FromSource -Reconfigure
 ```
 
 ## 📋 Exemplo de .llvmup-config Melhorado
@@ -106,6 +115,7 @@ cmake_preset = "Debug"
 | `llvm-config-apply` | `Invoke-LlvmConfigApply` |
 | `llvm-config-activate` | `Invoke-LlvmConfigActivate` |
 | `--disable-libc-wno-error` | `-DisableLibcWnoError` |
+| `--reconfigure` | `-Reconfigure` |
 
 ## 🧪 Modo de Teste
 
@@ -125,7 +135,8 @@ Similar ao bash, suporta variáveis de ambiente para testes:
 - ✅ Suporte a CMake presets
 - ✅ Modo de teste compatível
 - ✅ Help atualizado com novas funcionalidades
+- ✅ Força reconfiguration do CMake (--reconfigure)
 
-**Total: 866 linhas** (incremento significativo das ~453 originais)
+**Total: 883 linhas** (incremento das ~866 anteriores)
 
 A versão PowerShell agora tem paridade funcional completa com a versão bash, incluindo todas as melhorias implementadas durante esta iteração.

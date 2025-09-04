@@ -25,6 +25,8 @@ PROFILE=""
 COMPONENTS=()
 DISABLE_LIBC_WNO_ERROR=0
 
+CMAKE_FORCE_RECONFIGURE=0
+
 # Test mode support
 if [ "$LLVM_TEST_MODE" = "1" ]; then
     log_verbose() { echo "[TEST-VERBOSE] $*" >&2; }
@@ -238,6 +240,11 @@ while [[ $# -gt 0 ]]; do
             log_verbose "List-only mode enabled"
             shift
             ;;
+        --reconfigure)
+            CMAKE_FORCE_RECONFIGURE=1
+            log_verbose "Force CMake reconfiguration enabled"
+            shift
+            ;;
         -h|--help)
             echo "Usage: $0 [OPTIONS] [VERSION]"
             echo ""
@@ -251,6 +258,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --component <COMPONENT>         Install specific component"
             echo "  --disable-libc-wno-error        Disable LIBC_WNO_ERROR=ON flag"
             echo "  --list-only                     List available versions and exit"
+            echo "  --reconfigure                   Force CMake to reconfigure the build if CMakeCache.txt exists"
             echo "  -h, --help                      Show this help"
             echo ""
             echo "Examples:"
@@ -474,6 +482,13 @@ for flag in "${CMAKE_FLAGS[@]}"; do
     cmake_args+=("$flag")
     log_verbose "Added CMake flag: $flag"
 done
+
+# Force reconfiguration if requested and CMakeCache.txt exists
+if [ "$CMAKE_FORCE_RECONFIGURE" -eq 1 ] && [ -f "$build_dir/CMakeCache.txt" ]; then
+    log_info "♻️  Forcing CMake reconfiguration..."
+    rm -f "$build_dir/CMakeCache.txt"
+    rm -rf "$build_dir/CMakeFiles"
+fi
 
 log_info "🔧 Configuring build with CMake (using Ninja generator)..."
 log_verbose "CMake command: cmake ${cmake_args[*]}"
