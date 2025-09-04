@@ -24,8 +24,32 @@ This is a proof-of-concept test version and may contain bugs. Use at your own ri
 - 🔁 **Subcommand structure** (install, config, default)
 - 📝 **Custom installation naming** for multiple variants
 - 🧪 **Comprehensive test suite** with 24 automated tests
+- 🔄 **LIBC_WNO_ERROR control** for compatibility with different systems
+- ♻️ **CMake reconfiguration** with `--reconfigure` flag for clean rebuilds
+- 🎨 **Enhanced logging system** with verbose/quiet mode controls
 
-## 🆕 Latest Enhancements (v2.0)
+## 🆕 Latest Enhancements (v3.0)
+
+### 🔧 **Enhanced Build & Configuration System**
+- **LIBC_WNO_ERROR Control**: Fine-grained control over compatibility flags
+- **CMake Reconfiguration**: Force clean rebuilds with `--reconfigure`
+- **Separated Config Functions**: Load, Apply, and Activate workflows
+- **CMake Presets**: Built-in Debug, Release, RelWithDebInfo, MinSizeRel presets
+- **Auto Version Detection**: Intelligent detection of installed versions
+
+### 🎨 **Improved User Experience**
+- **Enhanced Logging**: Intelligent verbosity with specialized log functions
+- **Clean Output**: Reduced "noise" with verbose/quiet mode controls
+- **Better Error Handling**: Clear error messages and recovery suggestions
+- **Variable Trimming**: Robust config parsing with proper whitespace handling
+
+### 🪟 **Complete Windows Parity**
+- **Unified PowerShell Script**: `Install-Llvm.ps1` with all bash features
+- **Enhanced Logging**: Same intelligent logging system in PowerShell
+- **Full Config Support**: Complete config management with load/apply/activate
+- **Force Reconfiguration**: `-Reconfigure` parameter for clean rebuilds
+
+## 🆕 Previous Enhancements (v2.0)
 
 ### 🚀 Enhanced Auto-Completion System
 - **Remote Version Fetching**: Automatically fetches latest LLVM versions from GitHub API
@@ -38,11 +62,36 @@ This is a proof-of-concept test version and may contain bugs. Use at your own ri
 - **Example Scripts**: Interactive demos and tests in `examples/` directory
 - **Comprehensive Testing**: Full test suite with unit and integration tests
 
+## 🚀 Latest Features (v3.0)
+
+### 🔧 **Enhanced Build System**
+- **LIBC_WNO_ERROR Control**: `--disable-libc-wno-error` flag for system compatibility
+- **CMake Reconfiguration**: `--reconfigure` flag for clean rebuilds
+- **Improved Logging**: Verbose/quiet mode controls with specialized log functions
+- **Enhanced Config System**: Separated load/apply/activate functions for better workflow
+
+### ⚙️ **Advanced Configuration Management**
+- **Config Subcommands**: `config load`, `config apply`, `config activate` for better separation of concerns
+- **CMake Presets**: Built-in presets (Debug, Release, RelWithDebInfo, MinSizeRel)
+- **Auto Version Detection**: Automatic detection of installed versions during config init
+- **Variable Trimming**: Robust parsing with whitespace and quote handling
+
+### 🪟 **Windows PowerShell Enhancements**
+- **Complete Parity**: All bash features now available in PowerShell
+- **Enhanced Logging**: Same intelligent logging system as bash version
+- **Force Reconfiguration**: `-Reconfigure` switch for PowerShell builds
+- **Config Management**: Full config system with load/apply/activate functions
+
 ## 🚀 Quick Start
 
 ### Linux
 
 #### 1. Installation
+
+##### One line standard installation
+```bash
+git clone https://github.com/Fabio3rs/llvmup.git && cd llvmup && ./install.sh && source ~/.bashrc
+```
 
 ##### Standard Installation
 ```bash
@@ -129,7 +178,15 @@ llvm-vscode-activate 18.1.8
 
 3. Install an LLVM version:
    ```powershell
+   # Pre-built installation
    .\Download-Llvm.ps1
+
+   # From source with advanced options
+   .\Install-Llvm.ps1 install -FromSource -Profile minimal -Reconfigure -Verbose
+
+   # Using project configuration
+   .\Install-Llvm.ps1 config init
+   .\Install-Llvm.ps1 config apply
    ```
 
 4. Activate the version (must be "sourced" to modify environment variables):
@@ -170,7 +227,9 @@ llvmup install --from-source --cmake-flags "-DCMAKE_BUILD_TYPE=Debug" 18.1.8
 llvmup install --from-source --profile minimal --name "llvm-18-min" 18.1.8
 llvmup install --from-source --component clang --component lld 18.1.8
 llvmup install --from-source --disable-libc-wno-error 18.1.8  # Disable LIBC_WNO_ERROR flag
-llvmup install --from-source --default 18.1.8  # Set as default after build
+llvmup install --from-source --reconfigure 18.1.8            # Force CMake reconfiguration
+llvmup install --from-source --default 18.1.8               # Set as default after build
+llvmup install --from-source --verbose 18.1.8               # Show verbose output
 ```
 
 ### 🔧 Environment Management
@@ -185,9 +244,13 @@ llvm-help                  # Show complete usage guide
 ### ⚙️ Configuration Management
 ```bash
 llvmup config init         # Create .llvmup-config file
-llvmup config load         # Load and install from config
+llvmup config load         # Load and display config
+llvmup config apply        # Install using config settings
+llvmup config activate     # Activate existing installation from config
 llvm-config-init           # Initialize config (function)
 llvm-config-load           # Load config (function)
+llvm-config-apply          # Apply config (function)
+llvm-config-activate       # Activate config (function)
 ```
 
 ### 🎯 Default Version Management
@@ -382,6 +445,7 @@ cmake_flags = [
   "-DCMAKE_BUILD_TYPE=Debug",
   "-DCMAKE_CXX_STANDARD=17"
 ]
+disable_libc_wno_error = false
 
 [profile]
 type = "minimal"  # or "full", "custom"
@@ -391,6 +455,7 @@ include = ["clang", "lld", "lldb"]
 
 [project]
 auto_activate = true
+cmake_preset = "Debug"  # Debug, Release, RelWithDebInfo, MinSizeRel
 ```
 
 ### 🏗️ Build Customization Options
@@ -418,10 +483,22 @@ llvmup install --from-source \
 llvmup install --from-source --component clang --component lld --component lldb 18.1.8
 ```
 
-#### Custom Installation Names
+#### Advanced Build Options
 ```bash
-# Custom name for build
-llvmup install --from-source --name "llvm-18-debug" --cmake-flags "-DCMAKE_BUILD_TYPE=Debug" 18.1.8
+# Disable LIBC_WNO_ERROR flag for compatibility
+llvmup install --from-source --disable-libc-wno-error 18.1.8
+
+# Force CMake reconfiguration (clean rebuild)
+llvmup install --from-source --reconfigure 18.1.8
+
+# Combine multiple options
+llvmup install --from-source \
+  --cmake-flags "-DCMAKE_BUILD_TYPE=Debug" \
+  --profile minimal \
+  --name "llvm-18-debug-min" \
+  --reconfigure \
+  --verbose \
+  18.1.8
 ```
 
 ### 🎯 Default Version System
@@ -501,11 +578,16 @@ llvm-status
 ### ⚙️ **Project Configuration System**
 - **Configuration files**: `.llvmup-config` with INI-style format
 - **Array support**: cmake_flags and components as arrays
-- **Subcommands**: `llvmup config init` and `llvmup config load`
+- **Subcommands**: `llvmup config init`, `llvmup config load`, and `llvmup config activate`
 - **Profile integration**: Automatic profile selection from config
 - **Override capability**: Command line options override config file settings
 
-### 🎯 **Default Version Management**
+### � **Enhanced Logging System**
+- **Intelligent verbosity**: Logs only appear in verbose mode or test mode
+- **Error handling**: Errors always shown, informational logs controlled
+- **Specialized functions**: `log_verbose`, `log_info`, `log_error`, `log_config`, etc.
+- **Visual feedback**: Rich emoji-based status indicators
+- **Clean output**: Reduces "noise" during normal operations
 - **Subcommands**: `llvmup default set <version>` and `llvmup default show`
 - **Symbolic links**: Automatic creation of default version links
 - **Cross-platform**: Linux symlinks, Windows junction points
@@ -542,11 +624,14 @@ llvm-status
 - **Function completion**: All LLVM functions support TAB completion
 
 ### 🪟 **Windows PowerShell Parity**
-- **Llvm-Config.ps1**: Configuration management equivalent
-- **Llvm-Default.ps1**: Default version management equivalent
-- **Download-Llvm.ps1**: Enhanced with all build options (CMakeFlags, Profile, Component, etc.)
+- **Install-Llvm.ps1**: Complete installation management with all build options
+  - Configuration management (`config init`, `config load`, `config apply`, `config activate`)
+  - Enhanced build options (`-DisableLibcWnoError`, `-Reconfigure`, `-Verbose`)
+  - Default version management (`default set`, `default show`)
+- **Enhanced logging**: Same intelligent logging system as bash version
 - **Parameter validation**: PowerShell parameter sets and validation
 - **Junction links**: Windows-specific default version management
+- **Auto version detection**: Detects existing installations during config init
 
 ### 🎯 **Enhanced Wrapper System**
 - **Subcommand structure**: `llvmup <command> [options]` format
@@ -695,16 +780,20 @@ llvmup/
 - **[FEATURE_SUMMARY.md](docs/FEATURE_SUMMARY.md)**: All features overview
 - **[COMPLETION_UX_REPORT.md](docs/COMPLETION_UX_REPORT.md)**: Auto-completion system
 - **[BUILD_EXAMPLE.md](docs/BUILD_EXAMPLE.md)**: Build system examples
+- **[test-powershell-features.md](docs/test-powershell-features.md)**: PowerShell feature documentation
 
 ### 🎯 Examples & Demos (`examples/`)
 - **Demo scripts**: Interactive completion and feature demonstrations
 - **Test scripts**: Real activation and compatibility testing
-- **Config examples**: Sample configuration files
+- **Config examples**: Sample configuration files with LIBC_WNO_ERROR control
+- **[examples/demo-libc-wno-error.sh](examples/demo-libc-wno-error.sh)**: LIBC warning flag demonstration
 - **[examples/README.md](examples/README.md)**: Detailed examples guide
 
 ### 🧪 Testing (`tests/`)
-- **Unit tests**: 24 comprehensive automated tests
-- **Integration tests**: Full workflow validation
+- **Unit tests**: 24+ comprehensive automated tests (BATS framework)
+- **Integration tests**: Full workflow validation and cross-platform compatibility
+- **PowerShell tests**: Windows-specific functionality validation
+- **LIBC_WNO_ERROR tests**: Warning flag control system validation
 - **Performance tests**: Speed and efficiency benchmarks
 
 ## �🔗 Useful Links
@@ -713,6 +802,18 @@ llvmup/
 - [LLVM Project](https://llvm.org/)
 - [LLVM Documentation](https://llvm.org/docs/)
 - [Clang Documentation](https://clang.llvm.org/docs/)
+
+---
+
+## 📊 Project Status
+
+**✅ v3.0 - Complete Feature Set**
+- Cross-platform parity (Linux + Windows PowerShell)
+- Enhanced logging with specialized functions
+- LIBC_WNO_ERROR flag control system
+- CMake force reconfiguration capability
+- Comprehensive test coverage (24+ tests)
+- Complete documentation in `docs/` folder
 
 ---
 

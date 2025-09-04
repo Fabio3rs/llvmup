@@ -4,7 +4,7 @@
 # Usage:
 #   llvmup [install] [--from-source] [-v|--verbose] [-q|--quiet] [-h|--help] [args...]
 #   llvmup default <set|show> [version]
-#   llvmup config <init|load>
+#   llvmup config <init|load|activate>
 #
 # Options:
 #   install              Install LLVM version (default command if version specified)
@@ -65,6 +65,13 @@ log_success() {
 # Command handling functions
 handle_config_command() {
     local sub_command="$1"
+
+    if [ -z "$sub_command" ]; then
+        log_error "Missing config subcommand"
+        log_info "Available subcommands: init, load, activate"
+        exit 1
+    fi
+
     shift
 
     case "$sub_command" in
@@ -88,9 +95,19 @@ handle_config_command() {
                 exit 1
             fi
             ;;
+        activate)
+            # Call llvm-config-activate function
+            if command -v llvm-config-activate >/dev/null 2>&1; then
+                llvm-config-activate "$@"
+            else
+                log_error "llvm-config-activate function not available"
+                log_info "Make sure LLVM functions are loaded in your shell"
+                exit 1
+            fi
+            ;;
         *)
             log_error "Unknown config subcommand: $sub_command"
-            log_info "Available subcommands: init, load"
+            log_info "Available subcommands: init, load, activate"
             exit 1
             ;;
     esac
@@ -211,6 +228,7 @@ Usage: llvmup [install] [OPTIONS] [VERSION]
 Commands:
   install          Install an LLVM version (default command)
   default          Manage default LLVM version
+  config           Manage project configuration
   help             Show this help message
 
 Install Options:
@@ -237,6 +255,8 @@ Examples:
   llvmup install --component clang --component lldb  # Specific components
   llvmup default set 18.1.8                      # Set default version
   llvmup default show                             # Show current default
+  llvmup config init                              # Initialize project config
+  llvmup config activate                          # Activate from config
 EOF
     exit 1
 }
