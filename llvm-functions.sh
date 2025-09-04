@@ -283,6 +283,8 @@ llvm-help() {
     echo "│   llvm-vscode-activate <ver>  # Setup VSCode integration   │"
     echo "│   llvm-config-init            # Initialize .llvmup-config  │"
     echo "│   llvm-config-load            # Load project config        │"
+    echo "│   llvm-config-apply           # Install from config        │"
+    echo "│   llvm-config-activate        # Activate configured version│"
     echo "│                                                            │"
     echo "│ 🛠️  AVAILABLE TOOLS AFTER ACTIVATION:                       │"
     echo "│   • clang/clang++    # C/C++ compilers                     │"
@@ -350,9 +352,61 @@ llvm-config-init() {
         # Prompt for configuration
         echo "📋 Please provide the following information:"
 
-        read -p "Default LLVM version (e.g., llvmorg-18.1.8): " default_version
-        if [ -z "$default_version" ]; then
-            default_version="llvmorg-18.1.8"
+        # Check for installed versions first
+        local toolchains_dir="$HOME/.llvm/toolchains"
+        local suggested_version=""
+        local installed_versions=()
+
+        if [ -d "$toolchains_dir" ]; then
+            # Simply list all directories in toolchains (much simpler and more reliable)
+            mapfile -t installed_versions < <(ls -1 "$toolchains_dir" 2>/dev/null | grep -v "^$")
+        fi
+
+        if [ ${#installed_versions[@]} -gt 0 ]; then
+            echo "📦 Found installed LLVM versions:"
+            for i in "${!installed_versions[@]}"; do
+                echo "  $((i+1)). ${installed_versions[i]}"
+            done
+            suggested_version="${installed_versions[0]}"
+            echo ""
+            read -p "Default LLVM version (suggested: $suggested_version): " default_version
+            if [ -z "$default_version" ]; then
+                default_version="$suggested_version"
+            fi
+        else
+            echo "❌ No LLVM versions currently installed"
+            echo "🔍 Would you like to see available remote versions to choose from?"
+            read -p "List remote versions? [Y/n]: " -n 1 -r
+            echo
+
+            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                echo "🌐 Fetching available LLVM versions from GitHub..."
+                if command -v curl >/dev/null 2>&1; then
+                    echo "💡 Latest available versions:"
+                    local remote_versions=$(curl -s "https://api.github.com/repos/llvm/llvm-project/releases?per_page=10" | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4 2>/dev/null)
+                    if [ -n "$remote_versions" ]; then
+                        echo "$remote_versions" | head -10 | while IFS= read -r version; do
+                            echo "  • $version"
+                        done
+                        echo ""
+                    else
+                        echo "⚠️  Unable to fetch remote versions from GitHub"
+                        echo "💡 You can use versions like: llvmorg-18.1.8, llvmorg-17.0.6, llvmorg-16.0.6"
+                    fi
+                elif command -v llvm-prebuilt >/dev/null 2>&1; then
+                    echo "💡 You can check available versions by running:"
+                    echo "  llvmup install"
+                    echo "💡 Common versions: llvmorg-18.1.8, llvmorg-17.0.6, llvmorg-16.0.6"
+                else
+                    echo "⚠️  Unable to fetch remote versions"
+                    echo "💡 Common versions: llvmorg-18.1.8, llvmorg-17.0.6, llvmorg-16.0.6"
+                fi
+            fi
+
+            read -p "Default LLVM version (e.g., llvmorg-18.1.8): " default_version
+            if [ -z "$default_version" ]; then
+                default_version="llvmorg-18.1.8"
+            fi
         fi
 
         read -p "Custom installation name (optional): " custom_name
@@ -379,8 +433,7 @@ EOF
 
     cat >> "$config_file" << EOF
 cmake_flags = [
-  "-DCMAKE_BUILD_TYPE=Release",
-  "-DLLVM_ENABLE_PROJECTS=clang;lld;lldb"
+  "-DCMAKE_BUILD_TYPE=Release"
 ]
 
 [profile]
@@ -390,7 +443,9 @@ type = "$profile"
 include = ["clang", "lld", "lldb", "compiler-rt"]
 
 [project]
+# Project-specific settings
 auto_activate = true
+cmake_preset = "Release"
 EOF
 
     echo "✅ Configuration file created: $config_file"
@@ -398,7 +453,7 @@ EOF
     echo "🚀 Run 'llvm-config-load' to install and activate the configured version"
 }
 
-# Function to load and apply .llvmup-config settings
+# Function to load and parse .llvmup-config settings
 llvm-config-load() {
     local config_file=".llvmup-config"
 
@@ -410,13 +465,17 @@ llvm-config-load() {
 
     echo "📋 Loading project configuration from $config_file..."
 
+    # Initialize global variables for config
+    LLVM_CONFIG_VERSION=""
+    LLVM_CONFIG_NAME=""
+    LLVM_CONFIG_PROFILE=""
+    LLVM_CONFIG_AUTO_ACTIVATE="false"
+    LLVM_CONFIG_CMAKE_PRESET=""
+    LLVM_CONFIG_CMAKE_FLAGS=()
+    LLVM_CONFIG_COMPONENTS=()
+
     # Parse configuration file
-    local default_version=""
-    local custom_name=""
-    local profile=""
     local current_section=""
-    local cmake_flags=()
-    local components=()
     local in_array=0
     local array_type=""
 
@@ -436,14 +495,14 @@ llvm-config-load() {
             [ -z "$item" ] && continue
 
             case "$section" in
-                "build")
+                "build"|"")
                     if [ "$key" = "cmake_flags" ]; then
-                        cmake_flags+=("$item")
+                        LLVM_CONFIG_CMAKE_FLAGS+=("$item")
                     fi
                     ;;
-                "components")
-                    if [ "$key" = "include" ]; then
-                        components+=("$item")
+                "components"|"")
+                    if [ "$key" = "components" ] || [ "$key" = "include" ]; then
+                        LLVM_CONFIG_COMPONENTS+=("$item")
                     fi
                     ;;
             esac
@@ -499,52 +558,124 @@ llvm-config-load() {
             # Remove quotes and whitespace
             value=$(echo "$value" | sed 's/^[[:space:]]*["'"'"']//;s/["'"'"'][[:space:]]*$//')
 
+            # Handle simple format (without sections) or section-based format
             case "$current_section" in
+                "") # Simple format
+                    case "$key" in
+                        "version")
+                            LLVM_CONFIG_VERSION="$value"
+                            ;;
+                        "name")
+                            LLVM_CONFIG_NAME="$value"
+                            ;;
+                        "profile")
+                            LLVM_CONFIG_PROFILE="$value"
+                            ;;
+                        "auto_activate")
+                            LLVM_CONFIG_AUTO_ACTIVATE="$value"
+                            ;;
+                        "cmake_preset")
+                            LLVM_CONFIG_CMAKE_PRESET="$value"
+                            ;;
+                    esac
+                    ;;
                 "version")
                     if [ "$key" = "default" ]; then
-                        default_version="$value"
+                        LLVM_CONFIG_VERSION="$value"
                     fi
                     ;;
                 "build")
                     if [ "$key" = "name" ]; then
-                        custom_name="$value"
+                        LLVM_CONFIG_NAME="$value"
                     fi
                     ;;
                 "profile")
                     if [ "$key" = "type" ]; then
-                        profile="$value"
+                        LLVM_CONFIG_PROFILE="$value"
+                    fi
+                    ;;
+                "project")
+                    if [ "$key" = "auto_activate" ]; then
+                        LLVM_CONFIG_AUTO_ACTIVATE="$value"
+                    elif [ "$key" = "cmake_preset" ]; then
+                        LLVM_CONFIG_CMAKE_PRESET="$value"
                     fi
                     ;;
             esac
         fi
     done < "$config_file"
 
-    if [ -z "$default_version" ]; then
+    if [ -z "$LLVM_CONFIG_VERSION" ]; then
         echo "❌ No default version specified in configuration"
         return 1
     fi
 
+    # Apply cmake preset if specified
+    if [ -n "$LLVM_CONFIG_CMAKE_PRESET" ]; then
+        case "$LLVM_CONFIG_CMAKE_PRESET" in
+            "Debug")
+                LLVM_CONFIG_CMAKE_FLAGS+=("-DCMAKE_BUILD_TYPE=Debug")
+                LLVM_CONFIG_CMAKE_FLAGS+=("-DLLVM_ENABLE_ASSERTIONS=ON")
+                ;;
+            "Release")
+                LLVM_CONFIG_CMAKE_FLAGS+=("-DCMAKE_BUILD_TYPE=Release")
+                LLVM_CONFIG_CMAKE_FLAGS+=("-DLLVM_ENABLE_ASSERTIONS=OFF")
+                ;;
+            "RelWithDebInfo")
+                LLVM_CONFIG_CMAKE_FLAGS+=("-DCMAKE_BUILD_TYPE=RelWithDebInfo")
+                LLVM_CONFIG_CMAKE_FLAGS+=("-DLLVM_ENABLE_ASSERTIONS=ON")
+                ;;
+            "MinSizeRel")
+                LLVM_CONFIG_CMAKE_FLAGS+=("-DCMAKE_BUILD_TYPE=MinSizeRel")
+                LLVM_CONFIG_CMAKE_FLAGS+=("-DLLVM_ENABLE_ASSERTIONS=OFF")
+                ;;
+            *)
+                echo "⚠️  Unknown cmake_preset: $LLVM_CONFIG_CMAKE_PRESET (ignoring)"
+                ;;
+        esac
+    fi
+
     echo "🎯 Configuration loaded:"
-    echo "   📦 Version: $default_version"
-    [ -n "$custom_name" ] && echo "   🏷️  Name: $custom_name"
-    [ -n "$profile" ] && echo "   📋 Profile: $profile"
-    [ ${#cmake_flags[@]} -gt 0 ] && echo "   🔧 CMake flags: ${cmake_flags[*]}"
-    [ ${#components[@]} -gt 0 ] && echo "   📦 Components: ${components[*]}"
+    echo "   📦 Version: $LLVM_CONFIG_VERSION"
+    [ -n "$LLVM_CONFIG_NAME" ] && echo "   🏷️  Name: $LLVM_CONFIG_NAME"
+    [ -n "$LLVM_CONFIG_PROFILE" ] && echo "   📋 Profile: $LLVM_CONFIG_PROFILE"
+    [ ${#LLVM_CONFIG_CMAKE_FLAGS[@]} -gt 0 ] && echo "   🔧 CMake flags: ${LLVM_CONFIG_CMAKE_FLAGS[*]}"
+    [ ${#LLVM_CONFIG_COMPONENTS[@]} -gt 0 ] && echo "   📦 Components: ${LLVM_CONFIG_COMPONENTS[*]}"
+    [ -n "$LLVM_CONFIG_CMAKE_PRESET" ] && echo "   🎨 CMake preset: $LLVM_CONFIG_CMAKE_PRESET"
+    if [ "$LLVM_CONFIG_AUTO_ACTIVATE" = "true" ]; then
+        echo "   🔄 Auto-activate: enabled"
+    elif [ "$LLVM_CONFIG_AUTO_ACTIVATE" = "false" ]; then
+        echo "   🔄 Auto-activate: disabled"
+    fi
 
-    # Apply configuration by building command
-    local cmd_args=("$default_version")
-    [ -n "$custom_name" ] && cmd_args+=(--name "$custom_name")
-    [ -n "$profile" ] && cmd_args+=(--profile "$profile")
+    echo "💡 Next steps:"
+    echo "   • llvm-config-apply    - Install with these settings"
+    echo "   • llvm-config-activate - Activate if already installed"
+    return 0
+}
 
-    for flag in "${cmake_flags[@]}"; do
+# Function to apply loaded .llvmup-config settings
+llvm-config-apply() {
+    # Check if config is loaded
+    if [ -z "$LLVM_CONFIG_VERSION" ]; then
+        echo "❌ No configuration loaded. Run 'llvm-config-load' first"
+        return 1
+    fi
+
+    # Build command arguments
+    local cmd_args=("$LLVM_CONFIG_VERSION")
+    [ -n "$LLVM_CONFIG_NAME" ] && cmd_args+=(--name "$LLVM_CONFIG_NAME")
+    [ -n "$LLVM_CONFIG_PROFILE" ] && cmd_args+=(--profile "$LLVM_CONFIG_PROFILE")
+
+    for flag in "${LLVM_CONFIG_CMAKE_FLAGS[@]}"; do
         cmd_args+=(--cmake-flags "$flag")
     done
 
-    for comp in "${components[@]}"; do
+    for comp in "${LLVM_CONFIG_COMPONENTS[@]}"; do
         cmd_args+=(--component "$comp")
     done
 
-    echo "💡 To install with these settings, run:"
+    echo "💡 Installing with settings:"
     echo "   llvmup install --from-source ${cmd_args[*]}"
 
     # In test mode, don't prompt for installation
@@ -560,58 +691,63 @@ llvm-config-load() {
         echo "🚀 Installing LLVM with project configuration..."
         if command -v llvmup >/dev/null 2>&1; then
             llvmup install --from-source "${cmd_args[@]}"
+            if [ $? -eq 0 ]; then
+                echo "✅ Installation complete!"
+                echo "💡 Use 'llvm-config-activate' to activate the version"
+            fi
         else
             echo "❌ llvmup command not found in PATH"
             echo "💡 Make sure LLVM manager is installed and in your PATH"
             return 1
         fi
-    fi
-
-    # Check if version is already installed
-    local install_name="$default_version"
-    if [ -n "$custom_name" ]; then
-        install_name="$custom_name"
-    fi
-
-    if [ -d "$HOME/.llvm/toolchains/$install_name" ]; then
-        echo "✅ Version already installed, activating..."
-        llvm-activate "$install_name"
     else
-        echo "📥 Version not found, installing..."
+        echo "💡 To install later, run: llvmup install --from-source ${cmd_args[*]}"
+        echo "💡 To activate if already installed, run: llvm-config-activate"
+    fi
+}
 
-        # For testing environments, allow skipping interactive prompts
-        local from_source_choice="n"
-        if [ -n "$LLVM_TEST_MODE" ]; then
-            from_source_choice="${LLVM_TEST_FROM_SOURCE:-n}"
+# Function to handle activation based on configuration
+llvm-config-activate() {
+    # Check if config is loaded
+    if [ -z "$LLVM_CONFIG_VERSION" ]; then
+        echo "❌ No configuration loaded. Run 'llvm-config-load' first"
+        return 1
+    fi
+
+    # Determine installation name (same logic as apply)
+    local installation_name="llvm-${LLVM_CONFIG_VERSION}"
+    if [ -n "$LLVM_CONFIG_NAME" ]; then
+        installation_name="llvm-${LLVM_CONFIG_VERSION}-${LLVM_CONFIG_NAME}"
+    fi
+
+    echo "🎯 Activating LLVM configuration:"
+    echo "   Version: $LLVM_CONFIG_VERSION"
+    [ -n "$LLVM_CONFIG_NAME" ] && echo "   Name: $LLVM_CONFIG_NAME"
+    [ -n "$LLVM_CONFIG_PROFILE" ] && echo "   Profile: $LLVM_CONFIG_PROFILE"
+    echo "   Installation: $installation_name"
+
+    # Try to activate the installation
+    if command -v llvm-activate >/dev/null 2>&1; then
+        llvm-activate "$installation_name"
+        local activate_result=$?
+
+        if [ $activate_result -eq 0 ]; then
+            echo "✅ LLVM $installation_name activated successfully"
+
+            # Display current activated version info if verbose
+            if [ -n "$LLVM_CONFIG_VERBOSE" ] || [ "$1" = "--verbose" ]; then
+                echo "📋 Active LLVM environment:"
+                command -v clang && clang --version | head -1
+                command -v llvm-config && echo "LLVM Config: $(llvm-config --version)"
+            fi
         else
-            read -p "Install from source? [y/N] " -n 1 -r
-            echo
-            from_source_choice="$REPLY"
+            echo "❌ Failed to activate LLVM $installation_name"
+            echo "💡 Make sure the installation exists with: llvm-list"
+            return $activate_result
         fi
-
-        local install_args=("install" "$default_version")
-
-        if [ -n "$custom_name" ]; then
-            install_args+=("--name" "$custom_name")
-        fi
-
-        if [ -n "$profile" ]; then
-            install_args+=("--profile" "$profile")
-        fi
-
-        if [[ $from_source_choice =~ ^[Yy]$ ]]; then
-            install_args+=("--from-source")
-        fi
-
-        echo "� Running: llvmup ${install_args[*]}"
-        llvmup "${install_args[@]}"
-
-        if [ $? -eq 0 ]; then
-            echo "✅ Installation complete, activating..."
-            llvm-activate "$install_name"
-        else
-            echo "❌ Installation failed"
-            return 1
-        fi
+    else
+        echo "❌ llvm-activate command not found in PATH"
+        echo "💡 Make sure LLVM manager is installed and in your PATH"
+        return 1
     fi
 }

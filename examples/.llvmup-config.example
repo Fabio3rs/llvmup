@@ -34,4 +34,4 @@ type = "full"
 [project]
 # Project-specific settings
 auto_activate = true
-cmake_preset = "Release"
+cmake_preset = "Release"  # Options: Debug, Release, RelWithDebInfo, MinSizeRel
