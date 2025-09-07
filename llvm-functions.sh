@@ -96,7 +96,7 @@ log_expression_verbose() {
         return
     fi
     if [ "$EXPRESSION_VERBOSE" -eq 1 ] || [ -n "$LLVM_VERBOSE" ]; then
-        echo "🔍 Expression: $*"
+        echo "🔍 Expression: $*" >&2
     fi
 }
 
@@ -106,7 +106,7 @@ log_expression_debug() {
         return
     fi
     if [ "$EXPRESSION_DEBUG" -eq 1 ] || [ -n "$LLVM_VERBOSE" ]; then
-        echo "🐛 Debug: $*"
+        echo "🐛 Debug: $*" >&2
     fi
 }
 
@@ -1242,7 +1242,7 @@ llvm-parse-version-expression() {
         # Specific version
         *)
             # Check if it looks like a version identifier
-            if echo "$expression" | grep -qE '^(llvmorg-|source-)?[0-9]+(\.[0-9]+)*(-[a-zA-Z0-9]+)?$'; then
+            if echo "$expression" | grep -qE '^(source-llvmorg-|llvmorg-|source-)?[0-9]+(\.[0-9]+)*(-[a-zA-Z0-9]+)?$'; then
                 echo "specific:$expression"
             else
                 log_error "Invalid version expression: $expression"
@@ -1453,7 +1453,7 @@ llvm-version-matches-range() {
             ;;
         "~"*)
             # Tilde range: ~1.2.3 := >=1.2.3 <1.3.0
-            local base_version="${range_expr#~}"
+            local base_version=$(echo "$range_expr" | sed 's/^~//')
             local major_minor=$(echo "$base_version" | cut -d. -f1-2)
             local next_minor=$(($(echo "$base_version" | cut -d. -f2) + 1))
             local next_version="$(echo "$base_version" | cut -d. -f1).$next_minor.0"

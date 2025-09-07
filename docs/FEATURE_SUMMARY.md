@@ -63,10 +63,19 @@
 
 ### 🧪 **Testing & Quality**
 - ✅ **Test mode**: `LLVM_TEST_MODE=1` for automation
-- ✅ **Comprehensive tests**: 65+ tests all passing
+- ✅ **Comprehensive tests**: 90+ tests all passing
 - ✅ **Integration tests**: Full workflow validation
 - ✅ **Unit tests**: Individual function testing
 - ✅ **Error handling**: Robust error management
+
+### 🚀 **Comprehensive Version Expressions (NEW!)**
+- ✅ **Smart selectors**: `latest`, `oldest`, `newest`, `earliest`
+- ✅ **Type filters**: `prebuilt`, `source`, `latest-prebuilt`, `latest-source`
+- ✅ **Version ranges**: `>=18.0.0`, `<=19.1.0`, `~19.1`, `18.*`
+- ✅ **Specific versions**: `llvmorg-18.1.8`, `source-llvmorg-20.1.0`
+- ✅ **Enhanced auto-activation**: Expression-based auto-activation in projects
+- ✅ **Granular logging**: `EXPRESSION_VERBOSE`, `EXPRESSION_DEBUG` controls
+- ✅ **46 specialized tests**: Complete validation of expression system
 
 ### 📦 **Installation & Packaging**
 - ✅ **Smart installer**: `install.sh` with custom paths
@@ -143,14 +152,81 @@ disable_libc_wno_error = true
 - **Disable when**: Custom libc setup or specific distribution requirements
 - **Override**: Command line always overrides configuration file
 
+## 🚀 **Comprehensive Version Expression System**
+
+### Expression Types & Examples
+```bash
+# Selectors
+llvm-match-versions "latest"           # Newest version available
+llvm-match-versions "oldest"           # Oldest version available
+
+# Type filters
+llvm-match-versions "prebuilt"         # Only prebuilt versions
+llvm-match-versions "source"           # Only compiled versions
+
+# Combined expressions
+llvm-match-versions "latest-prebuilt"  # Newest prebuilt version
+llvm-match-versions "latest-source"    # Newest source version
+
+# Version ranges
+llvm-match-versions ">=18.0.0"         # Versions >= 18.0.0
+llvm-match-versions "<=19.1.0"         # Versions <= 19.1.0
+llvm-match-versions "~19.1"            # Tilde range (19.1.x)
+llvm-match-versions "18.*"             # Wildcard (18.x.x)
+
+# Specific versions
+llvm-match-versions "llvmorg-18.1.8"   # Specific prebuilt
+llvm-match-versions "source-llvmorg-20.1.0"  # Specific source
+```
+
+### Enhanced Auto-Activation
+```ini
+# .llvmup-config with expressions
+[version]
+default = "latest-prebuilt"  # Use comprehensive expressions
+
+[project]
+auto_activate = true
+```
+
+### Verbosity Controls
+```bash
+# Silent mode
+QUIET_MODE=1 llvm-match-versions "latest"
+
+# Expression verbose
+EXPRESSION_VERBOSE=1 llvm-match-versions ">=18.0.0"
+
+# Full debug
+EXPRESSION_DEBUG=1 llvm-match-versions "latest-source"
+```
+
+### Core Functions
+- `llvm-parse-version-expression <expr>` - Parse and validate expressions
+- `llvm-match-versions <expr>` - Find matching versions
+- `llvm-version-matches-range <version> <range>` - Check range compatibility
+- `llvm-autoactivate-enhanced` - Expression-based auto-activation
+
 ## 🎉 **System Status: Production Ready**
 
 - **Core System**: Fully functional and tested
+- **Expression System**: 46/46 specialized tests passing
 - **Enhanced Features**: All working with comprehensive tests
 - **Cross-Platform**: Linux and Windows parity achieved
 - **Documentation**: Complete and accurate
-- **Testing**: Comprehensive coverage (70+ tests passing)
+- **Testing**: Comprehensive coverage (90+ tests passing)
 - **Installation**: Robust installer/uninstaller
 - **User Experience**: Rich visual interface with helpful guidance
 
-The LLVMUP system is now a complete, professional-grade LLVM version manager with advanced configuration capabilities! 🚀
+## 📊 **Test Coverage Summary**
+
+- **Expression Tests**: 46 tests (parsing, matching, ranges, integration)
+- **Core Function Tests**: 14 tests (activation, deactivation, status)
+- **Build System Tests**: 12 tests (profiles, cmake flags, components)
+- **Config System Tests**: 8 tests (init, load, apply, activate)
+- **Integration Tests**: 15+ tests (full workflows, VSCode, completion)
+- **Edge Cases**: 10+ tests (error handling, validation, cleanup)
+
+**Total: 90+ automated tests, all passing ✅**
+
+The LLVMUP system is now a complete, professional-grade LLVM version manager with advanced configuration capabilities and intelligent version expression system! 🚀

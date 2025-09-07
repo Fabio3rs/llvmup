@@ -84,6 +84,7 @@ test_files=(
     "tests/unit/test_llvm_prebuilt.bats"
     "tests/unit/test_llvm_vscode_activate.bats"
     "tests/unit/test_llvmup.bats"
+    "tests/unit/test_version_expressions.bats"
 )
 
 # Add integration tests if they exist

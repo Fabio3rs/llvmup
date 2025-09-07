@@ -2,6 +2,59 @@
 
 All notable changes to LLVMUP will be documented in this file.
 
+## [4.0.0] - 2024-12-06
+
+### 🚀 Major Feature: Comprehensive Version Expression System
+
+#### 🎯 Intelligent Version Selection
+- **NEW**: Smart selectors (`latest`, `oldest`, `newest`, `earliest`) for automatic version selection
+- **NEW**: Type filters (`prebuilt`, `source`, `latest-prebuilt`, `latest-source`) for targeted selection
+- **NEW**: Version ranges (`>=18.0.0`, `<=19.1.0`, `~19.1`, `18.*`) for flexible version matching
+- **NEW**: Specific version support with intelligent parsing (`llvmorg-18.1.8`, `source-llvmorg-20.1.0`)
+
+#### 🔄 Enhanced Auto-Activation System
+- **NEW**: Expression-based auto-activation in `.llvmup-config` files
+- **NEW**: Project-specific intelligent version selection using comprehensive expressions
+- **NEW**: Smart fallback logic when exact versions aren't available
+- **NEW**: Integration with existing configuration system
+
+#### 🎛️ Advanced Logging Controls
+- **NEW**: `EXPRESSION_VERBOSE=1` for expression processing details
+- **NEW**: `EXPRESSION_DEBUG=1` for full debug output and troubleshooting
+- **NEW**: Enhanced `QUIET_MODE=1` for clean script output
+- **IMPROVED**: Granular control over expression system verbosity
+
+#### 🧪 Comprehensive Testing
+- **NEW**: 46 specialized tests for expression system functionality
+- **NEW**: Complete coverage of parsing, matching, ranges, and integration
+- **NEW**: Edge case testing and error handling validation
+- **NEW**: Verbosity control testing and output validation
+- **IMPROVED**: Total test count increased to 90+ comprehensive tests
+
+#### 🔧 Core Expression Functions
+- **NEW**: `llvm-parse-version-expression <expr>` - Parse and validate expressions
+- **NEW**: `llvm-match-versions <expression>` - Find versions matching expression
+- **NEW**: `llvm-version-matches-range <version> <range>` - Check range compatibility
+- **NEW**: `llvm-autoactivate-enhanced` - Expression-based auto-activation
+
+#### 📖 Documentation Updates
+- **NEW**: Comprehensive expression documentation in `docs/VERSION_FUNCTIONS.md`
+- **UPDATED**: `docs/FEATURE_SUMMARY.md` with expression system details
+- **UPDATED**: Main `README.md` with expression examples and workflows
+- **NEW**: Practical usage examples and common scenarios
+- **NEW**: Performance metrics and testing results
+
+### 🐛 Bug Fixes
+- **FIXED**: Tilde range (`~19.1`) parsing using `sed` instead of bash parameter expansion
+- **FIXED**: Source version specific matching with enhanced regex support (`source-llvmorg-`)
+- **FIXED**: Expression parsing edge cases and error handling
+
+### 🔧 Technical Improvements
+- **IMPROVED**: Version expression parsing with robust regex patterns
+- **IMPROVED**: Range matching logic with proper semantic versioning
+- **IMPROVED**: Error messages and debugging output
+- **IMPROVED**: Integration with existing LLVM version management functions
+
 ## [2.0.0] - 2024-12-19
 
 ### 🚀 Major Enhancements

@@ -23,12 +23,31 @@ This is a proof-of-concept test version and may contain bugs. Use at your own ri
 - 🪟 **Windows PowerShell parity** with equivalent scripts
 - 🔁 **Subcommand structure** (install, config, default)
 - 📝 **Custom installation naming** for multiple variants
-- 🧪 **Test suite** with 24+ automated tests
+- 🧪 **Test suite** with 90+ automated tests
 - 🔄 **LIBC_WNO_ERROR control** for compatibility with different systems
 - ♻️ **CMake reconfiguration** with `--reconfigure` flag for clean rebuilds
 - 🎨 **Enhanced logging system** with verbose/quiet mode controls
 - 🔍 **Intelligent version parsing** with support for multiple LLVM version formats
 - 📋 **Comprehensive version management** (list, compare, validate, find latest)
+- 🚀 **Comprehensive version expressions** with smart selectors, ranges, and auto-activation
+
+## 🚀 Latest Features (v4.0) - Comprehensive Expression System
+
+### 🎯 **Intelligent Version Selection**
+- **Smart Selectors**: `latest`, `oldest`, `newest`, `earliest` for automatic version selection
+- **Type Filters**: `prebuilt`, `source`, `latest-prebuilt`, `latest-source` for targeted selection
+- **Version Ranges**: `>=18.0.0`, `<=19.1.0`, `~19.1`, `18.*` for flexible version matching
+- **Specific Versions**: Support for `llvmorg-18.1.8`, `source-llvmorg-20.1.0` with intelligent parsing
+
+### 🔄 **Enhanced Auto-Activation**
+- **Expression-Based**: Use comprehensive expressions in `.llvmup-config` for intelligent auto-activation
+- **Project-Specific**: Configure expressions like `latest-prebuilt` or `>=18.0.0` per project
+- **Fallback Logic**: Smart fallback when exact versions aren't available
+
+### 🎛️ **Granular Logging Controls**
+- **EXPRESSION_VERBOSE**: Show expression processing details
+- **EXPRESSION_DEBUG**: Full debug output for troubleshooting
+- **QUIET_MODE**: Clean output for scripts and automation
 
 ## 🆕 Latest Enhancements (v3.0)
 
@@ -284,6 +303,45 @@ llvm-version-exists "llvmorg-19.1.7"   # Returns 0 if exists, 1 if not
 llvm-get-latest-version               # Returns latest version identifier
 ```
 
+### 🚀 Comprehensive Version Expressions
+```bash
+# Expression parsing and matching
+llvm-parse-version-expression <expr>    # Parse and validate expressions
+llvm-match-versions <expression>         # Find versions matching expression
+llvm-version-matches-range <ver> <range> # Check if version matches range
+
+# Smart selectors
+llvm-match-versions "latest"             # Newest installed version
+llvm-match-versions "oldest"             # Oldest installed version
+
+# Type filters
+llvm-match-versions "prebuilt"           # Only prebuilt versions
+llvm-match-versions "source"             # Only compiled versions
+
+# Combined expressions
+llvm-match-versions "latest-prebuilt"    # Newest prebuilt version
+llvm-match-versions "latest-source"      # Newest source version
+
+# Version ranges
+llvm-match-versions ">=18.0.0"           # Versions >= 18.0.0
+llvm-match-versions "<=19.1.0"           # Versions <= 19.1.0
+llvm-match-versions "~19.1"              # Tilde range (19.1.x)
+llvm-match-versions "18.*"               # Wildcard (18.x.x)
+
+# Specific versions with intelligent parsing
+llvm-match-versions "llvmorg-18.1.8"     # Specific prebuilt version
+llvm-match-versions "source-llvmorg-20.1.0" # Specific source version
+
+# Enhanced auto-activation (in .llvmup-config)
+[version]
+default = "latest-prebuilt"              # Use expressions for auto-activation
+
+# Verbosity controls
+EXPRESSION_VERBOSE=1 llvm-match-versions "latest"    # Show processing details
+EXPRESSION_DEBUG=1 llvm-match-versions ">=18.0.0"    # Full debug output
+QUIET_MODE=1 llvm-match-versions "latest"            # Silent operation
+```
+
 ### 🏗️ Build Profiles
 - **minimal**: Only `clang` and `lld` (fastest build)
 - **full**: All available LLVM projects (comprehensive)
@@ -418,6 +476,43 @@ llvmup install --from-source --component clang --component lld 18.1.8
 
 # 5. Build and set as default
 llvmup install --from-source --profile full --default 18.1.8
+```
+
+### 🚀 Comprehensive Expression Workflows
+```bash
+# 1. Smart version selection
+cd /my/cpp/project
+
+# Always use latest prebuilt version
+echo '[version]
+default = "latest-prebuilt"
+[project]
+auto_activate = true' > .llvmup-config
+
+# Auto-activation happens when entering directory
+
+# 2. Range-based version management
+# Use any version >= 18.0.0
+llvm-activate $(llvm-match-versions ">=18.0.0")
+
+# 3. Conditional version selection with fallback
+if llvm-match-versions "latest-prebuilt" >/dev/null 2>&1; then
+    version=$(llvm-match-versions "latest-prebuilt")
+else
+    version=$(llvm-match-versions "latest")
+fi
+llvm-activate "$version"
+
+# 4. Project-specific version constraints
+# Configure project to use specific version range
+echo '[version]
+default = "~19.1"              # Only 19.1.x versions
+[project]
+auto_activate = true' > .llvmup-config
+
+# 5. Debug version selection process
+EXPRESSION_DEBUG=1 llvm-match-versions "latest-source"
+# Shows detailed logs of version selection process
 ```
 
 ### ⚙️ Project Configuration Workflow
@@ -810,7 +905,7 @@ llvmup/
 - **[examples/README.md](examples/README.md)**: Detailed examples guide
 
 ### 🧪 Testing (`tests/`)
-- **Unit tests**: 24+ automated tests (BATS framework)
+- **Unit tests**: 90+ automated tests (BATS framework)
 - **Integration tests**: Full workflow validation and cross-platform compatibility
 - **PowerShell tests**: Windows-specific functionality validation
 - **LIBC_WNO_ERROR tests**: Warning flag control system validation
@@ -827,13 +922,17 @@ llvmup/
 
 ## 📊 Project Status
 
-**🧪 v3.0 - Proof-of-Concept with Advanced Features**
-- Cross-platform support (Linux + Windows PowerShell)
-- Enhanced logging with specialized functions
-- LIBC_WNO_ERROR flag control system
-- CMake force reconfiguration capability
-- Test coverage (24+ tests)
-- Extensive documentation in `docs/` folder
+**🧪 v4.0 - Advanced Expression System with Comprehensive Testing**
+- **Comprehensive Version Expressions**: Smart selectors, ranges, and auto-activation
+- **Expression System**: 46 specialized tests covering all expression functionality
+- **Cross-platform support**: Linux + Windows PowerShell with feature parity
+- **Enhanced logging**: Specialized functions with granular verbosity controls
+- **LIBC_WNO_ERROR**: Fine-grained flag control system
+- **CMake reconfiguration**: Force clean rebuilds capability
+- **Test coverage**: 90+ comprehensive tests (all passing)
+- **Documentation**: Extensive documentation in `docs/` folder with expression guides
+
+✨ **New in v4.0**: Comprehensive version expression system allows intelligent auto-activation with expressions like `latest-prebuilt`, `>=18.0.0`, `~19.1`, enabling sophisticated project-specific version management.
 
 ⚠️ **Note**: This is experimental software. Features may change or contain bugs.
 
