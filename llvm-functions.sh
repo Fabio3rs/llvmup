@@ -1624,7 +1624,8 @@ if [ -n "$LLVM_TEST_MODE" ]; then
     return
 fi
 
-if [ -z "$LLVMUP_DISABLE_AUTOACTIVATE" ] && [ -z "$LLVMUP_AUTOACTIVATED" ]; then
+# Auto-ativação: executar sempre se houver .llvmup-config no diretório atual
+# A função llvm-autoactivate já tem lógica para não reativar se a versão atual já satisfaz a expressão
+if [ -z "$LLVMUP_DISABLE_AUTOACTIVATE" ]; then
     llvm-autoactivate
-    export LLVMUP_AUTOACTIVATED=1
 fi
