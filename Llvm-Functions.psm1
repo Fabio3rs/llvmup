@@ -397,6 +397,311 @@ Register-ArgumentCompleter -CommandName Activate-Llvm -ParameterName Version -Sc
     param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
 
     if (Test-Path $script:TOOLCHAINS_DIR) {
+# =============================================================================
+# VERSION PARSING AND MANAGEMENT FUNCTIONS
+# =============================================================================
+
+function ConvertFrom-LlvmVersion {
+    <#
+    .SYNOPSIS
+    Parse version string from LLVM version identifier
+
+    .DESCRIPTION
+    Supports formats: llvmorg-18.1.8, source-llvmorg-20.1.0, 19.1.7
+
+    .PARAMETER VersionString
+    The version string to parse
+
+    .EXAMPLE
+    ConvertFrom-LlvmVersion "llvmorg-18.1.8"
+    Returns: 18.1.8
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, ValueFromPipeline = $true)]
+        [string]$VersionString
+    )
+
+    if ([string]::IsNullOrEmpty($VersionString)) {
+        Write-LlvmLog "Version string is required" -Level Error
+        return $null
+    }
+
+    # Remove common prefixes
+    $cleanVersion = $VersionString -replace '^(llvmorg-|source-llvmorg-|source-)', ''
+
+    # Extract version numbers (major.minor.patch or major.minor)
+    if ($cleanVersion -match '^(\d+\.\d+(?:\.\d+)?(?:-[a-zA-Z0-9]+)?)$') {
+        return $matches[1]
+    }
+    elseif ($cleanVersion -match '^(\d+)') {
+        # Try to extract version from complex strings like "21-init"
+        return $matches[1]
+    }
+
+    Write-LlvmLog "Unable to parse version from: $VersionString" -Level Error
+    return $null
+}
+
+function Get-LlvmVersions {
+    <#
+    .SYNOPSIS
+    Get all installed LLVM versions in a structured format
+
+    .PARAMETER Format
+    Output format: List, Json, Simple
+
+    .EXAMPLE
+    Get-LlvmVersions -Format Simple
+    #>
+    [CmdletBinding()]
+    param(
+        [ValidateSet("List", "Json", "Simple")]
+        [string]$Format = "List"
+    )
+
+    if (-not (Test-Path $script:TOOLCHAINS_DIR)) {
+        Write-LlvmLog "No LLVM toolchains directory found at $script:TOOLCHAINS_DIR" -Level Error
+        return
+    }
+
+    switch ($Format) {
+        "Json" { Get-LlvmVersionsJson }
+        "Simple" { Get-LlvmVersionsSimple }
+        default { Get-LlvmVersionsList }
+    }
+}
+
+function Get-LlvmVersionsSimple {
+    <#
+    .SYNOPSIS
+    Get versions in simple array format
+    #>
+    [CmdletBinding()]
+    param()
+
+    $versions = Get-ChildItem $script:TOOLCHAINS_DIR -Directory |
+                Sort-Object Name |
+                Select-Object -ExpandProperty Name
+
+    return $versions
+}
+
+function Get-LlvmVersionsList {
+    <#
+    .SYNOPSIS
+    Get versions in detailed list format with visual formatting
+    #>
+    [CmdletBinding()]
+    param()
+
+    Write-Host "╭─ Available LLVM Versions ──────────────────────────────────╮" -ForegroundColor Cyan
+
+    $versions = Get-ChildItem $script:TOOLCHAINS_DIR -Directory | Sort-Object Name
+    $foundVersions = $false
+
+    foreach ($version in $versions) {
+        $foundVersions = $true
+        $versionName = $version.Name
+        $parsedVersion = ConvertFrom-LlvmVersion $versionName
+        $isActive = ""
+        $typeInfo = ""
+
+        # Check if this version is active
+        if ($env:_ACTIVE_LLVM -eq $versionName) {
+            $isActive = " (ACTIVE)"
+        }
+
+        # Determine version type
+        if ($versionName -match "^source-") {
+            $typeInfo = " [Source Build]"
+        } else {
+            $typeInfo = " [Prebuilt]"
+        }
+
+        # Format output
+        if ($parsedVersion -and $parsedVersion -ne $versionName) {
+            $line = "│ 📦 {0,-20} (v{1}){2}{3}" -f $versionName, $parsedVersion, $typeInfo, $isActive
+        } else {
+            $line = "│ 📦 {0,-35}{1}{2}" -f $versionName, $typeInfo, $isActive
+        }
+
+        if ($isActive) {
+            Write-Host $line -ForegroundColor Green
+        } else {
+            Write-Host $line -ForegroundColor White
+        }
+    }
+
+    if (-not $foundVersions) {
+        Write-Host "│ ❌ No LLVM versions found                                   │" -ForegroundColor Red
+        Write-Host "│                                                            │" -ForegroundColor White
+        Write-Host "│ 💡 Use '.\Install-Llvm.ps1' to install LLVM versions       │" -ForegroundColor Yellow
+    }
+
+    Write-Host "╰────────────────────────────────────────────────────────────╯" -ForegroundColor Cyan
+}
+
+function Get-LlvmVersionsJson {
+    <#
+    .SYNOPSIS
+    Get versions in JSON format
+    #>
+    [CmdletBinding()]
+    param()
+
+    $versions = Get-ChildItem $script:TOOLCHAINS_DIR -Directory | Sort-Object Name
+    $versionObjects = @()
+
+    foreach ($version in $versions) {
+        $versionName = $version.Name
+        $parsedVersion = ConvertFrom-LlvmVersion $versionName
+        $isActive = ($env:_ACTIVE_LLVM -eq $versionName)
+        $installType = if ($versionName -match "^source-") { "source" } else { "prebuilt" }
+
+        $versionObjects += @{
+            name = $versionName
+            version = if ($parsedVersion) { $parsedVersion } else { $versionName }
+            type = $installType
+            active = $isActive
+            path = $version.FullName
+        }
+    }
+
+    $result = @{
+        installed_versions = $versionObjects
+        active_version = $env:_ACTIVE_LLVM
+    }
+
+    return $result | ConvertTo-Json -Depth 3
+}
+
+function Test-LlvmVersionExists {
+    <#
+    .SYNOPSIS
+    Check if a specific LLVM version is installed
+
+    .PARAMETER Version
+    The version identifier to check
+
+    .EXAMPLE
+    Test-LlvmVersionExists "llvmorg-18.1.8"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Version
+    )
+
+    $versionPath = Join-Path $script:TOOLCHAINS_DIR $Version
+    return Test-Path $versionPath
+}
+
+function Get-LlvmActiveVersion {
+    <#
+    .SYNOPSIS
+    Get the currently active LLVM version
+
+    .EXAMPLE
+    Get-LlvmActiveVersion
+    #>
+    [CmdletBinding()]
+    param()
+
+    if ($env:_ACTIVE_LLVM) {
+        return $env:_ACTIVE_LLVM
+    } else {
+        Write-LlvmLog "No LLVM version is currently active" -Level Error
+        return $null
+    }
+}
+
+function Compare-LlvmVersion {
+    <#
+    .SYNOPSIS
+    Compare two LLVM version strings
+
+    .PARAMETER Version1
+    First version to compare
+
+    .PARAMETER Version2
+    Second version to compare
+
+    .OUTPUTS
+    Returns 1 if Version1 > Version2, 0 if equal, -1 if Version1 < Version2
+
+    .EXAMPLE
+    Compare-LlvmVersion "18.1.8" "19.1.0"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Version1,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Version2
+    )
+
+    $cleanV1 = ConvertFrom-LlvmVersion $Version1
+    $cleanV2 = ConvertFrom-LlvmVersion $Version2
+
+    if (-not $cleanV1 -or -not $cleanV2) {
+        Write-LlvmLog "Unable to parse one or both version strings" -Level Error
+        return $null
+    }
+
+    try {
+        $v1 = [System.Version]$cleanV1
+        $v2 = [System.Version]$cleanV2
+
+        return $v1.CompareTo($v2)
+    }
+    catch {
+        # Fallback to string comparison for non-standard versions
+        if ($cleanV1 -eq $cleanV2) { return 0 }
+        elseif ($cleanV1 -gt $cleanV2) { return 1 }
+        else { return -1 }
+    }
+}
+
+function Get-LlvmLatestVersion {
+    <#
+    .SYNOPSIS
+    Find the latest installed LLVM version
+
+    .EXAMPLE
+    Get-LlvmLatestVersion
+    #>
+    [CmdletBinding()]
+    param()
+
+    $versions = Get-LlvmVersionsSimple
+
+    if (-not $versions) {
+        Write-LlvmLog "No LLVM versions installed" -Level Error
+        return $null
+    }
+
+    $parsedVersions = @()
+    foreach ($version in $versions) {
+        $parsed = ConvertFrom-LlvmVersion $version
+        if ($parsed) {
+            $parsedVersions += @{
+                Original = $version
+                Parsed = $parsed
+            }
+        }
+    }
+
+    if ($parsedVersions.Count -eq 0) {
+        return $versions | Select-Object -Last 1
+    }
+
+    # Sort by parsed version and get the latest
+    $latest = $parsedVersions | Sort-Object { [System.Version]$_.Parsed } | Select-Object -Last 1
+    return $latest.Original
+}
+
         Get-ChildItem $script:TOOLCHAINS_DIR -Directory |
             Where-Object { $_.Name -like "$wordToComplete*" } |
             ForEach-Object { $_.Name }
@@ -411,5 +716,14 @@ Export-ModuleMember -Function @(
     'Get-LlvmList',
     'Initialize-LlvmConfig',
     'Import-LlvmConfig',
-    'Show-LlvmHelp'
+    'Show-LlvmHelp',
+    'ConvertFrom-LlvmVersion',
+    'Get-LlvmVersions',
+    'Get-LlvmVersionsSimple',
+    'Get-LlvmVersionsList',
+    'Get-LlvmVersionsJson',
+    'Test-LlvmVersionExists',
+    'Get-LlvmActiveVersion',
+    'Compare-LlvmVersion',
+    'Get-LlvmLatestVersion'
 )

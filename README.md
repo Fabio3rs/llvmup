@@ -27,6 +27,8 @@ This is a proof-of-concept test version and may contain bugs. Use at your own ri
 - 🔄 **LIBC_WNO_ERROR control** for compatibility with different systems
 - ♻️ **CMake reconfiguration** with `--reconfigure` flag for clean rebuilds
 - 🎨 **Enhanced logging system** with verbose/quiet mode controls
+- 🔍 **Intelligent version parsing** with support for multiple LLVM version formats
+- 📋 **Comprehensive version management** (list, compare, validate, find latest)
 
 ## 🆕 Latest Enhancements (v3.0)
 
@@ -262,6 +264,24 @@ llvmup default show           # Show current default version
 ### 💻 Development Integration
 ```bash
 llvm-vscode-activate <ver>  # Configure VSCode integration
+```
+
+### 🔍 Version Management & Parsing
+```bash
+# Version parsing and information
+llvm-parse-version <version>     # Parse version string (e.g., llvmorg-18.1.8 → 18.1.8)
+llvm-get-versions [format]       # List installed versions (list/simple/json)
+llvm-version-exists <version>    # Check if version is installed
+llvm-get-active-version         # Get currently active version
+llvm-version-compare <v1> <v2>   # Compare two versions
+llvm-get-latest-version         # Find the latest installed version
+
+# Examples:
+llvm-parse-version "llvmorg-18.1.8"    # Returns: 18.1.8
+llvm-get-versions simple               # List versions one per line
+llvm-get-versions json                 # JSON format for scripting
+llvm-version-exists "llvmorg-19.1.7"   # Returns 0 if exists, 1 if not
+llvm-get-latest-version               # Returns latest version identifier
 ```
 
 ### 🏗️ Build Profiles

@@ -13,6 +13,8 @@
 
 QUIET_MODE=${QUIET_MODE:-0}
 QUIET_SUCCESS=${QUIET_SUCCESS:-0}
+EXPRESSION_VERBOSE=${EXPRESSION_VERBOSE:-0}
+EXPRESSION_DEBUG=${EXPRESSION_DEBUG:-0}
 
 # Log error messages (always shown)
 log_error() {
@@ -88,6 +90,34 @@ log_tip() {
     fi
 }
 
+# Log expression parsing details (controlled by EXPRESSION_VERBOSE)
+log_expression_verbose() {
+    if [ "$QUIET_MODE" -eq 1 ]; then
+        return
+    fi
+    if [ "$EXPRESSION_VERBOSE" -eq 1 ] || [ -n "$LLVM_VERBOSE" ]; then
+        echo "🔍 Expression: $*"
+    fi
+}
+
+# Log expression debug information (controlled by EXPRESSION_DEBUG)
+log_expression_debug() {
+    if [ "$QUIET_MODE" -eq 1 ]; then
+        return
+    fi
+    if [ "$EXPRESSION_DEBUG" -eq 1 ] || [ -n "$LLVM_VERBOSE" ]; then
+        echo "🐛 Debug: $*"
+    fi
+}
+
+# Log expression results (always visible unless QUIET_MODE)
+log_expression_result() {
+    if [ "$QUIET_MODE" -eq 1 ]; then
+        return
+    fi
+    echo "✨ $*"
+}
+
 # =============================================================================
 # VERBOSE MODE CONTROL
 # =============================================================================
@@ -104,6 +134,34 @@ llvm-verbose-on() {
 llvm-verbose-off() {
     unset LLVM_VERBOSE
     echo "✅ Verbose mode disabled for LLVM functions"
+}
+
+# Enable expression verbose logging
+llvm-expression-verbose-on() {
+    export EXPRESSION_VERBOSE=1
+    log_success "Expression verbose mode enabled"
+    log_info "Expression processing details will be shown"
+    log_tip "Use 'llvm-expression-verbose-off' to disable"
+}
+
+# Disable expression verbose logging
+llvm-expression-verbose-off() {
+    export EXPRESSION_VERBOSE=0
+    log_success "Expression verbose mode disabled"
+}
+
+# Enable expression debug logging
+llvm-expression-debug-on() {
+    export EXPRESSION_DEBUG=1
+    log_success "Expression debug mode enabled"
+    log_info "Detailed expression parsing information will be shown"
+    log_tip "Use 'llvm-expression-debug-off' to disable"
+}
+
+# Disable expression debug logging
+llvm-expression-debug-off() {
+    export EXPRESSION_DEBUG=0
+    log_success "Expression debug mode disabled"
 }
 
 # Function to activate an LLVM version
@@ -378,6 +436,27 @@ llvm-help() {
     echo "│   llvmup default set <ver>    # Set default version        │"
     echo "│   llvmup default show         # Show current default       │"
     echo "│                                                            │"
+    echo "│ 🔍 VERSION PARSING & UTILITIES:                             │"
+    echo "│   llvm-parse-version <ver>    # Parse version string       │"
+    echo "│   llvm-get-versions [format]  # List versions (list/simple/json)│"
+    echo "│   llvm-version-exists <ver>   # Check if version exists    │"
+    echo "│   llvm-get-active-version     # Get currently active version│"
+    echo "│   llvm-version-compare <v1> <v2> # Compare two versions    │"
+    echo "│   llvm-get-latest-version     # Find latest installed version│"
+    echo "│   llvm-match-versions <expr>  # Match versions by expression│"
+    echo "│   llvm-test-expressions       # Test expression matching   │"
+    echo "│                                                            │"
+    echo "│ �️  VERBOSITY CONTROLS:                                      │"
+    echo "│   llvm-verbose-on/off         # Toggle general verbose mode │"
+    echo "│   llvm-expression-verbose-on/off # Toggle expression verbose│"
+    echo "│   llvm-expression-debug-on/off   # Toggle expression debug  │"
+    echo "│                                                            │"
+    echo "│ �🎯 VERSION EXPRESSIONS (for auto-activate):                 │"
+    echo "│   • Selectors: latest, oldest, newest, earliest            │"
+    echo "│   • Type filters: prebuilt, source, latest-prebuilt        │"
+    echo "│   • Ranges: >=18.0.0, <=19.1.0, ~19.1, 18.*              │"
+    echo "│   • Specific: llvmorg-18.1.8, source-llvmorg-20.1.0       │"
+    echo "│                                                            │"
     echo "│ 💻 DEVELOPMENT INTEGRATION:                                 │"
     echo "│   llvm-vscode-activate <ver>  # Setup VSCode integration   │"
     echo "│   llvm-config-init            # Initialize .llvmup-config  │"
@@ -545,6 +624,18 @@ include = ["clang", "lld", "lldb", "compiler-rt"]
 # Project-specific settings
 auto_activate = true
 cmake_preset = "Release"
+
+# VERSION EXPRESSION EXAMPLES:
+# Specific version:     default = "llvmorg-18.1.8"
+# Latest available:     default = "latest"
+# Latest prebuilt:      default = "latest-prebuilt"
+# Latest source build:  default = "latest-source"
+# Version range:        default = ">=18.0.0"
+# Tilde range:          default = "~19.1"
+# Wildcard:             default = "18.*"
+# Only prebuilt:        default = "prebuilt"
+# Only source builds:   default = "source"
+# Oldest version:       default = "oldest"
 EOF
 
     log_success "Configuration file created: $config_file"
@@ -858,13 +949,671 @@ llvm-config-activate() {
     fi
 }
 
+# =============================================================================
+# VERSION PARSING AND MANAGEMENT FUNCTIONS
+# =============================================================================
+
+# Parse version string from LLVM version identifier
+# Supports formats: llvmorg-18.1.8, source-llvmorg-20.1.0, 19.1.7
+llvm-parse-version() {
+    local version_string="$1"
+
+    if [ -z "$version_string" ]; then
+        log_error "Version string is required"
+        return 1
+    fi
+
+    # Remove common prefixes
+    local clean_version="${version_string#llvmorg-}"
+    clean_version="${clean_version#source-llvmorg-}"
+    clean_version="${clean_version#source-}"
+
+    # Extract version numbers (major.minor.patch or major.minor)
+    if echo "$clean_version" | grep -qE '^[0-9]+\.[0-9]+(\.[0-9]+)?(-[a-zA-Z0-9]+)?$'; then
+        echo "$clean_version"
+        return 0
+    else
+        # Try to extract version from complex strings like "21-init"
+        local extracted=$(echo "$clean_version" | sed -n 's/^\([0-9]\+\).*/\1/p')
+        if [ -n "$extracted" ]; then
+            echo "$extracted"
+            return 0
+        fi
+    fi
+
+    log_error "Unable to parse version from: $version_string"
+    return 1
+}
+
+# Get all installed LLVM versions in a structured format
+llvm-get-versions() {
+    local format="${1:-list}"  # Options: list, json, simple
+    local toolchains_dir="$HOME/.llvm/toolchains"
+    local sources_dir="$HOME/.llvm/sources"
+
+    if [ ! -d "$toolchains_dir" ]; then
+        log_error "No LLVM toolchains directory found at $toolchains_dir"
+        return 1
+    fi
+
+    case "$format" in
+        "json")
+            llvm-get-versions-json
+            ;;
+        "simple")
+            llvm-get-versions-simple
+            ;;
+        "list"|*)
+            llvm-get-versions-list
+            ;;
+    esac
+}
+
+# Get versions in simple list format (one per line)
+llvm-get-versions-simple() {
+    local toolchains_dir="$HOME/.llvm/toolchains"
+
+    for dir in "$toolchains_dir"/*; do
+        if [ -d "$dir" ]; then
+            basename "$dir"
+        fi
+    done | sort -V
+}
+
+# Get versions in detailed list format
+llvm-get-versions-list() {
+    local toolchains_dir="$HOME/.llvm/toolchains"
+    local sources_dir="$HOME/.llvm/sources"
+
+    echo "╭─ Available LLVM Versions ──────────────────────────────────╮"
+
+    local found_versions=false
+
+    # Process toolchain versions
+    for dir in "$toolchains_dir"/*; do
+        if [ -d "$dir" ]; then
+            found_versions=true
+            local version_name=$(basename "$dir")
+            local parsed_version=$(llvm-parse-version "$version_name" 2>/dev/null)
+            local is_active=""
+            local type_info=""
+
+            # Check if this version is active
+            if [ -n "$_ACTIVE_LLVM" ] && [ "$version_name" = "$_ACTIVE_LLVM" ]; then
+                is_active=" (ACTIVE)"
+            fi
+
+            # Determine version type
+            if echo "$version_name" | grep -q "^source-"; then
+                type_info=" [Source Build]"
+            else
+                type_info=" [Prebuilt]"
+            fi
+
+            # Format output
+            if [ -n "$parsed_version" ] && [ "$parsed_version" != "$version_name" ]; then
+                printf "│ 📦 %-20s (v%s)%s%s\n" "$version_name" "$parsed_version" "$type_info" "$is_active"
+            else
+                printf "│ 📦 %-35s%s%s\n" "$version_name" "$type_info" "$is_active"
+            fi
+        fi
+    done
+
+    if [ "$found_versions" = false ]; then
+        echo "│ ❌ No LLVM versions found                                   │"
+        echo "│                                                            │"
+        echo "│ 💡 Use 'llvmup' to install LLVM versions                   │"
+    fi
+
+    echo "╰────────────────────────────────────────────────────────────╯"
+}
+
+# Get versions in JSON format
+llvm-get-versions-json() {
+    local toolchains_dir="$HOME/.llvm/toolchains"
+    local first=true
+
+    echo "{"
+    echo "  \"installed_versions\": ["
+
+    for dir in "$toolchains_dir"/*; do
+        if [ -d "$dir" ]; then
+            local version_name=$(basename "$dir")
+            local parsed_version=$(llvm-parse-version "$version_name" 2>/dev/null)
+            local is_active="false"
+            local install_type="prebuilt"
+
+            # Check if this version is active
+            if [ -n "$_ACTIVE_LLVM" ] && [ "$version_name" = "$_ACTIVE_LLVM" ]; then
+                is_active="true"
+            fi
+
+            # Determine installation type
+            if echo "$version_name" | grep -q "^source-"; then
+                install_type="source"
+            fi
+
+            # Add comma separator for multiple entries
+            if [ "$first" = true ]; then
+                first=false
+            else
+                echo ","
+            fi
+
+            echo "    {"
+            echo "      \"name\": \"$version_name\","
+            echo "      \"version\": \"${parsed_version:-$version_name}\","
+            echo "      \"type\": \"$install_type\","
+            echo "      \"active\": $is_active,"
+            echo "      \"path\": \"$dir\""
+            echo -n "    }"
+        fi
+    done
+
+    echo ""
+    echo "  ],"
+    echo "  \"active_version\": \"${_ACTIVE_LLVM:-null}\""
+    echo "}"
+}
+
+# Check if a specific version is installed
+llvm-version-exists() {
+    local version="$1"
+    local toolchains_dir="$HOME/.llvm/toolchains"
+
+    if [ -z "$version" ]; then
+        log_error "Version parameter is required"
+        return 1
+    fi
+
+    if [ -d "$toolchains_dir/$version" ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Get the currently active LLVM version
+llvm-get-active-version() {
+    if [ -n "$_ACTIVE_LLVM" ]; then
+        echo "$_ACTIVE_LLVM"
+        return 0
+    else
+        log_error "No LLVM version is currently active"
+        return 1
+    fi
+}
+
+# Compare two version strings (returns 0 if v1 >= v2, 1 if v1 < v2)
+llvm-version-compare() {
+    local v1="$1"
+    local v2="$2"
+
+    if [ -z "$v1" ] || [ -z "$v2" ]; then
+        log_error "Two version strings are required for comparison"
+        return 2
+    fi
+
+    # Parse versions to clean format
+    local clean_v1=$(llvm-parse-version "$v1")
+    local clean_v2=$(llvm-parse-version "$v2")
+
+    if [ -z "$clean_v1" ] || [ -z "$clean_v2" ]; then
+        log_error "Unable to parse one or both version strings"
+        return 2
+    fi
+
+    # Use sort -V for version comparison
+    local result=$(printf '%s\n%s\n' "$clean_v1" "$clean_v2" | sort -V | head -n1)
+
+    if [ "$result" = "$clean_v2" ]; then
+        return 0  # v1 >= v2
+    else
+        return 1  # v1 < v2
+    fi
+}
+
+# Find the latest installed version
+llvm-get-latest-version() {
+    local versions=$(llvm-get-versions simple 2>/dev/null)
+
+    if [ -z "$versions" ]; then
+        log_error "No LLVM versions installed"
+        return 1
+    fi
+
+    # Get the highest version using version sort
+    echo "$versions" | while read -r version; do
+        llvm-parse-version "$version"
+    done | sort -V | tail -n1
+}
+
+# =============================================================================
+# COMPREHENSIVE VERSION EXPRESSION PARSING AND MATCHING
+# =============================================================================
+
+# Parse and evaluate comprehensive version expressions
+# Supports: specific versions, ranges, type filters, latest/oldest selectors
+llvm-parse-version-expression() {
+    local expression="$1"
+
+    if [ -z "$expression" ]; then
+        log_error "Version expression is required"
+        return 1
+    fi
+
+    # Remove whitespace
+    expression=$(echo "$expression" | tr -d '[:space:]')
+
+    # Convert to lowercase for case-insensitive matching
+    local expr_lower=$(echo "$expression" | tr '[:upper:]' '[:lower:]')
+
+    log_expression_debug "Parsing version expression: '$expression'"
+
+    # Parse different expression types
+    case "$expr_lower" in
+        # Latest/Oldest selectors
+        "latest"|"newest"|"^")
+            echo "selector:latest"
+            ;;
+        "oldest"|"first"|"earliest")
+            echo "selector:oldest"
+            ;;
+
+        # Type filters
+        "prebuilt"|"prebuilt-only"|"pre-built")
+            echo "type:prebuilt"
+            ;;
+        "source"|"source-only"|"from-source")
+            echo "type:source"
+            ;;
+        "latest-prebuilt"|"newest-prebuilt")
+            echo "type:prebuilt,selector:latest"
+            ;;
+        "latest-source"|"newest-source")
+            echo "type:source,selector:latest"
+            ;;
+
+        # Version ranges (e.g., >=18.0.0, ~19.1, 18.*)
+        *">="*|*"<="*|*">"*|*"<"*|*"="*|*"~"*|*"*")
+            echo "range:$expression"
+            ;;
+
+        # Specific version
+        *)
+            # Check if it looks like a version identifier
+            if echo "$expression" | grep -qE '^(llvmorg-|source-)?[0-9]+(\.[0-9]+)*(-[a-zA-Z0-9]+)?$'; then
+                echo "specific:$expression"
+            else
+                log_error "Invalid version expression: $expression"
+                return 1
+            fi
+            ;;
+    esac
+}
+
+# Match versions against a comprehensive expression
+llvm-match-versions() {
+    local expression="$1"
+    local available_versions=()
+
+    if [ -z "$expression" ]; then
+        log_error "Version expression is required"
+        return 1
+    fi
+
+    # Get all available versions
+    mapfile -t available_versions < <(llvm-get-versions simple 2>/dev/null)
+
+    if [ ${#available_versions[@]} -eq 0 ]; then
+        log_error "No LLVM versions available"
+        return 1
+    fi
+
+    log_expression_verbose "Processing expression: '$expression'"
+    log_expression_debug "Available versions: ${available_versions[*]}"
+
+    # Parse the expression (suppress unwanted debug output)
+    local parsed_expr
+    if [ "$EXPRESSION_DEBUG" -eq 1 ]; then
+        parsed_expr=$(llvm-parse-version-expression "$expression")
+    else
+        parsed_expr=$(llvm-parse-version-expression "$expression" 2>/dev/null)
+    fi
+
+    if [ $? -ne 0 ]; then
+        log_error "Failed to parse expression: '$expression'"
+        return 1
+    fi
+
+    log_expression_debug "Parsed expression: '$parsed_expr'"
+
+    # Process the parsed expression
+    local matched_versions=()
+    local criteria=()
+
+    # Split criteria by comma
+    IFS=',' read -ra criteria <<< "$parsed_expr"
+
+    # Start with all versions, then filter
+    matched_versions=("${available_versions[@]}")
+
+    for criterion in "${criteria[@]}"; do
+        local type="${criterion%%:*}"
+        local value="${criterion#*:}"
+
+        log_expression_debug "Processing criterion: $type:$value"
+        log_expression_debug "Current matches: ${matched_versions[*]}"
+
+        case "$type" in
+            "specific")
+                # Exact match
+                matched_versions=()
+                for version in "${available_versions[@]}"; do
+                    if [ "$version" = "$value" ]; then
+                        matched_versions+=("$version")
+                        log_expression_debug "Found specific match: $version"
+                        break
+                    fi
+                done
+                ;;
+
+            "type")
+                # Filter by installation type
+                local filtered=()
+                for version in "${matched_versions[@]}"; do
+                    case "$value" in
+                        "prebuilt")
+                            if ! echo "$version" | grep -q "^source-"; then
+                                filtered+=("$version")
+                                log_expression_debug "Prebuilt match: $version"
+                            fi
+                            ;;
+                        "source")
+                            if echo "$version" | grep -q "^source-"; then
+                                filtered+=("$version")
+                                log_expression_debug "Source match: $version"
+                            fi
+                            ;;
+                    esac
+                done
+                matched_versions=("${filtered[@]}")
+                ;;
+
+            "selector")
+                # Apply selector (latest/oldest)
+                case "$value" in
+                    "latest")
+                        if [ ${#matched_versions[@]} -gt 0 ]; then
+                            # Sort by parsed version and get latest
+                            local latest_version=""
+                            local latest_parsed=""
+
+                            for version in "${matched_versions[@]}"; do
+                                local parsed=$(llvm-parse-version "$version" 2>/dev/null)
+                                if [ -n "$parsed" ]; then
+                                    if [ -z "$latest_parsed" ] || llvm-version-compare "$parsed" "$latest_parsed" 2>/dev/null; then
+                                        latest_version="$version"
+                                        latest_parsed="$parsed"
+                                        log_expression_debug "New latest candidate: $version ($parsed)"
+                                    fi
+                                fi
+                            done
+
+                            if [ -n "$latest_version" ]; then
+                                matched_versions=("$latest_version")
+                                log_expression_debug "Selected latest: $latest_version"
+                            fi
+                        fi
+                        ;;
+                    "oldest")
+                        if [ ${#matched_versions[@]} -gt 0 ]; then
+                            # Sort by parsed version and get oldest
+                            local oldest_version=""
+                            local oldest_parsed=""
+
+                            for version in "${matched_versions[@]}"; do
+                                local parsed=$(llvm-parse-version "$version" 2>/dev/null)
+                                if [ -n "$parsed" ]; then
+                                    if [ -z "$oldest_parsed" ] || ! llvm-version-compare "$parsed" "$oldest_parsed" 2>/dev/null; then
+                                        oldest_version="$version"
+                                        oldest_parsed="$parsed"
+                                        log_expression_debug "New oldest candidate: $version ($parsed)"
+                                    fi
+                                fi
+                            done
+
+                            if [ -n "$oldest_version" ]; then
+                                matched_versions=("$oldest_version")
+                                log_expression_debug "Selected oldest: $oldest_version"
+                            fi
+                        fi
+                        ;;
+                esac
+                ;;
+
+            "range")
+                # Handle version ranges
+                local filtered=()
+                for version in "${matched_versions[@]}"; do
+                    if llvm-version-matches-range "$version" "$value" 2>/dev/null; then
+                        filtered+=("$version")
+                    fi
+                done
+                matched_versions=("${filtered[@]}")
+                ;;
+        esac
+    done
+
+    # Output matched versions
+    if [ ${#matched_versions[@]} -gt 0 ]; then
+        log_expression_debug "Final matches: ${matched_versions[*]}"
+        log_expression_verbose "Found ${#matched_versions[@]} version(s) matching expression '$expression'"
+        printf '%s\n' "${matched_versions[@]}"
+        return 0
+    else
+        log_expression_debug "No versions matched expression: $expression"
+        return 1
+    fi
+}
+
+# Check if a version matches a range expression
+llvm-version-matches-range() {
+    local version="$1"
+    local range_expr="$2"
+
+    local parsed_version=$(llvm-parse-version "$version" 2>/dev/null)
+    if [ -z "$parsed_version" ]; then
+        return 1
+    fi
+
+    log_expression_debug "Checking if version '$parsed_version' matches range '$range_expr'"
+
+    # Handle different range operators
+    case "$range_expr" in
+        ">="*)
+            local min_version="${range_expr#>=}"
+            llvm-version-compare "$parsed_version" "$min_version" 2>/dev/null
+            ;;
+        "<="*)
+            local max_version="${range_expr#<=}"
+            ! llvm-version-compare "$parsed_version" "$max_version" 2>/dev/null || [ "$parsed_version" = "$max_version" ]
+            ;;
+        ">"*)
+            local min_version="${range_expr#>}"
+            llvm-version-compare "$parsed_version" "$min_version" 2>/dev/null && [ "$parsed_version" != "$min_version" ]
+            ;;
+        "<"*)
+            local max_version="${range_expr#<}"
+            ! llvm-version-compare "$parsed_version" "$max_version" 2>/dev/null
+            ;;
+        "="*)
+            local exact_version="${range_expr#=}"
+            [ "$parsed_version" = "$exact_version" ]
+            ;;
+        "~"*)
+            # Tilde range: ~1.2.3 := >=1.2.3 <1.3.0
+            local base_version="${range_expr#~}"
+            local major_minor=$(echo "$base_version" | cut -d. -f1-2)
+            local next_minor=$(($(echo "$base_version" | cut -d. -f2) + 1))
+            local next_version="$(echo "$base_version" | cut -d. -f1).$next_minor.0"
+
+            llvm-version-compare "$parsed_version" "$base_version" 2>/dev/null && \
+            ! llvm-version-compare "$parsed_version" "$next_version" 2>/dev/null
+            ;;
+        *"*")
+            # Wildcard matching: 18.* matches 18.x.x
+            local pattern="${range_expr%\*}"
+            echo "$parsed_version" | grep -q "^$pattern"
+            ;;
+        *)
+            log_error "Unsupported range operator in: $range_expr"
+            return 1
+            ;;
+    esac
+}
+
+# Enhanced auto-activation with comprehensive expressions
+llvm-autoactivate-enhanced() {
+    if [ ! -f ".llvmup-config" ]; then
+        return 0
+    fi
+
+    local backup_quiet_success=$QUIET_SUCCESS
+    QUIET_SUCCESS=1
+
+    # Load configuration
+    llvm-config-load >/dev/null 2>&1
+
+    # Check if auto-activate is enabled
+    if [ "$LLVM_CONFIG_AUTO_ACTIVATE" != "true" ]; then
+        QUIET_SUCCESS=$backup_quiet_success
+        return 0
+    fi
+
+    # Get the version expression (could be specific version or expression)
+    local version_expr="${LLVM_CONFIG_VERSION:-latest}"
+
+    log_expression_debug "Auto-activation with expression: '$version_expr'"
+
+    # Check if already activated
+    if [ -n "$_ACTIVE_LLVM" ]; then
+        log_expression_debug "LLVM already active: $_ACTIVE_LLVM"
+
+        # Check if current version matches the expression
+        local current_matches=false
+        local matched_versions=()
+
+        mapfile -t matched_versions < <(llvm-match-versions "$version_expr" 2>/dev/null)
+
+        for matched in "${matched_versions[@]}"; do
+            if [ "$matched" = "$_ACTIVE_LLVM" ]; then
+                current_matches=true
+                break
+            fi
+        done
+
+        if [ "$current_matches" = true ]; then
+            log_expression_debug "Current version $_ACTIVE_LLVM satisfies expression '$version_expr'"
+            QUIET_SUCCESS=$backup_quiet_success
+            return 0
+        else
+            log_expression_debug "Current version $_ACTIVE_LLVM does not satisfy expression '$version_expr'"
+            # Deactivate current and continue with new selection
+            llvm-deactivate >/dev/null 2>&1
+        fi
+    fi
+
+    # Find matching versions
+    local matched_versions=()
+    mapfile -t matched_versions < <(llvm-match-versions "$version_expr" 2>/dev/null)
+
+    if [ ${#matched_versions[@]} -eq 0 ]; then
+        log_expression_debug "No versions match expression '$version_expr'"
+        QUIET_SUCCESS=$backup_quiet_success
+        return 1
+    fi
+
+    # Select the first (best) match
+    local selected_version="${matched_versions[0]}"
+
+    log_expression_debug "Auto-activating version: $selected_version (matched expression: $version_expr)"
+
+    # Activate the selected version
+    if llvm-activate "$selected_version" >/dev/null 2>&1; then
+        log_success "Auto-activated LLVM $selected_version (expression: $version_expr)"
+    else
+        log_error "Failed to auto-activate LLVM $selected_version"
+        QUIET_SUCCESS=$backup_quiet_success
+        return 1
+    fi
+
+    QUIET_SUCCESS=$backup_quiet_success
+    return 0
+}
+
+# Test function for comprehensive expressions
+llvm-test-expressions() {
+    echo "🧪 Testing Comprehensive Version Expressions"
+    echo "============================================="
+
+    local test_expressions=(
+        "latest"
+        "oldest"
+        "prebuilt"
+        "source"
+        "latest-prebuilt"
+        "latest-source"
+        ">=18.0.0"
+        "~19.1"
+        "18.*"
+        "llvmorg-18.1.8"
+    )
+
+    # Disable debug output temporarily
+    local original_verbose="$LLVM_VERBOSE"
+    unset LLVM_VERBOSE
+
+    for expr in "${test_expressions[@]}"; do
+        echo ""
+        echo "📋 Expression: '$expr'"
+        echo "----------------------------------------"
+
+        local matches=()
+        mapfile -t matches < <(llvm-match-versions "$expr" 2>/dev/null)
+
+        if [ ${#matches[@]} -gt 0 ]; then
+            echo "✅ Matches found:"
+            for match in "${matches[@]}"; do
+                local parsed=$(llvm-parse-version "$match" 2>/dev/null)
+                local type="[Prebuilt]"
+                if echo "$match" | grep -q "^source-"; then
+                    type="[Source Build]"
+                fi
+                echo "   📦 $match (v$parsed) $type"
+            done
+        else
+            echo "❌ No matches found"
+        fi
+    done
+
+    # Restore verbose setting
+    if [ -n "$original_verbose" ]; then
+        export LLVM_VERBOSE="$original_verbose"
+    fi
+
+    echo ""
+    echo "🎉 Expression testing completed!"
+}
+
 llvm-autoactivate() {
     if [ -f ".llvmup-config" ]; then
         BACKUP_QUIET_SUCCESS=$QUIET_SUCCESS
         QUIET_SUCCESS=1
         llvm-config-load
         if [ "$LLVM_CONFIG_AUTO_ACTIVATE" = "true" ]; then
-            llvm-config-activate
+            # Use enhanced auto-activation with expressions
+            llvm-autoactivate-enhanced
         fi
         QUIET_SUCCESS=$BACKUP_QUIET_SUCCESS
     fi
