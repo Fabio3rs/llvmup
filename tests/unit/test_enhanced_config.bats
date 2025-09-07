@@ -5,7 +5,9 @@
 setup() {
     export TEST_TEMP_DIR="$(mktemp -d)"
     export ORIGINAL_PWD="$PWD"
-    export LLVM_MANAGER_DIR="/mnt/projects/Projects/llvm-manager"
+    # Compute repository root relative to the test file for CI portability
+    repo_root="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
+    export LLVM_MANAGER_DIR="$repo_root"
     cd "$TEST_TEMP_DIR"
 }
 
