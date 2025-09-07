@@ -169,8 +169,8 @@ function Normalize-Architecture {
 function Select-LlvmAssetForPlatform {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory = $true)]
-        [object[]]$Assets,
+        [Parameter(Mandatory = $false)]
+            [object[]]$Assets,
 
         [Parameter(Mandatory = $true)]
         [string]$Platform,
@@ -185,7 +185,14 @@ function Select-LlvmAssetForPlatform {
     $candidates = @()
 
     Write-VerboseLog "Selecting asset for platform: $Platform, architecture: $normalizedArch"
-    Write-VerboseLog "Available assets: $($Assets.Count)"
+    $assetCount = if ($Assets) { $Assets.Count } else { 0 }
+    Write-VerboseLog "Available assets: $assetCount"
+
+    # Defensive: handle empty or null asset lists gracefully
+    if (-not $Assets -or $assetCount -eq 0) {
+        Write-VerboseLog "No assets provided to Select-LlvmAssetForPlatform"
+        return $null
+    }
 
     foreach ($asset in $Assets) {
         $score = 0

@@ -197,4 +197,4 @@ else
     print_info "Your LLVM manager is working correctly"
     echo "==============================================="
     exit 0
-fi 
+fi

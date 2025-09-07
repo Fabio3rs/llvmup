@@ -1,5 +1,5 @@
 BeforeAll {
-    Import-Module "/mnt/projects/Projects/llvm-manager/Llvm-Functions-Core.psm1" -Force
+    Import-Module -Force (Join-Path $PSScriptRoot '../../Llvm-Functions-Core.psm1')
 }
 
 Describe 'Auto-Activation Idempotency' {

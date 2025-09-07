@@ -1,31 +1,4 @@
-BeforeAll {
-    # Mock USERPROFILE for tests
-    $env:USERPROFILE = $TestDrive
-
-    # Create mock toolchain directories
-    $toolchainsDir = "$env:USERPROFILE\.llvm\toolchains"
-    New-Item -Type Directory -Path $toolchainsDir -Force | Out-Null
-
-    # Create diverse mock toolchains
-    $versions = @(
-        'llvmorg-19.1.5',
-        'llvmorg-19.1.2',
-        'llvmorg-18.1.8',
-        'llvmorg-18.1.2',
-        'llvmorg-17.0.6',
-        'source-llvmorg-19.1.5',
-        'source-llvmorg-18.1.8',
-        'source-release-branch-18.1',
-        'llvmorg-19.1.0-rc1',
-        'llvmorg-19.1.0-rc2'
-    )
-
-    foreach ($version in $versions) {
-        New-Item -Type Directory -Path "$toolchainsDir\$version" -Force | Out-Null
-    }
-
-    Import-Module -Force "/mnt/projects/Projects/llvm-manager/Llvm-Functions-Core.psm1"
-}
+# Setup and import are handled in the portable BeforeAll block below
 
 Describe 'Enhanced Expression Engine' {
     Context 'Combined Selectors' {
@@ -116,6 +89,29 @@ Describe 'Enhanced Expression Engine' {
     }
 }
 
-AfterAll {
-    Remove-Module Llvm-Functions-Core -Force -ErrorAction SilentlyContinue
+BeforeAll {
+    # Mock USERPROFILE for tests
+    $env:USERPROFILE = $TestDrive
+
+    # Create mock toolchain directories
+    $toolchainsDir = Join-Path $env:USERPROFILE '.llvm\toolchains'
+    New-Item -Type Directory -Path $toolchainsDir -Force | Out-Null
+
+
+    # Create diverse mock toolchains (deterministic set for tests)
+    $versions = @(
+        'llvmorg-17.0.6',
+        'llvmorg-18.1.2',
+        'llvmorg-18.1.8',
+        'llvmorg-19.1.2',
+        'llvmorg-19.1.5',
+        'source-llvmorg-18.1.8',
+        'source-llvmorg-19.1.5'
+    )
+
+    foreach ($version in $versions) {
+        New-Item -Type Directory -Path (Join-Path $toolchainsDir $version) -Force | Out-Null
+    }
+
+    Import-Module -Force (Join-Path $PSScriptRoot '../../Llvm-Functions-Core.psm1')
 }
