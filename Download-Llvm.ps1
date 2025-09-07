@@ -1,91 +1,292 @@
-# Download-Llvm.ps1: Enhanced LLVM version manager for Windows with custom build support
+# Download-Llvm.ps1: Enhanced LLVM prebuilt download and installation manager
 # Requirements: PowerShell v5 or later
+# Based on llvm-prebuilt bash implementation
 # Usage:
-#   . Download-Llvm.ps1 [version] [-CMakeFlags <flags>] [-Name <name>] [-Default] [-Profile <profile>] [-Component <component>]
+#   . Download-Llvm.ps1 [version] [-Platform <platform>] [-Arch <arch>] [-Force] [-TestMode] [-SkipVerify]
 
 param (
     [Parameter(Mandatory = $false)]
     [string]$Version,
 
     [Parameter(Mandatory = $false)]
-    [string[]]$CMakeFlags = @(),
+    [ValidateSet("Windows", "Linux", "macOS")]
+    [string]$Platform,
+
+    [Parameter(Mandatory = $false)]
+    [ValidateSet("x64", "x86", "arm64", "armv7a")]
+    [string]$Arch,
 
     [Parameter(Mandatory = $false)]
     [string]$Name,
 
     [Parameter(Mandatory = $false)]
-    [switch]$Default,
+    [switch]$Force,
 
     [Parameter(Mandatory = $false)]
-    [ValidateSet("minimal", "full", "custom")]
-    [string]$Profile,
+    [switch]$TestMode,
 
     [Parameter(Mandatory = $false)]
-    [string[]]$Component = @(),
+    [switch]$SkipVerify,
 
     [Parameter(Mandatory = $false)]
-    [switch]$FromSource,
+    [switch]$ArchiveOnly,
 
     [Parameter(Mandatory = $false)]
-    [switch]$Verbose,
+    [int]$TimeoutSec = 60,
+
+    [Parameter(Mandatory = $false)]
+    [int]$MaxRetries = 3,
 
     [Parameter(Mandatory = $false)]
     [switch]$Help
 )
 
-# Check PowerShell version
-if ($PSVersionTable.PSVersion.Major -lt 5) {
-    Write-Error "This script requires PowerShell 5.0 or later. Please upgrade your PowerShell version."
-    Write-Output "You can check your current version with: $PSVersionTable.PSVersion"
-    exit 1
-}
+# Global variables
+$script:LLVM_HOME = "$env:USERPROFILE\.llvm"
+$script:TOOLCHAINS_DIR = "$script:LLVM_HOME\toolchains"
+$script:TEMP_DIR = "$env:TEMP\llvm_temp"
 
-# Check for administrator privileges
-$isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-if (-not $isAdmin) {
-    Write-Error "This script requires administrator privileges to install LLVM."
-    Write-Output "Please run PowerShell as Administrator and try again."
-    exit 1
-}
+# =============================================================================
+# LOGGING FUNCTIONS (ported from bash)
+# =============================================================================
 
-$apiUrl = "https://api.github.com/repos/llvm/llvm-project/releases"
-Write-Output "Fetching releases from GitHub..."
-
-try {
-    $response = Invoke-WebRequest -Uri $apiUrl -UseBasicParsing
-} catch {
-    Write-Error "Failed to fetch releases from GitHub. Please check your internet connection and try again."
-    Write-Output "Error details: $_"
-    exit 1
-}
-
-$releases = $response.Content | ConvertFrom-Json
-
-if (-not $releases) {
-    Write-Error "No releases found. This might be due to GitHub API rate limiting or temporary issues."
-    Write-Output "Please try again in a few minutes."
-    exit 1
-}
-
-# Build and display a list of available release tags
-$releaseList = @()
-$i = 1
-foreach ($release in $releases) {
-    $tag = $release.tag_name
-    $releaseList += $tag
-    $installedFlag = ""
-    if (Test-Path (Join-Path $env:USERPROFILE ".llvm\toolchains\$tag")) {
-        $installedFlag = " [installed]"
+function Write-VerboseLog {
+    param([string]$Message)
+    if ($VerbosePreference -ne 'SilentlyContinue') {
+        Write-Host "VERBOSE: $Message" -ForegroundColor Gray
     }
-    Write-Output "$i) $tag$installedFlag"
-    $i++
 }
 
-# Function to validate and select version
-function Select-Version {
-    param (
-        [string]$Input
+function Write-InfoLog {
+    param([string]$Message)
+    Write-Host "ℹ️  $Message" -ForegroundColor Cyan
+}
+
+function Write-ErrorLog {
+    param([string]$Message)
+    Write-Error "❌ $Message"
+}
+
+function Write-SuccessLog {
+    param([string]$Message)
+    Write-Host "✅ $Message" -ForegroundColor Green
+}
+
+function Write-WarningLog {
+    param([string]$Message)
+    Write-Warning "⚠️  $Message"
+}
+
+function Write-ProgressLog {
+    param([string]$Message)
+    Write-Host "🔄 $Message" -ForegroundColor Yellow
+}
+
+# =============================================================================
+# PLATFORM DETECTION
+# =============================================================================
+
+function Get-CurrentPlatform {
+    if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)) {
+        return "Windows"
+    } elseif ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Linux)) {
+        return "Linux"
+    } elseif ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::OSX)) {
+        return "macOS"
+    } else {
+        throw "Unsupported platform"
+    }
+}
+
+function Get-CurrentArchitecture {
+    $arch = [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture
+    switch ($arch) {
+        "X64" { return "x64" }
+        "X86" { return "x86" }
+        "Arm64" { return "arm64" }
+        "Arm" { return "armv7a" }
+        default { return "x64" }  # fallback
+    }
+}
+
+# =============================================================================
+# RELEASE MANAGEMENT (ported from llvm-prebuilt)
+# =============================================================================
+
+function Get-LlvmReleases {
+    [CmdletBinding()]
+    param(
+        [string]$ApiUrl = "https://api.github.com/repos/llvm/llvm-project/releases",
+        [int]$TimeoutSec = 60
     )
+
+    Write-VerboseLog "Fetching LLVM releases from GitHub API: $ApiUrl"
+
+    # In test mode, use cached releases
+    if ($env:LLVM_TEST_MODE -eq "1" -or $TestMode) {
+        $cacheFile = Join-Path $PSScriptRoot "githubreleases.json"
+        if (Test-Path $cacheFile) {
+            Write-InfoLog "Using cached releases (Test Mode)"
+            $content = Get-Content $cacheFile -Raw | ConvertFrom-Json
+            return $content
+        }
+    }
+
+    try {
+        Write-ProgressLog "Connecting to GitHub API..."
+        $response = Invoke-RestMethod -Uri $ApiUrl -TimeoutSec $TimeoutSec -ErrorAction Stop
+        Write-SuccessLog "Successfully retrieved release information from GitHub"
+        Write-VerboseLog "API response received ($($response.Count) releases)"
+        return $response
+    }
+    catch {
+        Write-ErrorLog "Failed to fetch releases from GitHub API: $($_.Exception.Message)"
+
+        # Fallback to cached file if available
+        $cacheFile = Join-Path $PSScriptRoot "githubreleases.json"
+        if (Test-Path $cacheFile) {
+            Write-WarningLog "Falling back to cached releases"
+            $content = Get-Content $cacheFile -Raw | ConvertFrom-Json
+            return $content
+        }
+
+        throw "Unable to fetch releases from API or cache"
+    }
+}
+
+function Normalize-Architecture {
+    param([string]$Arch)
+
+    switch ($Arch.ToLower()) {
+        { $_ -in @("x86_64", "amd64", "x64") } { return "x64" }
+        { $_ -in @("aarch64", "arm64") } { return "arm64" }
+        { $_ -in @("armv7a", "armv7", "arm") } { return "armv7a" }
+        { $_ -in @("x86", "i386", "i686") } { return "x86" }
+        default { return $Arch }
+    }
+}
+
+function Select-LlvmAssetForPlatform {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [object[]]$Assets,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Platform,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Architecture,
+
+        [switch]$PreferInstaller
+    )
+
+    $normalizedArch = Normalize-Architecture $Architecture
+    $candidates = @()
+
+    Write-VerboseLog "Selecting asset for platform: $Platform, architecture: $normalizedArch"
+    Write-VerboseLog "Available assets: $($Assets.Count)"
+
+    foreach ($asset in $Assets) {
+        $score = 0
+        $assetName = $asset.name
+
+        # Skip signature files
+        if ($assetName -match '\.(sig|jsonl)$') {
+            continue
+        }
+
+        Write-VerboseLog "Evaluating asset: $assetName"
+
+        # Platform-specific scoring
+        switch ($Platform) {
+            "Windows" {
+                # Prefer LLVM-*-win*.exe (installer) or clang+llvm-*-windows-msvc.tar.xz (archive)
+                if ($assetName -match "LLVM-.*-win(64|32)\.exe") {
+                    $score += 100
+                    if ($PreferInstaller) { $score += 20 }
+                } elseif ($assetName -match "clang\+llvm-.*-.*-pc-windows-msvc\.tar\.xz") {
+                    $score += 80
+                    if (-not $PreferInstaller) { $score += 20 }
+                } elseif ($assetName -match "LLVM-.*-woa64\.exe" -and $normalizedArch -eq "arm64") {
+                    $score += 90
+                }
+            }
+            "Linux" {
+                # Prefer LLVM-*-Linux-*.tar.xz or clang+llvm-*-linux-*.tar.*
+                if ($assetName -match "LLVM-.*-Linux-.*\.tar\.xz") {
+                    $score += 100
+                } elseif ($assetName -match "clang\+llvm-.*-.*-linux-.*\.tar\.(gz|xz)") {
+                    $score += 80
+                }
+            }
+            "macOS" {
+                # Prefer LLVM-*-macOS-*.tar.xz or clang+llvm-*-apple-darwin*.tar.*
+                if ($assetName -match "LLVM-.*-macOS-.*\.tar\.xz") {
+                    $score += 100
+                } elseif ($assetName -match "clang\+llvm-.*-apple-darwin.*\.tar\.(gz|xz)") {
+                    $score += 80
+                }
+            }
+        }
+
+        # Architecture-specific scoring
+        if ($score -gt 0) {
+            switch ($normalizedArch) {
+                "x64" {
+                    if ($assetName -match "(X64|x86_64|amd64)") { $score += 50 }
+                }
+                "arm64" {
+                    if ($assetName -match "(ARM64|aarch64)") { $score += 50 }
+                }
+                "armv7a" {
+                    if ($assetName -match "armv7a") { $score += 50 }
+                }
+                "x86" {
+                    if ($assetName -match "(win32|x86|i386)") { $score += 50 }
+                }
+            }
+        }
+
+        if ($score -gt 0) {
+            $candidates += @{
+                Asset = $asset
+                Score = $score
+                Name = $assetName
+            }
+        }
+    }
+
+    if ($candidates.Count -eq 0) {
+        Write-WarningLog "No suitable prebuilt asset found for $Platform $normalizedArch"
+        return $null
+    }
+
+    # Sort by score (highest first) and return the best match
+    $best = $candidates | Sort-Object Score -Descending | Select-Object -First 1
+    Write-VerboseLog "Selected asset: $($best.Name) (score: $($best.Score))"
+
+    # Check for verification file
+    $verifiable = $false
+    $sigFile = $Assets | Where-Object { $_.name -eq "$($best.Asset.name).sig" }
+    $jsonlFile = $Assets | Where-Object { $_.name -eq "$($best.Asset.name).jsonl" }
+
+    if ($sigFile -or $jsonlFile) {
+        $verifiable = $true
+        Write-VerboseLog "Asset has verification file available"
+    }
+
+    return @{
+        Asset = $best.Asset
+        Name = $best.Asset.name
+        Url = $best.Asset.browser_download_url
+        Size = $best.Asset.size
+        Digest = $best.Asset.digest
+        Verifiable = $verifiable
+        SigFile = $sigFile
+        JsonlFile = $jsonlFile
+    }
+}
 
     # If input is a number, use it as an index (1-based)
     if ($Input -match '^\d+$') {

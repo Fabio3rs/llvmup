@@ -11,9 +11,22 @@
 
 set -e
 
+# Source LLVM functions for directory configuration support
+SCRIPT_DIR="$(dirname "$0")"
+if [ -f "$SCRIPT_DIR/llvm-functions.sh" ]; then
+    source "$SCRIPT_DIR/llvm-functions.sh"
+
+    # Load configuration if .llvmup-config exists
+    if [ -f ".llvmup-config" ]; then
+        llvm-config-load >/dev/null 2>&1 || true
+    fi
+fi
+
 REPO_URL="https://github.com/llvm/llvm-project.git"
-SOURCES_DIR="$HOME/.llvm/sources"
-TOOLCHAINS_DIR="$HOME/.llvm/toolchains"
+
+# Use configured directories or fall back to defaults
+SOURCES_DIR="$(llvm-get-sources-dir 2>/dev/null || echo "$HOME/.llvm/sources")"
+TOOLCHAINS_DIR="$(llvm-get-toolchains-dir 2>/dev/null || echo "$HOME/.llvm/toolchains")"
 
 # Default values
 VERBOSE=0

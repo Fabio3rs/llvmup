@@ -323,7 +323,7 @@ llvm-status() {
 
 # Function to list installed LLVM versions
 llvm-list() {
-    local toolchains_dir="$HOME/.llvm/toolchains"
+    local toolchains_dir="$(llvm-get-toolchains-dir)"
 
     echo "╭─ Installed LLVM Versions ──────────────────────────────────╮"
     if [ ! -d "$toolchains_dir" ]; then
@@ -364,7 +364,7 @@ llvm-list() {
 
 # Enhanced completion function for llvm-activate and llvm-vscode-activate
 _llvm_complete_versions() {
-    local toolchains_dir="$HOME/.llvm/toolchains"
+    local toolchains_dir="$(llvm-get-toolchains-dir)"
     local cur="${COMP_WORDS[COMP_CWORD]}"
 
     if [ -d "$toolchains_dir" ]; then
@@ -531,7 +531,7 @@ llvm-config-init() {
         echo "📋 Please provide the following information:"
 
         # Check for installed versions first
-        local toolchains_dir="$HOME/.llvm/toolchains"
+        local toolchains_dir="$(llvm-get-toolchains-dir)"
         local suggested_version=""
         local installed_versions=()
 
@@ -554,10 +554,18 @@ llvm-config-init() {
         else
             log_error "No LLVM versions currently installed"
             log_debug "Would you like to see available remote versions to choose from?"
-            read -p "List remote versions? [Y/n]: " -n 1 -r
-            echo
 
-            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            # For testing environments, skip interactive prompts
+            local list_choice="Y"
+            if [ -n "$LLVM_TEST_MODE" ]; then
+                list_choice="${LLVM_TEST_LIST_REMOTE:-Y}"
+            else
+                read -p "List remote versions? [Y/n]: " -n 1 -r
+                echo
+                list_choice="$REPLY"
+            fi
+
+            if [[ ! $list_choice =~ ^[Nn]$ ]]; then
                 log_progress "Fetching available LLVM versions from GitHub..."
                 if command -v curl >/dev/null 2>&1; then
                     log_tip "Latest available versions:"
@@ -581,16 +589,27 @@ llvm-config-init() {
                 fi
             fi
 
-            read -p "Default LLVM version (e.g., llvmorg-18.1.8): " default_version
-            if [ -z "$default_version" ]; then
-                default_version="llvmorg-18.1.8"
+            # For testing environments, use default version
+            if [ -n "$LLVM_TEST_MODE" ]; then
+                default_version="${LLVM_TEST_DEFAULT_VERSION:-llvmorg-18.1.8}"
+            else
+                read -p "Default LLVM version (e.g., llvmorg-18.1.8): " default_version
+                if [ -z "$default_version" ]; then
+                    default_version="llvmorg-18.1.8"
+                fi
             fi
         fi
 
-        read -p "Custom installation name (optional): " custom_name
-        read -p "Build profile [minimal/full/custom]: " profile
-        if [ -z "$profile" ]; then
-            profile="full"
+        # For testing environments, use default values
+        if [ -n "$LLVM_TEST_MODE" ]; then
+            custom_name="${LLVM_TEST_CUSTOM_NAME:-}"
+            profile="${LLVM_TEST_PROFILE:-full}"
+        else
+            read -p "Custom installation name (optional): " custom_name
+            read -p "Build profile [minimal/full/custom]: " profile
+            if [ -z "$profile" ]; then
+                profile="full"
+            fi
         fi
     fi
 
@@ -623,7 +642,13 @@ include = ["clang", "lld", "lldb", "compiler-rt"]
 [project]
 # Project-specific settings
 auto_activate = true
-cmake_preset = "Release"
+cmake_preset = "Release"  # Options: Debug, Release, RelWithDebInfo, MinSizeRel
+
+# Optional: Custom directory paths (useful for Docker/containers)
+# [paths]
+# llvm_home = "./llvm"
+# toolchains_dir = "./llvm/toolchains"
+# sources_dir = "./llvm/sources"
 
 # VERSION EXPRESSION EXAMPLES:
 # Specific version:     default = "llvmorg-18.1.8"
@@ -663,6 +688,11 @@ llvm-config-load() {
     LLVM_CONFIG_CMAKE_PRESET=""
     LLVM_CONFIG_CMAKE_FLAGS=()
     LLVM_CONFIG_COMPONENTS=()
+
+    # Directory customization variables
+    LLVM_CONFIG_LLVM_HOME=""
+    LLVM_CONFIG_TOOLCHAINS_DIR=""
+    LLVM_CONFIG_SOURCES_DIR=""
 
     # Parse configuration file
     local current_section=""
@@ -801,6 +831,19 @@ llvm-config-load() {
                         LLVM_CONFIG_CMAKE_PRESET=$(trim "$value")
                     fi
                     ;;
+                "paths")
+                    case "$key" in
+                        "llvm_home")
+                            LLVM_CONFIG_LLVM_HOME=$(trim "$value")
+                            ;;
+                        "toolchains_dir")
+                            LLVM_CONFIG_TOOLCHAINS_DIR=$(trim "$value")
+                            ;;
+                        "sources_dir")
+                            LLVM_CONFIG_SOURCES_DIR=$(trim "$value")
+                            ;;
+                    esac
+                    ;;
             esac
         fi
     done < "$config_file"
@@ -835,6 +878,26 @@ llvm-config-load() {
         esac
     fi
 
+    # Apply custom directory settings if specified
+    if [ -n "$LLVM_CONFIG_LLVM_HOME" ] || [ -n "$LLVM_CONFIG_TOOLCHAINS_DIR" ] || [ -n "$LLVM_CONFIG_SOURCES_DIR" ]; then
+        log_debug "Applying custom directory configuration..."
+
+        if [ -n "$LLVM_CONFIG_LLVM_HOME" ]; then
+            log_debug "Using custom LLVM_HOME: $LLVM_CONFIG_LLVM_HOME"
+        fi
+
+        if [ -n "$LLVM_CONFIG_TOOLCHAINS_DIR" ]; then
+            log_debug "Using custom TOOLCHAINS_DIR: $LLVM_CONFIG_TOOLCHAINS_DIR"
+        fi
+
+        if [ -n "$LLVM_CONFIG_SOURCES_DIR" ]; then
+            log_debug "Using custom SOURCES_DIR: $LLVM_CONFIG_SOURCES_DIR"
+        fi
+    fi
+
+    # Apply custom directory configuration
+    llvm-config-apply-directories
+
     log_config "Configuration loaded:"
     log_info "   📦 Version: $LLVM_CONFIG_VERSION"
     [ -n "$LLVM_CONFIG_NAME" ] && log_info "   🏷️  Name: $LLVM_CONFIG_NAME"
@@ -842,6 +905,9 @@ llvm-config-load() {
     [ ${#LLVM_CONFIG_CMAKE_FLAGS[@]} -gt 0 ] && log_debug "CMake flags: ${LLVM_CONFIG_CMAKE_FLAGS[*]}"
     [ ${#LLVM_CONFIG_COMPONENTS[@]} -gt 0 ] && log_debug "Components: ${LLVM_CONFIG_COMPONENTS[*]}"
     [ -n "$LLVM_CONFIG_CMAKE_PRESET" ] && log_debug "CMake preset: $LLVM_CONFIG_CMAKE_PRESET"
+    [ -n "$LLVM_CONFIG_LLVM_HOME" ] && log_debug "LLVM Home: $LLVM_CONFIG_LLVM_HOME"
+    [ -n "$LLVM_CONFIG_TOOLCHAINS_DIR" ] && log_debug "Toolchains Dir: $LLVM_CONFIG_TOOLCHAINS_DIR"
+    [ -n "$LLVM_CONFIG_SOURCES_DIR" ] && log_debug "Sources Dir: $LLVM_CONFIG_SOURCES_DIR"
     if [ "$LLVM_CONFIG_AUTO_ACTIVATE" = "true" ]; then
         log_debug "Auto-activate: enabled"
     elif [ "$LLVM_CONFIG_AUTO_ACTIVATE" = "false" ]; then
@@ -852,6 +918,44 @@ llvm-config-load() {
     log_tip "  • llvm-config-apply    - Install with these settings"
     log_tip "  • llvm-config-activate - Activate if already installed"
     return 0
+}
+
+# Function to apply directory configuration from loaded config
+llvm-config-apply-directories() {
+    # Set global variables that scripts can use
+    if [ -n "$LLVM_CONFIG_LLVM_HOME" ]; then
+        export LLVM_CUSTOM_HOME="$LLVM_CONFIG_LLVM_HOME"
+    fi
+
+    if [ -n "$LLVM_CONFIG_TOOLCHAINS_DIR" ]; then
+        export LLVM_CUSTOM_TOOLCHAINS_DIR="$LLVM_CONFIG_TOOLCHAINS_DIR"
+    elif [ -n "$LLVM_CONFIG_LLVM_HOME" ]; then
+        export LLVM_CUSTOM_TOOLCHAINS_DIR="$LLVM_CONFIG_LLVM_HOME/toolchains"
+    fi
+
+    if [ -n "$LLVM_CONFIG_SOURCES_DIR" ]; then
+        export LLVM_CUSTOM_SOURCES_DIR="$LLVM_CONFIG_SOURCES_DIR"
+    elif [ -n "$LLVM_CONFIG_LLVM_HOME" ]; then
+        export LLVM_CUSTOM_SOURCES_DIR="$LLVM_CONFIG_LLVM_HOME/sources"
+    fi
+}
+
+# Function to get effective toolchains directory (respects config)
+llvm-get-toolchains-dir() {
+    if [ -n "$LLVM_CUSTOM_TOOLCHAINS_DIR" ]; then
+        echo "$LLVM_CUSTOM_TOOLCHAINS_DIR"
+    else
+        echo "$HOME/.llvm/toolchains"
+    fi
+}
+
+# Function to get effective sources directory (respects config)
+llvm-get-sources-dir() {
+    if [ -n "$LLVM_CUSTOM_SOURCES_DIR" ]; then
+        echo "$LLVM_CUSTOM_SOURCES_DIR"
+    else
+        echo "$HOME/.llvm/sources"
+    fi
 }
 
 # Function to apply loaded .llvmup-config settings
@@ -878,16 +982,19 @@ llvm-config-apply() {
     log_tip "Installing with settings:"
     log_tip "  llvmup install --from-source ${cmd_args[*]}"
 
-    # In test mode, don't prompt for installation
+    # Ask if user wants to install now
+    # For testing environments, skip interactive prompts
+    local install_choice="n"
     if [ -n "$LLVM_TEST_MODE" ]; then
-        log_debug "Test mode: skipping installation"
-        return 0
+        install_choice="${LLVM_TEST_INSTALL_NOW:-n}"
+        log_debug "Test mode: install choice = $install_choice"
+    else
+        read -p "🤔 Install now? [y/N]: " -n 1 -r
+        echo
+        install_choice="$REPLY"
     fi
 
-    # Ask if user wants to install now
-    read -p "🤔 Install now? [y/N]: " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
+    if [[ $install_choice =~ ^[Yy]$ ]]; then
         log_progress "Installing LLVM with project configuration..."
         if command -v llvmup >/dev/null 2>&1; then
             llvmup install --from-source "${cmd_args[@]}"
@@ -988,8 +1095,8 @@ llvm-parse-version() {
 # Get all installed LLVM versions in a structured format
 llvm-get-versions() {
     local format="${1:-list}"  # Options: list, json, simple
-    local toolchains_dir="$HOME/.llvm/toolchains"
-    local sources_dir="$HOME/.llvm/sources"
+    local toolchains_dir="$(llvm-get-toolchains-dir)"
+    local sources_dir="$(llvm-get-sources-dir)"
 
     if [ ! -d "$toolchains_dir" ]; then
         log_error "No LLVM toolchains directory found at $toolchains_dir"
@@ -1011,7 +1118,7 @@ llvm-get-versions() {
 
 # Get versions in simple list format (one per line)
 llvm-get-versions-simple() {
-    local toolchains_dir="$HOME/.llvm/toolchains"
+    local toolchains_dir="$(llvm-get-toolchains-dir)"
 
     for dir in "$toolchains_dir"/*; do
         if [ -d "$dir" ]; then
@@ -1022,8 +1129,8 @@ llvm-get-versions-simple() {
 
 # Get versions in detailed list format
 llvm-get-versions-list() {
-    local toolchains_dir="$HOME/.llvm/toolchains"
-    local sources_dir="$HOME/.llvm/sources"
+    local toolchains_dir="$(llvm-get-toolchains-dir)"
+    local sources_dir="$(llvm-get-sources-dir)"
 
     echo "╭─ Available LLVM Versions ──────────────────────────────────╮"
 
@@ -1070,7 +1177,7 @@ llvm-get-versions-list() {
 
 # Get versions in JSON format
 llvm-get-versions-json() {
-    local toolchains_dir="$HOME/.llvm/toolchains"
+    local toolchains_dir="$(llvm-get-toolchains-dir)"
     local first=true
 
     echo "{"
@@ -1119,7 +1226,7 @@ llvm-get-versions-json() {
 # Check if a specific version is installed
 llvm-version-exists() {
     local version="$1"
-    local toolchains_dir="$HOME/.llvm/toolchains"
+    local toolchains_dir="$(llvm-get-toolchains-dir)"
 
     if [ -z "$version" ]; then
         log_error "Version parameter is required"
@@ -1475,6 +1582,11 @@ llvm-version-matches-range() {
 
 # Enhanced auto-activation with comprehensive expressions
 llvm-autoactivate-enhanced() {
+    # Não executar auto-ativação em modo de teste
+    if [ -n "$LLVM_TEST_MODE" ]; then
+        return 0
+    fi
+
     if [ ! -f ".llvmup-config" ]; then
         return 0
     fi
@@ -1607,25 +1719,30 @@ llvm-test-expressions() {
 }
 
 llvm-autoactivate() {
+    # Não executar auto-ativação em modo de teste
+    if [ -n "$LLVM_TEST_MODE" ]; then
+        return 0
+    fi
+
+    # Não executar se LLVMUP_DISABLE_AUTOACTIVATE estiver definido
+    if [ -n "$LLVMUP_DISABLE_AUTOACTIVATE" ]; then
+        return 0
+    fi
+
     if [ -f ".llvmup-config" ]; then
         BACKUP_QUIET_SUCCESS=$QUIET_SUCCESS
         QUIET_SUCCESS=1
-        llvm-config-load
+        llvm-config-load || return 0
         if [ "$LLVM_CONFIG_AUTO_ACTIVATE" = "true" ]; then
             # Use enhanced auto-activation with expressions
-            llvm-autoactivate-enhanced
+            llvm-autoactivate-enhanced || return 0
         fi
         QUIET_SUCCESS=$BACKUP_QUIET_SUCCESS
     fi
 }
 
-# Se estiver ativo LLVM_TEST_MODE, não faça auto-ativação
-if [ -n "$LLVM_TEST_MODE" ]; then
-    return
-fi
-
 # Auto-ativação: executar sempre se houver .llvmup-config no diretório atual
 # A função llvm-autoactivate já tem lógica para não reativar se a versão atual já satisfaz a expressão
-if [ -z "$LLVMUP_DISABLE_AUTOACTIVATE" ]; then
-    llvm-autoactivate
+if [ -z "$LLVMUP_DISABLE_AUTOACTIVATE" ] && [ -z "$LLVM_TEST_MODE" ]; then
+    llvm-autoactivate 2>/dev/null || true
 fi

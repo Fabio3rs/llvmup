@@ -2,7 +2,6 @@
 # Supports custom builds, profiles, and configuration files
 # Requirements: PowerShell v5 or later
 
-[CmdletBinding()]
 param (
     [Parameter(Position = 0)]
     [string]$Command = "install",
@@ -19,13 +18,14 @@ param (
     [string[]]$Component = @(),
     [switch]$DisableLibcWnoError,
     [switch]$Reconfigure,
-    [switch]$Verbose,
+    [switch]$VerboseMode,
     [switch]$Quiet,
     [switch]$Help
 )
 
 # Set global verbose mode
-$script:VERBOSE_MODE = $Verbose.IsPresent
+$script:VERBOSE_MODE = $VerboseMode.IsPresent
+$script:Quiet = $Quiet.IsPresent
 
 # Helper function to trim whitespace from strings
 function Get-TrimmedString {
@@ -101,11 +101,11 @@ function Write-Log {
         [string]$Level = "Info"
     )
 
-    if ($Level -eq "Verbose" -and -not $Verbose) {
+    if ($Level -eq "Verbose" -and -not $script:VERBOSE_MODE) {
         return
     }
 
-    if ($Quiet -and $Level -eq "Info") {
+    if ($script:Quiet -and $Level -eq "Info") {
         return
     }
 
@@ -147,7 +147,7 @@ Install Options:
   -Component      Install specific components (can be repeated)
   -DisableLibcWnoError  Disable LIBC_WNO_ERROR=ON flag
   -Reconfigure    Force CMake to reconfigure the build if CMakeCache.txt exists
-  -Verbose        Enable verbose output for debugging
+  -VerboseMode    Enable verbose output for debugging
   -Quiet          Suppress non-essential output
   -Help           Show this help message
 
@@ -192,6 +192,11 @@ Project Configuration (.llvmup-config):
   [project]
   auto_activate = true
   cmake_preset = "Debug"
+
+  [paths]
+  llvm_home = "/custom/llvm"
+  toolchains_dir = "/custom/llvm/toolchains"
+  sources_dir = "/custom/llvm/sources"
 
 "@ -ForegroundColor Cyan
 }
@@ -274,6 +279,9 @@ function Read-LlvmConfig {
         AutoActivate = "false"
         CmakePreset = ""
         DisableLibcWnoError = $false
+        ToolchainsDir = ""
+        SourcesDir = ""
+        LlvmHome = ""
     }
 
     $currentSection = ""
@@ -323,7 +331,7 @@ function Read-LlvmConfig {
 
             # Check if array is closed on same line
             if ($line -match '\]') {
-                $content = ($line -split '\[')[1] -split '\]')[0]
+                $content = (($line -split '\[')[1] -split '\]')[0]
                 Parse-ArrayContent $content $currentSection $key
                 $inArray = $false
             }
@@ -378,11 +386,42 @@ function Read-LlvmConfig {
                         "cmake_preset" { $config.CmakePreset = $value }
                     }
                 }
+                "paths" {
+                    switch ($key) {
+                        "llvm_home" { $config.LlvmHome = $value }
+                        "toolchains_dir" { $config.ToolchainsDir = $value }
+                        "sources_dir" { $config.SourcesDir = $value }
+                    }
+                }
             }
         }
     }
 
     return $config
+}
+
+function Apply-DirectoryConfiguration {
+    param([hashtable]$Config)
+
+    # Apply custom paths from configuration if specified
+    if ($Config.LlvmHome) {
+        $script:LLVM_HOME = $Config.LlvmHome
+        Write-VerboseLog "Using custom LLVM_HOME: $script:LLVM_HOME"
+    }
+
+    if ($Config.ToolchainsDir) {
+        $script:TOOLCHAINS_DIR = $Config.ToolchainsDir
+        Write-VerboseLog "Using custom TOOLCHAINS_DIR: $script:TOOLCHAINS_DIR"
+    } else {
+        $script:TOOLCHAINS_DIR = "$script:LLVM_HOME\toolchains"
+    }
+
+    if ($Config.SourcesDir) {
+        $script:SOURCES_DIR = $Config.SourcesDir
+        Write-VerboseLog "Using custom SOURCES_DIR: $script:SOURCES_DIR"
+    } else {
+        $script:SOURCES_DIR = "$script:LLVM_HOME\sources"
+    }
 }
 
 function Install-LlvmVersion {
@@ -820,6 +859,12 @@ function Invoke-LlvmConfigActivate {
 if ($Help) {
     Show-Help
     exit 0
+}
+
+# Load configuration to apply custom directory settings early
+$earlyConfig = Read-LlvmConfig
+if ($earlyConfig) {
+    Apply-DirectoryConfiguration -Config $earlyConfig
 }
 
 # Ensure LLVM directories exist

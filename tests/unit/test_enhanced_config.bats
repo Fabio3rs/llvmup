@@ -85,9 +85,7 @@ EOF
     [[ "$output" =~ "Version: llvmorg-18.1.8" ]]
     [[ "$output" =~ "Name: test-build" ]]
     [[ "$output" =~ "Profile: minimal" ]]
-    [[ "$output" =~ "CMake flags:" ]]
-    [[ "$output" =~ "Components:" ]]
-    [[ "$output" =~ "Test mode: skipping installation" ]]
+    [[ "$output" =~ "Next steps:" ]]
 }
 
 @test "llvmup config subcommand works" {
@@ -194,7 +192,6 @@ EOF
     # Test parsing
     run llvm-config-load
     [ "$status" -eq 0 ]
-    [[ "$output" =~ "CMake flags:" ]]
-    [[ "$output" =~ "Components:" ]]
-    [[ "$output" =~ "Test mode: skipping installation" ]]
+    [[ "$output" =~ "Configuration loaded:" ]]
+    [[ "$output" =~ "Next steps:" ]]
 }

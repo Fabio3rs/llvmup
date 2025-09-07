@@ -61,10 +61,11 @@ EOF
     source "$BATS_TEST_DIRNAME/../../llvmup-completion.sh"
 
     # Create mock local versions
-    export TOOLCHAINS_DIR="$TEST_DIR/.llvm/toolchains"
-    mkdir -p "$TOOLCHAINS_DIR/llvmorg-19.1.7"
-    mkdir -p "$TOOLCHAINS_DIR/llvmorg-20.1.0"
-    mkdir -p "$TOOLCHAINS_DIR/source-llvmorg-21-init"
+    export LLVM_CUSTOM_TOOLCHAINS_DIR="$TEST_DIR/.llvm/toolchains"
+    export LLVM_CUSTOM_SOURCES_DIR="$TEST_DIR/.llvm/sources"
+    mkdir -p "$LLVM_CUSTOM_TOOLCHAINS_DIR/llvmorg-19.1.7"
+    mkdir -p "$LLVM_CUSTOM_TOOLCHAINS_DIR/llvmorg-20.1.0"
+    mkdir -p "$LLVM_CUSTOM_TOOLCHAINS_DIR/source-llvmorg-21-init"
 }
 
 teardown() {

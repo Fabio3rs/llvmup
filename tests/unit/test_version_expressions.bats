@@ -2,24 +2,32 @@
 
 # Test setup
 setup() {
+    # Set test mode environment variables
+    export LLVM_TEST_MODE=1
+    export LLVMUP_DISABLE_AUTOACTIVATE=1
+
     # Create temporary test directories
     export TEST_DIR=$(mktemp -d)
     export HOME_BACKUP="$HOME"
     export HOME="$TEST_DIR"
     export LLVM_TOOLCHAINS_DIR="$TEST_DIR/.llvm/toolchains"
 
+    # Set up directory configuration for new system
+    export LLVM_CUSTOM_TOOLCHAINS_DIR="$TEST_DIR/.llvm/toolchains"
+    export LLVM_CUSTOM_SOURCES_DIR="$TEST_DIR/.llvm/sources"
+
     # Create mock LLVM toolchains with diverse versions
     # Prebuilt versions
-    mkdir -p "$LLVM_TOOLCHAINS_DIR/llvmorg-18.1.8/bin"
-    mkdir -p "$LLVM_TOOLCHAINS_DIR/llvmorg-19.1.7/bin"
-    mkdir -p "$LLVM_TOOLCHAINS_DIR/llvmorg-20.1.0/bin"
+    mkdir -p "$LLVM_CUSTOM_TOOLCHAINS_DIR/llvmorg-18.1.8/bin"
+    mkdir -p "$LLVM_CUSTOM_TOOLCHAINS_DIR/llvmorg-19.1.7/bin"
+    mkdir -p "$LLVM_CUSTOM_TOOLCHAINS_DIR/llvmorg-20.1.0/bin"
 
     # Source build versions
-    mkdir -p "$LLVM_TOOLCHAINS_DIR/source-llvmorg-20.1.0/bin"
-    mkdir -p "$LLVM_TOOLCHAINS_DIR/source-llvmorg-21-init/bin"
+    mkdir -p "$LLVM_CUSTOM_TOOLCHAINS_DIR/source-llvmorg-20.1.0/bin"
+    mkdir -p "$LLVM_CUSTOM_TOOLCHAINS_DIR/source-llvmorg-21-init/bin"
 
     # Create mock LLVM binaries for all versions
-    for version_dir in "$LLVM_TOOLCHAINS_DIR"/*; do
+    for version_dir in "$LLVM_CUSTOM_TOOLCHAINS_DIR"/*; do
         if [ -d "$version_dir/bin" ]; then
             for binary in clang clang++ clangd lld llvm-config lldb opt llc lli; do
                 touch "$version_dir/bin/$binary"
@@ -29,7 +37,6 @@ setup() {
     done
 
     # Enable test mode and disable logs
-    export LLVM_TEST_MODE=1
     export QUIET_MODE=1
     export EXPRESSION_VERBOSE=0
     export EXPRESSION_DEBUG=0

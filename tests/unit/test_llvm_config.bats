@@ -141,16 +141,12 @@ EOF
     # Create fake installation
     mkdir -p "$LLVM_TEST_HOME/.llvm/toolchains/test-build"
 
-    # Mock llvm-activate
-    function llvm-activate() {
-        echo "Activated: $1"
-        return 0
-    }
-
     run llvm-config-load
     assert_success
-    assert_output --partial "already installed"
-    assert_output --partial "Activated: test-build"
+    assert_output --partial "Version: test-version"
+    assert_output --partial "Name: test-build"
+    assert_output --partial "Next steps"
+    assert_output --partial "llvm-config-apply"
 }
 
 @test "llvm-config-load offers to install missing version" {
@@ -160,25 +156,11 @@ EOF
 default = "missing-version"
 EOF
 
-    # Mock llvmup command
-    function llvmup() {
-        echo "Installing with args: $@"
-        return 0
-    }
-
-    function llvm-activate() {
-        echo "Activated: $1"
-        return 0
-    }
-
-    # Set test environment to answer "no" to from-source prompt
-    export LLVM_TEST_FROM_SOURCE="n"
-
     run llvm-config-load
     assert_success
-    assert_output --partial "not found"
-    assert_output --partial "Installing with args"
+    assert_output --partial "Configuration loaded"
     assert_output --partial "missing-version"
+    assert_output --partial "llvm-config-apply"
 }
 
 @test "llvm-config-load handles from-source installation" {
@@ -194,26 +176,13 @@ name = "source-build"
 type = "minimal"
 EOF
 
-    # Mock llvmup command
-    function llvmup() {
-        echo "Installing with args: $@"
-        return 0
-    }
-
-    function llvm-activate() {
-        echo "Activated: $1"
-        return 0
-    }
-
-    # Set test environment to answer "yes" to from-source prompt
-    export LLVM_TEST_FROM_SOURCE="y"
-
     run llvm-config-load
     assert_success
-    assert_output --partial "--from-source"
+    assert_output --partial "Configuration loaded"
     assert_output --partial "source-version"
-    assert_output --partial "--name source-build"
-    assert_output --partial "--profile minimal"
+    assert_output --partial "source-build"
+    assert_output --partial "minimal"
+    assert_output --partial "llvm-config-apply"
 }
 
 @test "config file parsing ignores comments and empty lines" {

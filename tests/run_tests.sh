@@ -85,6 +85,17 @@ test_files=(
     "tests/unit/test_llvm_vscode_activate.bats"
     "tests/unit/test_llvmup.bats"
     "tests/unit/test_version_expressions.bats"
+    "tests/unit/test_completion_enhanced.bats"
+    "tests/unit/test_enhanced_config.bats"
+    "tests/unit/test_install_customization.bats"
+    "tests/unit/test_libc_wno_error_flag.bats"
+    "tests/unit/test_llvm_build_enhanced.bats"
+    "tests/unit/test_llvm_config.bats"
+    "tests/unit/test_llvmup_config_activate.bats"
+    "tests/unit/test_llvmup_enhanced.bats"
+    "tests/unit/test_llvmup_libc_wno_error.bats"
+    "tests/unit/test_project_config.bats"
+    "tests/unit/test_safe_profile_removal.bats"
 )
 
 # Add integration tests if they exist

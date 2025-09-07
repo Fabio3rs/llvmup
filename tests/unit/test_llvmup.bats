@@ -2,6 +2,10 @@
 
 # Test setup for llvmup wrapper script testing
 setup() {
+    # Set test mode environment variables
+    export LLVM_TEST_MODE=1
+    export LLVMUP_DISABLE_AUTOACTIVATE=1
+
     # Create temporary test directories
     export TEST_DIR=$(mktemp -d)
     export MOCK_SCRIPT_DIR="$TEST_DIR/mock_scripts"

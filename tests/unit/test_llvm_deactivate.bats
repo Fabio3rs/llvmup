@@ -2,6 +2,10 @@
 
 # Test setup for bash functions testing (using llvm-functions.sh)
 setup() {
+    # Set test mode environment variables
+    export LLVM_TEST_MODE=1
+    export LLVMUP_DISABLE_AUTOACTIVATE=1
+
     # Create temporary test directories
     export TEST_DIR=$(mktemp -d)
     export HOME_BACKUP="$HOME"
@@ -9,14 +13,18 @@ setup() {
     export TOOLCHAINS_DIR="$TEST_DIR/.llvm/toolchains"
     export TEST_VERSION="llvmorg-19.1.7"
 
+    # Set up directory configuration for new system
+    export LLVM_CUSTOM_TOOLCHAINS_DIR="$TEST_DIR/.llvm/toolchains"
+    export LLVM_CUSTOM_SOURCES_DIR="$TEST_DIR/.llvm/sources"
+
     # Create mock LLVM toolchain
-    mkdir -p "$TOOLCHAINS_DIR/$TEST_VERSION/bin"
+    mkdir -p "$LLVM_CUSTOM_TOOLCHAINS_DIR/$TEST_VERSION/bin"
 
     # Create mock LLVM binaries
     for binary in clang clang++ clangd lld llvm-config lldb; do
         echo '#!/bin/bash
-echo "Mock '$binary' version 19.1.7"' > "$TOOLCHAINS_DIR/$TEST_VERSION/bin/$binary"
-        chmod +x "$TOOLCHAINS_DIR/$TEST_VERSION/bin/$binary"
+echo "Mock '$binary' version 19.1.7"' > "$LLVM_CUSTOM_TOOLCHAINS_DIR/$TEST_VERSION/bin/$binary"
+        chmod +x "$LLVM_CUSTOM_TOOLCHAINS_DIR/$TEST_VERSION/bin/$binary"
     done
 
     # Create mock scripts in ~/.local/bin for the functions to find
@@ -49,20 +57,14 @@ teardown() {
 }
 
 @test "llvm-deactivate function can be called after activation" {
-    # Test in a subshell to contain environment changes
-    (
-        # First activate an LLVM version
-        llvm-activate "$TEST_VERSION"
-        activation_result=$?
+    # First activate an LLVM version
+    run llvm-activate "$TEST_VERSION"
+    [ "$status" -eq 0 ]
 
-        # Then deactivate
-        llvm-deactivate
-        deactivation_result=$?
-
-        # Both operations should succeed
-        [ "$activation_result" -eq 0 ]
-        [ "$deactivation_result" -eq 0 ]
-    )
+    # Then deactivate
+    run llvm-deactivate
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"LLVM environment successfully deactivated"* ]]
 }
 
 @test "llvm-deactivate function works with bash function integration" {

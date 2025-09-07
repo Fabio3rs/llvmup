@@ -2,6 +2,17 @@
 # llvm_prebuilt.sh: Manages the download and installation of LLVM versions from the GitHub API.
 # Requirements: curl, jq, tar
 
+# Source LLVM functions for directory configuration support
+SCRIPT_DIR="$(dirname "$0")"
+if [ -f "$SCRIPT_DIR/llvm-functions.sh" ]; then
+    source "$SCRIPT_DIR/llvm-functions.sh"
+
+    # Load configuration if .llvmup-config exists
+    if [ -f ".llvmup-config" ]; then
+        llvm-config-load >/dev/null 2>&1 || true
+    fi
+fi
+
 # Parse command line arguments
 VERBOSE=0
 QUIET=0
@@ -325,7 +336,7 @@ fi
 log_verbose "Extracted directory: $EXTRACTED_DIR"
 
 # Define the final installation directory (used by the activation script)
-LLVM_TOOLCHAINS_DIR="$HOME/.llvm/toolchains"
+LLVM_TOOLCHAINS_DIR="$(llvm-get-toolchains-dir 2>/dev/null || echo "$HOME/.llvm/toolchains")"
 TARGET_DIR="$LLVM_TOOLCHAINS_DIR/$SELECTED_VERSION"
 
 log_info "Preparing final installation directory..."

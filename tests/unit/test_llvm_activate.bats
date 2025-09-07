@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
 
 setup() {
+    export LLVM_TEST_MODE=1
+    export LLVMUP_DISABLE_AUTOACTIVATE=1
     export TEST_DIR=$(mktemp -d)
     export HOME_BACKUP="$HOME"
     export HOME="$TEST_DIR"
@@ -8,16 +10,20 @@ setup() {
     export TEST_VERSION="llvmorg-19.1.7"
     export TEST_VERSION2="llvmorg-20.1.0"
 
-    mkdir -p "$TOOLCHAINS_DIR/$TEST_VERSION/bin"
-    mkdir -p "$TOOLCHAINS_DIR/$TEST_VERSION2/bin"
+    # Set up directory configuration for new system
+    export LLVM_CUSTOM_TOOLCHAINS_DIR="$TEST_DIR/.llvm/toolchains"
+    export LLVM_CUSTOM_SOURCES_DIR="$TEST_DIR/.llvm/sources"
+
+    mkdir -p "$LLVM_CUSTOM_TOOLCHAINS_DIR/$TEST_VERSION/bin"
+    mkdir -p "$LLVM_CUSTOM_TOOLCHAINS_DIR/$TEST_VERSION2/bin"
 
     for binary in clang clang++ clangd lld llvm-config lldb; do
         echo '#!/bin/bash
-echo "Mock '$binary' version 19.1.7"' > "$TOOLCHAINS_DIR/$TEST_VERSION/bin/$binary"
+echo "Mock '$binary' version 19.1.7"' > "$LLVM_CUSTOM_TOOLCHAINS_DIR/$TEST_VERSION/bin/$binary"
         echo '#!/bin/bash
-echo "Mock '$binary' version 20.1.0"' > "$TOOLCHAINS_DIR/$TEST_VERSION2/bin/$binary"
-        chmod +x "$TOOLCHAINS_DIR/$TEST_VERSION/bin/$binary"
-        chmod +x "$TOOLCHAINS_DIR/$TEST_VERSION2/bin/$binary"
+echo "Mock '$binary' version 20.1.0"' > "$LLVM_CUSTOM_TOOLCHAINS_DIR/$TEST_VERSION2/bin/$binary"
+        chmod +x "$LLVM_CUSTOM_TOOLCHAINS_DIR/$TEST_VERSION/bin/$binary"
+        chmod +x "$LLVM_CUSTOM_TOOLCHAINS_DIR/$TEST_VERSION2/bin/$binary"
     done
 
     mkdir -p "$TEST_DIR/.local/bin"
@@ -48,21 +54,16 @@ teardown() {
 }
 
 @test "llvm-activate function activates existing version successfully" {
-    (
-        llvm-activate "$TEST_VERSION"
-        result=$?
-        [ "$result" -eq 0 ]
-        [[ "$PATH" == *"$TOOLCHAINS_DIR/$TEST_VERSION/bin"* ]]
-    )
+    run llvm-activate "$TEST_VERSION"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"$TEST_VERSION successfully activated"* ]]
 }
 
 @test "llvm-deactivate function works" {
-    (
-        llvm-activate "$TEST_VERSION"
-        llvm-deactivate
-        result=$?
-        [ "$result" -eq 0 ]
-    )
+    llvm-activate "$TEST_VERSION"
+    run llvm-deactivate
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"LLVM environment successfully deactivated"* ]]
 }
 
 @test "llvm-status shows no active version initially" {

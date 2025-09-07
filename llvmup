@@ -185,7 +185,11 @@ case "${1:-}" in
     default)
         COMMAND="default"
         shift
-        handle_default_command "$@"
+        if [ $# -eq 0 ]; then
+            show_default_version
+        else
+            handle_default_command "$@"
+        fi
         exit $?
         ;;
     config)

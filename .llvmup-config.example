@@ -1,0 +1,14 @@
+# Exemplo de configuração com expressões
+
+[version]
+# Usar sempre a versão prebuilt mais recente
+default = "latest-prebuilt"
+
+# Outras opções:
+# default = ">=18.0.0"        # Qualquer versão >= 18.0.0
+# default = "~19.1"           # Versões 19.1.x
+# default = "source"          # Qualquer build from source
+# default = "llvmorg-18.1.8"  # Versão específica
+
+[project]
+auto_activate = true

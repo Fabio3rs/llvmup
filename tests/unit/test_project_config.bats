@@ -3,6 +3,10 @@
 load "../fixtures/test_helpers.bash"
 
 setup() {
+    # Set test mode environment variables
+    export LLVM_TEST_MODE=1
+    export LLVMUP_DISABLE_AUTOACTIVATE=1
+
     export TEST_TEMP_DIR="$(mktemp -d)"
     export ORIGINAL_PWD="$PWD"
     export LLVM_MANAGER_DIR="/mnt/projects/Projects/llvm-manager"

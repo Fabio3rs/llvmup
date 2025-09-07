@@ -422,24 +422,16 @@ function ConvertFrom-LlvmVersion {
         [string]$VersionString
     )
 
-    if ([string]::IsNullOrEmpty($VersionString)) {
-        Write-LlvmLog "Version string is required" -Level Error
-        return $null
-    }
+    if ([string]::IsNullOrEmpty($VersionString)) { return $null }
 
-    # Remove common prefixes
-    $cleanVersion = $VersionString -replace '^(llvmorg-|source-llvmorg-|source-)', ''
+    # Remove common prefixes (including source-llvmorg- for parity with bash)
+    $clean = $VersionString -replace '^(source-llvmorg-|llvmorg-|source-)', ''
 
-    # Extract version numbers (major.minor.patch or major.minor)
-    if ($cleanVersion -match '^(\d+\.\d+(?:\.\d+)?(?:-[a-zA-Z0-9]+)?)$') {
-        return $matches[1]
-    }
-    elseif ($cleanVersion -match '^(\d+)') {
-        # Try to extract version from complex strings like "21-init"
+    # Extract version numbers
+    if ($clean -match '^(\d+(?:\.\d+)*(?:-[a-zA-Z0-9]+)?)$') {
         return $matches[1]
     }
 
-    Write-LlvmLog "Unable to parse version from: $VersionString" -Level Error
     return $null
 }
 
@@ -642,25 +634,22 @@ function Compare-LlvmVersion {
         [string]$Version2
     )
 
-    $cleanV1 = ConvertFrom-LlvmVersion $Version1
-    $cleanV2 = ConvertFrom-LlvmVersion $Version2
+    $v1 = ConvertFrom-LlvmVersion $Version1
+    $v2 = ConvertFrom-LlvmVersion $Version2
 
-    if (-not $cleanV1 -or -not $cleanV2) {
-        Write-LlvmLog "Unable to parse one or both version strings" -Level Error
-        return $null
-    }
+    if (-not $v1 -or -not $v2) { return $null }
 
     try {
-        $v1 = [System.Version]$cleanV1
-        $v2 = [System.Version]$cleanV2
-
-        return $v1.CompareTo($v2)
+        # Simple normalization for version comparison
+        $semver1 = [System.Version]($v1 -replace '^(\d+(?:\.\d+)?).*', '$1.0.0').Substring(0, [Math]::Min(7, ($v1 -replace '^(\d+(?:\.\d+)?).*', '$1.0.0').Length))
+        $semver2 = [System.Version]($v2 -replace '^(\d+(?:\.\d+)?).*', '$1.0.0').Substring(0, [Math]::Min(7, ($v2 -replace '^(\d+(?:\.\d+)?).*', '$1.0.0').Length))
+        return $semver1.CompareTo($semver2)
     }
     catch {
-        # Fallback to string comparison for non-standard versions
-        if ($cleanV1 -eq $cleanV2) { return 0 }
-        elseif ($cleanV1 -gt $cleanV2) { return 1 }
-        else { return -1 }
+        # Fallback to string comparison
+        if ($v1 -eq $v2) { return 0 }
+        if ($v1 -gt $v2) { return 1 }
+        return -1
     }
 }
 
@@ -702,6 +691,204 @@ function Get-LlvmLatestVersion {
     return $latest.Original
 }
 
+function Normalize-LlvmSemver {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Version
+    )
+
+    # Convert inputs like '18', '18.1' or '18.1.8' into '18.1.8' form
+    if (-not $Version) { return $null }
+    $parts = $Version -split '\.'
+    while ($parts.Count -lt 3) { $parts += '0' }
+    return ($parts[0..2] -join '.')
+}
+
+function Invoke-LlvmParseVersionExpression {
+    [CmdletBinding()]
+    param([Parameter(Mandatory=$true)] [string]$Expression)
+
+    $expr = $Expression.Trim()
+
+    if ($expr -eq 'latest') { return @{ kind='selector'; selector='latest' } }
+    if ($expr -eq 'oldest') { return @{ kind='selector'; selector='oldest' } }
+    if ($expr -eq 'prebuilt') { return @{ kind='type'; type='prebuilt' } }
+    if ($expr -eq 'source') { return @{ kind='type'; type='source' } }
+
+    if ($expr -match '^~\s*(\d+(?:\.\d+)*)$') {
+        return @{ kind='range'; range=@{ op='~'; version=$matches[1] } }
+    }
+
+    if ($expr -match '^(>=|<=|>|<|=)\s*(.+)$') {
+        return @{ kind='range'; range=@{ op=$matches[1]; version=$matches[2] } }
+    }
+
+    if ($expr -match '\*$') {
+        return @{ kind='wildcard'; wildcard=$expr }
+    }
+
+    return @{ kind='specific'; specific=$expr }
+}
+
+function Invoke-LlvmVersionMatchesRange {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$CandidateVersion,
+        [Parameter(Mandatory=$true)]
+        [string]$RangeExpression
+    )
+
+    # Normalize candidate parsed version
+    $cand = ConvertFrom-LlvmVersion $CandidateVersion
+    if (-not $cand) { return $false }
+    $candNorm = Normalize-LlvmSemver $cand
+
+    $parsed = Invoke-LlvmParseVersionExpression -Expression $RangeExpression
+    if (-not $parsed) { return $false }
+
+    switch ($parsed.kind) {
+        'range' {
+            $op = $parsed.range.op
+            $ver = $parsed.range.version
+            if ($op -eq '~') {
+                # Tilde range: >= ver.0 and < next minor
+                $baseParts = ($ver -split '\.')
+                $major = [int]$baseParts[0]
+                $minor = if ($baseParts.Count -ge 2) { [int]$baseParts[1] } else { 0 }
+                $min = Normalize-LlvmSemver "$major.$minor.0"
+                $nextMinor = Normalize-LlvmSemver "$major.$([int]($minor + 1)).0"
+                $cmpMin = Compare-LlvmVersion $candNorm $min
+                $cmpMax = Compare-LlvmVersion $candNorm $nextMinor
+                # Compare-LlvmVersion returns -1/0/1 semantics; ensure inclusive lower bound and exclusive upper
+                if (($cmpMin -ge 0) -and ($cmpMax -lt 0)) { return $true } else { return $false }
+            } else {
+                $targetNorm = Normalize-LlvmSemver (ConvertFrom-LlvmVersion $ver)
+                $cmp = Compare-LlvmVersion $candNorm $targetNorm
+                switch ($op) {
+                    '>'  { return ($cmp -gt 0) }
+                    '>=' { return ($cmp -ge 0) }
+                    '<'  { return ($cmp -lt 0) }
+                    '<=' { return ($cmp -le 0) }
+                    '='  { return ($cmp -eq 0) }
+                }
+            }
+        }
+        'wildcard' {
+            # e.g. 18.* -> match major
+            if ($parsed.wildcard -match '^([0-9]+)\.') {
+                $maj = $matches[1]
+                if ($cand -match "^$maj\\.") { return $true } else { return $false }
+            }
+            return $false
+        }
+        default {
+            # Unknown kind: return false
+            return $false
+        }
+    }
+}
+
+function Invoke-LlvmMatchVersions {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Expression
+    )
+
+    $parsed = Invoke-LlvmParseVersionExpression -Expression $Expression
+    if (-not $parsed) { return @() }
+
+    $installed = Get-LlvmVersionsSimple
+    if (-not $installed) { return @() }
+
+    $matches = @()
+
+    switch ($parsed.kind) {
+        'selector' {
+            $type = $parsed.type
+            if ($parsed.selector -eq 'latest') {
+                if ($type -eq 'prebuilt') {
+                    # choose latest non-source
+                    $cand = $installed | Where-Object { $_ -notmatch '^source-' } | ForEach-Object { $_ }
+                } elseif ($type -eq 'source') {
+                    $cand = $installed | Where-Object { $_ -match '^source-' } | ForEach-Object { $_ }
+                } else {
+                    $cand = $installed
+                }
+                if ($cand) {
+                    $sorted = $cand | Sort-Object { [System.Version](Normalize-LlvmSemver (ConvertFrom-LlvmVersion $_)) }
+                    return ,($sorted | Select-Object -Last 1)
+                }
+                return @()
+            }
+            if ($parsed.selector -eq 'oldest') {
+                if ($type -eq 'prebuilt') {
+                    $cand = $installed | Where-Object { $_ -notmatch '^source-' }
+                } elseif ($type -eq 'source') {
+                    $cand = $installed | Where-Object { $_ -match '^source-' }
+                } else {
+                    $cand = $installed
+                }
+                if ($cand) {
+                    $sorted = $cand | Sort-Object { [System.Version](Normalize-LlvmSemver (ConvertFrom-LlvmVersion $_)) }
+                    return ,($sorted | Select-Object -First 1)
+                }
+                return @()
+            }
+        }
+        'type' {
+            if ($parsed.type -eq 'prebuilt') { return $installed | Where-Object { $_ -notmatch '^source-' } }
+            if ($parsed.type -eq 'source') { return $installed | Where-Object { $_ -match '^source-' } }
+            return @()
+        }
+        'wildcard' {
+            $pat = '^' + ($parsed.wildcard -replace '\*', '.*')
+            return $installed | Where-Object { $_ -match $pat }
+        }
+        'specific' {
+            $target = $parsed.specific
+            # exact match first
+            $exact = $installed | Where-Object { $_ -eq $target }
+            if ($exact) { return $exact }
+            # fallback: match by numeric parsed version
+            $targetNum = ConvertFrom-LlvmVersion $target
+            if ($targetNum) { return $installed | Where-Object { (ConvertFrom-LlvmVersion $_) -eq $targetNum } }
+            return @()
+        }
+        'range' {
+            $res = @()
+            foreach ($v in $installed) {
+                if (Invoke-LlvmVersionMatchesRange -CandidateVersion $v -RangeExpression $parsed.raw) { $res += $v }
+            }
+            return $res
+        }
+        default { return @() }
+    }
+}
+
+function Invoke-LlvmAutoActivate {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$false)]
+        [string]$StartDirectory = (Get-Location).Path
+    )
+
+    # Walk up looking for .llvmup-config
+    $dir = Resolve-Path -Path $StartDirectory
+    while ($dir) {
+        $config = Join-Path $dir '.llvmup-config'
+        if (Test-Path $config) {
+            Import-LlvmConfig
+            return
+        }
+        $parent = Split-Path $dir -Parent
+        if ([string]::IsNullOrEmpty($parent) -or $parent -eq $dir) { break }
+        $dir = $parent
+    }
+}
+
         Get-ChildItem $script:TOOLCHAINS_DIR -Directory |
             Where-Object { $_.Name -like "$wordToComplete*" } |
             ForEach-Object { $_.Name }
@@ -725,5 +912,10 @@ Export-ModuleMember -Function @(
     'Test-LlvmVersionExists',
     'Get-LlvmActiveVersion',
     'Compare-LlvmVersion',
-    'Get-LlvmLatestVersion'
+    'Get-LlvmLatestVersion',
+    'Normalize-LlvmSemver',
+    'Invoke-LlvmParseVersionExpression',
+    'Invoke-LlvmVersionMatchesRange',
+    'Invoke-LlvmMatchVersions',
+    'Invoke-LlvmAutoActivate'
 )
