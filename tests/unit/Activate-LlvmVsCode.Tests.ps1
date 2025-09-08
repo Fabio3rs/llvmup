@@ -38,6 +38,8 @@ Describe "Activate-LlvmVsCode" {
         New-Item -ItemType Directory -Path $versionDir     -Force | Out-Null
         New-Item -ItemType Directory -Path $binDir         -Force | Out-Null
         New-Item -ItemType File      -Path (Join-Path $binDir 'clangd.exe') -Force | Out-Null
+        New-Item -ItemType File      -Path (Join-Path $binDir 'clang.exe')  -Force | Out-Null
+        New-Item -ItemType File      -Path (Join-Path $binDir 'clang++.exe')-Force | Out-Null
         New-Item -ItemType File      -Path (Join-Path $binDir 'lldb.exe')   -Force | Out-Null
 
         #––– Mock HOME and save environment
@@ -120,8 +122,8 @@ Describe "Activate-LlvmVsCode" {
             # Split PATH into array and check if binDir is in it
             $pathArray = $env:PATH -split ';'
             $pathArray | Should -Contain $binDir
-            $env:CC   | Should -Be (Join-Path $binDir 'clangd.exe')
-            $env:CXX  | Should -Be (Join-Path $binDir 'clangd.exe')
+            $env:CC   | Should -Be (Join-Path $binDir 'clang.exe')
+            $env:CXX  | Should -Be (Join-Path $binDir 'clang++.exe')
             $env:LLVM_ACTIVE_VERSION | Should -Be $testVersion
         }
 

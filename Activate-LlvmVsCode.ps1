@@ -66,8 +66,8 @@ $settings | ConvertTo-Json -Depth 10 | Set-Content $settingsPath
 
 # Update environment variables
 $env:PATH = "$binDir;$env:PATH"
-$env:CC = Join-Path $binDir "clangd.exe"
-$env:CXX = Join-Path $binDir "clangd.exe"
+$env:CC = Join-Path $binDir "clang.exe"
+$env:CXX = Join-Path $binDir "clang++.exe"
 $env:LLVM_ACTIVE_VERSION = $Version
 
 Write-Output "VSCode workspace settings updated for LLVM version '$Version'."

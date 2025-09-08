@@ -44,7 +44,6 @@ if (-not $env:_OLD_PATH) {
     $env:_OLD_CC = $env:CC
     $env:_OLD_CXX = $env:CXX
     $env:_OLD_LD = $env:LD
-    $env:_OLD_PS1 = $env:PS1
 }
 
 # Update PATH to include the selected LLVM's bin directory
@@ -59,11 +58,44 @@ if (Test-Path (Join-Path $llvmDir "bin/lld.exe")) {
     $env:LD = Join-Path $llvmDir "bin/lld.exe"
 }
 
-# Modify the prompt to indicate active LLVM version
-$env:PS1 = "(LLVM: $Version) $env:_OLD_PS1"
-
 # Set internal variable to indicate active version
 $env:_ACTIVE_LLVM = $Version
+
+# Prompt customization: enabled by default; user can disable via environment var
+# If LLVMUP_DISABLE_PROMPT is set to '1' or 'true' (case-insensitive), skip prompt wrapping
+$disablePrompt = $false
+if ($env:LLVMUP_DISABLE_PROMPT) {
+    if ($env:LLVMUP_DISABLE_PROMPT -eq '1' -or $env:LLVMUP_DISABLE_PROMPT.ToLower() -eq 'true') {
+        $disablePrompt = $true
+    }
+}
+
+if (-not $disablePrompt) {
+    try {
+        # Save original prompt function if not already saved
+        if (-not (Test-Path Function:\__llvm_original_prompt)) {
+            if (Get-Command prompt -CommandType Function -ErrorAction SilentlyContinue) {
+                $orig = (Get-Command prompt).ScriptBlock.ToString()
+                Set-Item -Path Function:\__llvm_original_prompt -Value ([ScriptBlock]::Create($orig))
+            } else {
+                # Provide a basic fallback prompt implementation
+                Set-Item -Path Function:\__llvm_original_prompt -Value { "PS " + (Get-Location) + "> " }
+            }
+        }
+
+        # Create a lightweight wrapper prompt that prefixes the active LLVM version
+        Set-Item -Path Function:\prompt -Value {
+            try {
+                $versionPrefix = if ($env:_ACTIVE_LLVM) {"(LLVM: $($env:_ACTIVE_LLVM)) " } else {""}
+                return $versionPrefix + (& __llvm_original_prompt)
+            } catch {
+                return "(LLVM: $($env:_ACTIVE_LLVM)) "
+            }
+        }
+    } catch {
+        Write-Warning "Failed to set prompt wrapper: $($_.Exception.Message)"
+    }
+}
 
 Write-Output "LLVM version '$Version' activated for this session."
 Write-Output "CC, CXX, and LD have been set; PATH and PS1 have been updated."
