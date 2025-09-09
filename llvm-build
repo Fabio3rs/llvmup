@@ -455,6 +455,39 @@ else
     git clone --depth 1 --branch "$selectedTag" "$REPO_URL" "$target_source_dir"
 fi
 
+# Optional: verify git tag signature for the checked-out source (if available)
+if [ -n "$LLVMUP_SKIP_VERIFY" ] && { [ "$LLVMUP_SKIP_VERIFY" = "1" ] || [ "$LLVMUP_SKIP_VERIFY" = "true" ]; }; then
+    log_info "Skipping source verification because LLVMUP_SKIP_VERIFY is set"
+else
+    VERIFIED=0
+
+    if command -v git >/dev/null 2>&1 && command -v gpg >/dev/null 2>&1; then
+        log_info "Attempting to verify git tag signature for $selectedTag..."
+
+        # Try to verify an annotated/signed tag. This will succeed only if the tag is annotated and a signature exists.
+        if git -C "$target_source_dir" tag -v "$selectedTag" >/dev/null 2>&1; then
+            VERIFIED=1
+            log_info "Git tag signature verified successfully."
+        else
+            log_warning "Git tag signature not found or verification failed for $selectedTag."
+        fi
+    else
+        log_warning "gpg or git not available; cannot verify tag signature for source."
+    fi
+
+    if [ "$VERIFIED" -ne 1 ]; then
+        if [ -n "$LLVMUP_REQUIRE_VERIFY" ] && { [ "$LLVMUP_REQUIRE_VERIFY" = "1" ] || [ "$LLVMUP_REQUIRE_VERIFY" = "true" ]; }; then
+            log_error "No successful verification for source and LLVMUP_REQUIRE_VERIFY is set; aborting."
+            log_verbose "Cleaning up source directory: $target_source_dir"
+            rm -rf "$target_source_dir"
+            exit 1
+        else
+            log_warning "No verification available/succeeded for source; proceeding (default policy: warn)."
+            log_info "To require verification, set LLVMUP_REQUIRE_VERIFY=1. To skip verification, set LLVMUP_SKIP_VERIFY=1."
+        fi
+    fi
+fi
+
 # Create build directory
 build_dir="$target_source_dir/build"
 install_dir="$TOOLCHAINS_DIR/$build_name"

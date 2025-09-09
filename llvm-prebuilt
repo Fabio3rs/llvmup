@@ -228,10 +228,24 @@ log_verbose "Starting asset search for version: $SELECTED_VERSION"
 
 # Find the asset containing "Linux-X64.tar.xz" for the selected version
 ASSET_URL=$(echo "$RELEASES" | jq -r --arg version "$SELECTED_VERSION" '
-  .[] | select(.tag_name == $version) |
-  .assets[] | select(.name | test("Linux-X64.tar.xz$")) |
-  .browser_download_url
+    .[] | select(.tag_name == $version) |
+    .assets[] | select(.name | test("Linux-X64.tar.xz$")) |
+    .browser_download_url
 ')
+
+# Try to extract asset digest (if available in the release metadata) to avoid needing a separate checksum file
+ASSET_DIGEST=$(echo "$RELEASES" | jq -r --arg version "$SELECTED_VERSION" --arg name "$(basename "$ASSET_URL")" '
+    .[] | select(.tag_name == $version) |
+    .assets[] | select(.browser_download_url == ($name | sub("^"; "https://github.com/" ) )? // .browser_download_url | test("")) |
+    .digest // empty
+')
+
+# Fallback: try to find asset by matching name and read digest
+if [ -z "$ASSET_DIGEST" ]; then
+        ASSET_DIGEST=$(echo "$RELEASES" | jq -r --arg version "$SELECTED_VERSION" --arg asset "$(basename \"$ASSET_URL\")" '
+            .[] | select(.tag_name == $version) | .assets[] | select(.name == $asset) | .digest // empty
+        ')
+fi
 
 if [ -z "$ASSET_URL" ]; then
     log_error "No Linux X64 tarball found for version $SELECTED_VERSION."
@@ -297,6 +311,152 @@ fi
 echo # Add newline after progress bar
 log_info "✅ Download completed successfully!"
 log_verbose "Downloaded file: $DEST_FILE ($(du -h "$DEST_FILE" | cut -f1))"
+log_info "Download finished, performing optional integrity verification..."
+
+# Determine asset base name
+ASSET_NAME="$(basename "$ASSET_URL")"
+
+# Honor explicit skip via environment variable (1/true)
+if [ -n "$LLVMUP_SKIP_VERIFY" ] && { [ "$LLVMUP_SKIP_VERIFY" = "1" ] || [ "$LLVMUP_SKIP_VERIFY" = "true" ]; }; then
+    log_info "Skipping verification because LLVMUP_SKIP_VERIFY is set"
+    VERIFIED=1
+else
+    VERIFIED=0
+
+    # If the release metadata contains an asset.digest field, prefer it as the canonical
+    # expected sha256 fingerprint. Use it first before attempting companion checksum files
+    # or signatures. If it fails and LLVMUP_REQUIRE_VERIFY is set, abort immediately.
+    if [ -n "$ASSET_DIGEST" ]; then
+        log_info "Found asset.digest in release metadata; attempting direct sha256 comparison..."
+        # normalize expected digest (remove sha256: prefix if present)
+        EXPECTED_CHKSUM=$(echo "$ASSET_DIGEST" | sed 's/^sha256://I')
+
+        # compute actual checksum
+        if command -v sha256sum >/dev/null 2>&1; then
+            ACTUAL_CHKSUM=$(sha256sum "$DEST_FILE" | awk '{print $1}')
+        elif command -v shasum >/dev/null 2>&1; then
+            ACTUAL_CHKSUM=$(shasum -a 256 "$DEST_FILE" | awk '{print $1}')
+        else
+            log_warning "No SHA256 tool available (sha256sum/shasum); cannot verify asset.digest"
+            ACTUAL_CHKSUM=""
+        fi
+
+        if [ -n "$ACTUAL_CHKSUM" ] && [ "$ACTUAL_CHKSUM" = "$EXPECTED_CHKSUM" ]; then
+            VERIFIED=1
+            log_info "asset.digest matches the downloaded file."
+        else
+            log_warning "asset.digest did not match the downloaded file. Expected: ${EXPECTED_CHKSUM:-<empty>}, Actual: ${ACTUAL_CHKSUM:-<empty>}"
+            if [ -n "$LLVMUP_REQUIRE_VERIFY" ] && { [ "$LLVMUP_REQUIRE_VERIFY" = "1" ] || [ "$LLVMUP_REQUIRE_VERIFY" = "true" ]; }; then
+                log_error "asset.digest verification failed and LLVMUP_REQUIRE_VERIFY is set; aborting."
+                log_verbose "Cleaning up temporary directory: $TEMP_DIR"
+                rm -rf "$TEMP_DIR"
+                exit 1
+            fi
+        fi
+    fi
+
+    # Look for companion assets (.sha256, .sig, .jsonl) in the release metadata
+    SIG_URL=$(echo "$RELEASES" | jq -r --arg version "$SELECTED_VERSION" --arg name "$ASSET_NAME" '.[] | select(.tag_name==$version) | .assets[] | select(.name == ($name + ".sig")) | .browser_download_url')
+    SHA_URL=$(echo "$RELEASES" | jq -r --arg version "$SELECTED_VERSION" --arg name "$ASSET_NAME" '.[] | select(.tag_name==$version) | .assets[] | select(.name == ($name + ".sha256") or .name == ($name + ".sha256sum") or .name == ($name + ".sha256.txt") or .name == ($name + ".sha256sum.txt")) | .browser_download_url')
+    JSONL_URL=$(echo "$RELEASES" | jq -r --arg version "$SELECTED_VERSION" --arg name "$ASSET_NAME" '.[] | select(.tag_name==$version) | .assets[] | select(.name == ($name + ".jsonl")) | .browser_download_url')
+
+    # Try checksum files first (explicit checksum file)
+    if [ -n "$SHA_URL" ]; then
+        log_info "Found checksum asset; attempting sha256 verification..."
+        if curl -sL "$SHA_URL" -o "$TEMP_DIR/$ASSET_NAME.sha256"; then
+            CHKSUM_FILE="$TEMP_DIR/$ASSET_NAME.sha256"
+            # Try to extract a 64-hex sha256
+            EXPECTED_CHKSUM=$(awk '{print $1}' "$CHKSUM_FILE" | grep -Eo '^[0-9a-f]{64}$' | head -1 || true)
+            if [ -z "$EXPECTED_CHKSUM" ]; then
+                # Try to find any 64-hex inside the file
+                EXPECTED_CHKSUM=$(grep -Eo '[0-9a-f]{64}' "$CHKSUM_FILE" | head -1 || true)
+            fi
+            if [ -n "$EXPECTED_CHKSUM" ]; then
+                if command -v sha256sum >/dev/null 2>&1; then
+                    ACTUAL_CHKSUM=$(sha256sum "$DEST_FILE" | awk '{print $1}')
+                elif command -v shasum >/dev/null 2>&1; then
+                    ACTUAL_CHKSUM=$(shasum -a 256 "$DEST_FILE" | awk '{print $1}')
+                else
+                    log_warning "No SHA256 tool available (sha256sum/shasum); cannot verify checksum file"
+                    ACTUAL_CHKSUM=""
+                fi
+
+                if [ -n "$ACTUAL_CHKSUM" ] && [ "$ACTUAL_CHKSUM" = "$EXPECTED_CHKSUM" ]; then
+                    VERIFIED=1
+                    log_info "SHA256 checksum matches."
+                else
+                    log_warning "SHA256 checksum did not match the downloaded file."
+                fi
+            else
+                log_warning "Checksum file did not contain a recognisable sha256 value."
+            fi
+        else
+            log_warning "Failed to download checksum asset: $SHA_URL"
+        fi
+    fi
+
+    # If not verified yet, try GPG signature verification
+    if [ "$VERIFIED" -ne 1 ] && [ -n "$SIG_URL" ]; then
+        if command -v gpg >/dev/null 2>&1; then
+            log_info "Found signature asset; attempting GPG verification..."
+            if curl -sL "$SIG_URL" -o "$TEMP_DIR/$ASSET_NAME.sig"; then
+                if gpg --verify "$TEMP_DIR/$ASSET_NAME.sig" "$DEST_FILE" >/dev/null 2>&1; then
+                    VERIFIED=1
+                    log_info "GPG signature verified successfully."
+                else
+                    log_warning "GPG verification failed for signature: $SIG_URL"
+                fi
+            else
+                log_warning "Failed to download signature asset: $SIG_URL"
+            fi
+        else
+            log_warning "gpg not available in PATH; cannot verify signature asset."
+        fi
+    fi
+
+    # If still not verified, try JSONL attestation (search for sha256 inside)
+    if [ "$VERIFIED" -ne 1 ] && [ -n "$JSONL_URL" ]; then
+        log_info "Found JSONL attestation asset; attempting to extract and compare sha256..."
+        if curl -sL "$JSONL_URL" -o "$TEMP_DIR/$ASSET_NAME.jsonl"; then
+            EXPECTED_CHKSUM=$(grep -Eo '[0-9a-f]{64}' "$TEMP_DIR/$ASSET_NAME.jsonl" | head -1 || true)
+            if [ -n "$EXPECTED_CHKSUM" ]; then
+                if command -v sha256sum >/dev/null 2>&1; then
+                    ACTUAL_CHKSUM=$(sha256sum "$DEST_FILE" | awk '{print $1}')
+                elif command -v shasum >/dev/null 2>&1; then
+                    ACTUAL_CHKSUM=$(shasum -a 256 "$DEST_FILE" | awk '{print $1}')
+                else
+                    log_warning "No SHA256 tool available; cannot verify JSONL attestation"
+                    ACTUAL_CHKSUM=""
+                fi
+
+                if [ -n "$ACTUAL_CHKSUM" ] && [ "$ACTUAL_CHKSUM" = "$EXPECTED_CHKSUM" ]; then
+                    VERIFIED=1
+                    log_info "JSONL attestation sha256 matches the downloaded file."
+                else
+                    log_warning "JSONL attestation did not match the downloaded file."
+                fi
+            else
+                log_warning "No sha256 fingerprint found in JSONL attestation."
+            fi
+        else
+            log_warning "Failed to download JSONL attestation: $JSONL_URL"
+        fi
+    fi
+
+    # Final policy enforcement: warn by default, fail only if user requests strict verification
+    if [ "$VERIFIED" -ne 1 ]; then
+        if [ -n "$LLVMUP_REQUIRE_VERIFY" ] && { [ "$LLVMUP_REQUIRE_VERIFY" = "1" ] || [ "$LLVMUP_REQUIRE_VERIFY" = "true" ]; }; then
+            log_error "No successful verification found for downloaded asset and LLVMUP_REQUIRE_VERIFY is set; aborting."
+            log_verbose "Cleaning up temporary directory: $TEMP_DIR"
+            rm -rf "$TEMP_DIR"
+            exit 1
+        else
+            log_warning "No verification available/succeeded for downloaded asset; proceeding (default policy: warn)."
+            log_info "To require verification, set LLVMUP_REQUIRE_VERIFY=1 in your environment. To skip verification, set LLVMUP_SKIP_VERIFY=1."
+        fi
+    fi
+fi
+
 log_info "Extracting the archive... (this may take a few moments)"
 echo "Extraction progress:"
 

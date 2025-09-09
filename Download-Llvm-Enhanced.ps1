@@ -510,6 +510,88 @@ function Install-PrebuiltLlvm {
         $downloadPath = Join-Path $tempDir $SelectedAsset.Name
         Download-File -Url $SelectedAsset.Url -OutPath $downloadPath -ExpectedDigest $SelectedAsset.Digest -TimeoutSec $TimeoutSec -MaxRetries $MaxRetries
 
+        # Perform verification: prefer explicit digest, then .sig (gpg), then .jsonl attestations
+        $verified = $false
+
+        # Helper: compute sha256 of downloaded file
+        function Get-FileSha256([string]$path) {
+            return (Get-FileHash -Path $path -Algorithm SHA256).Hash.ToLower()
+        }
+
+        if ($env:LLVMUP_SKIP_VERIFY -eq '1' -or $SkipVerify) {
+            Write-WarningLog "Skipping verification per SkipVerify flag or environment"
+            $verified = $true
+        } elseif ($SelectedAsset.Digest) {
+            Write-VerboseLog "Using ExpectedDigest from asset metadata"
+            $actual = Get-FileSha256 $downloadPath
+            $expected = $SelectedAsset.Digest.ToLower().Replace("sha256:", "")
+            if ($actual -eq $expected) {
+                Write-VerboseLog "Digest match OK"
+                $verified = $true
+            } else {
+                throw "Digest verification failed for $($SelectedAsset.Name). Expected: $expected, Actual: $actual"
+            }
+        } elseif ($SelectedAsset.SigFile) {
+            # Download signature and try GPG verification
+            try {
+                $sigAsset = $SelectedAsset.SigFile
+                $sigPath = Join-Path $tempDir $sigAsset.name
+                Download-File -Url $sigAsset.browser_download_url -OutPath $sigPath -TimeoutSec $TimeoutSec -MaxRetries $MaxRetries
+
+                if (Get-Command gpg -ErrorAction SilentlyContinue) {
+                    Write-VerboseLog "Verifying signature with gpg"
+                    $proc = Start-Process -FilePath "gpg" -ArgumentList "--verify", $sigPath, $downloadPath -NoNewWindow -Wait -PassThru -ErrorAction Stop
+                    if ($proc.ExitCode -eq 0) {
+                        Write-VerboseLog "GPG signature verification passed"
+                        $verified = $true
+                    } else {
+                        throw "GPG verification failed with exit code $($proc.ExitCode)"
+                    }
+                } else {
+                    Write-WarningLog "gpg not available; cannot verify signature $($sigAsset.name)"
+                }
+            } catch {
+                Write-WarningLog "Signature verification failed: $($_.Exception.Message)"
+            }
+        } elseif ($SelectedAsset.JsonlFile) {
+            # Download jsonl attestation and try to extract a digest
+            try {
+                $jsonAsset = $SelectedAsset.JsonlFile
+                $jsonPath = Join-Path $tempDir $jsonAsset.name
+                Download-File -Url $jsonAsset.browser_download_url -OutPath $jsonPath -TimeoutSec $TimeoutSec -MaxRetries $MaxRetries
+
+                $foundDigest = $null
+                foreach ($line in Get-Content $jsonPath) {
+                    try {
+                        $obj = $line | ConvertFrom-Json
+                        if ($obj.sha256) { $foundDigest = $obj.sha256; break }
+                        if ($obj.digest) { $foundDigest = $obj.digest; break }
+                    } catch { }
+                }
+
+                if ($foundDigest) {
+                    $actual = Get-FileSha256 $downloadPath
+                    $expected = $foundDigest.ToLower().Replace("sha256:", "")
+                    if ($actual -eq $expected) {
+                        Write-VerboseLog "jsonl digest verification passed"
+                        $verified = $true
+                    } else {
+                        throw "jsonl digest mismatch. Expected: $expected, Actual: $actual"
+                    }
+                } else {
+                    Write-WarningLog "No usable digest found in jsonl attestation"
+                }
+            } catch {
+                Write-WarningLog "jsonl attestation verification failed: $($_.Exception.Message)"
+            }
+        } else {
+            Write-WarningLog "No verification metadata available for asset $($SelectedAsset.Name). Proceeding without verification"
+        }
+
+        if (-not $verified) {
+            Write-WarningLog "Asset $($SelectedAsset.Name) could not be verified. Use -SkipVerify to bypass verification explicitly. Proceeding"
+        }
+
         # Handle installation based on file type
         if ($SelectedAsset.Name -match '\.exe$') {
             # Windows installer

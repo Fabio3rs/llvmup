@@ -181,6 +181,27 @@ Describe "Asset Selection Functions" {
             $result.Verifiable | Should -Be $true
             $result.SigFile | Should -Not -BeNullOrEmpty
         }
+
+        It "Should expose asset.digest when present in metadata" {
+            # Prefer a real Linux asset with digest from test data
+            $found = $null
+            foreach ($rel in $script:AllTestReleases) {
+                foreach ($a in $rel.assets) {
+                    if ($a.digest -and ($a.name -match "(Linux|linux)")) { $found = $a; break }
+                }
+                if ($found) { break }
+            }
+
+            # If not found, create a mock Linux asset with a digest
+            if (-not $found) {
+                $found = @{ name = "LLVM-99.0.0-Linux-x86_64.tar.xz"; browser_download_url = "https://example.com/llvm-99.tar.xz"; size = 12345; digest = "sha256:0123456789abcdef" }
+            }
+
+            $result = Select-LlvmAssetForPlatform -Assets @($found) -Platform "Linux" -Architecture "x64"
+            $result | Should -Not -BeNullOrEmpty
+            $result.Digest | Should -Not -BeNullOrEmpty
+            $result.Digest | Should -Be $found.digest
+        }
     }
 }
 

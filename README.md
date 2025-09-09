@@ -228,6 +228,17 @@ llvm-vscode-activate 18.1.8
 
 ### Windows
 - PowerShell 5.0 or higher
+### Verification controls for downloads
+
+The download scripts attempt to verify downloaded prebuilt assets using a checksum file, a GPG `.sig` signature, or a JSONL attestation when available. By default, if no verification is available the scripts will warn and continue. You can control this behaviour with environment variables:
+
+- `LLVMUP_SKIP_VERIFY=1` — skip verification explicitly.
+- `LLVMUP_REQUIRE_VERIFY=1` — require verification and abort if verification fails or is unavailable.
+
+Set these before running `llvm-prebuilt` or the PowerShell download scripts to change the verification policy.
+
+Note: the tooling will prefer an `asset.digest` field in the release metadata (when present) as a canonical SHA256 fingerprint and compare it directly to the downloaded file before trying companion checksum files.
+
 - Pester module (for tests)
 - Internet connection for downloads
 - Administrator privileges for installation
