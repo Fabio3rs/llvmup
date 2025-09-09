@@ -216,7 +216,7 @@ JSON
 
         # Point the script to use this fixture by setting RELEASES env var read behavior (script reads API normally)
         # For test simplicity, override RELEASES variable via environment substitution in a tiny wrapper
-        cat > "$TEST_DIR/wrapper.sh" <<'SH'
+    cat > "$TEST_DIR/wrapper.sh" <<SH
 #!/bin/bash
 RELEASES=$(cat "$TEST_DIR/releases.json")
 export RELEASES
@@ -252,7 +252,7 @@ JSON
         printf "dummy" > "$TEST_DIR/LLVM-test-Linux-X64.tar.xz"
 
         # Wrapper to inject RELEASES
-        cat > "$TEST_DIR/wrapper2.sh" <<'SH'
+    cat > "$TEST_DIR/wrapper2.sh" <<SH
 #!/bin/bash
 RELEASES=$(cat "$TEST_DIR/releases.json")
 export RELEASES
