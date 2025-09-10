@@ -174,7 +174,6 @@ All notable changes to LLVMUP will be documented in this file.
 ### Planned for v2.1.0
 - [ ] Enhanced Windows PowerShell completion
 - [ ] Configuration file validation
-- [ ] Automated testing pipeline
 - [ ] Performance monitoring dashboard
 - [ ] Plugin system for extensions
 

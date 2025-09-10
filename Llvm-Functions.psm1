@@ -15,6 +15,19 @@ $homeDir = Get-UserHome
 $script:LLVM_HOME = Join-Path $homeDir ".llvm"
 $script:TOOLCHAINS_DIR = Join-Path $script:LLVM_HOME "toolchains"
 
+# Auto-import completion module when running interactively
+try {
+    if ($Host.Name -ne 'ServerRemoteHost' -and $Host.UI.RawUI) {
+        $compModule = Join-Path $PSScriptRoot 'Llvm-Completion.psm1'
+        if (Test-Path $compModule) {
+            # Import idempotently
+            if (-not (Get-Module -ListAvailable -Name Llvm-Completion)) {
+                Import-Module -Force $compModule | Out-Null
+            }
+        }
+    }
+} catch {}
+
 function Write-LlvmLog {
     param(
         [string]$Message,
