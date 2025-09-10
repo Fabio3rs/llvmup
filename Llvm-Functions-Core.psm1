@@ -207,12 +207,19 @@ function Get-LlvmVersionsSimple {
         $possiblePaths += $ToolchainsPath
     }
 
-    $possiblePaths += @(
-        "$env:USERPROFILE\.llvm\toolchains",
-        "$env:HOME/.llvm/toolchains",
-        "/tmp/.llvm/toolchains",
-        "$(Get-Location)/.llvm/toolchains"
-    )
+    # Load helper and determine home-based defaults
+    $modulePath = Join-Path $PSScriptRoot 'Get-UserHome.psm1'
+    if (Test-Path $modulePath) { Import-Module $modulePath -Force } else { . "$PSScriptRoot\Get-UserHome.ps1" }
+    $homeDir = Get-UserHome
+
+    if ($script:TOOLCHAINS_DIR) {
+        $possiblePaths += $script:TOOLCHAINS_DIR
+    } else {
+        $possiblePaths += Join-Path $homeDir ".llvm\toolchains"
+    }
+    $possiblePaths += Join-Path $homeDir ".llvm/toolchains"
+    $possiblePaths += "/tmp/.llvm/toolchains"
+    $possiblePaths += "$(Get-Location)/.llvm/toolchains"
 
     foreach ($toolchainsDir in $possiblePaths) {
         if ($toolchainsDir -and (Test-Path $toolchainsDir)) {
@@ -371,9 +378,30 @@ function Invoke-LlvmAutoActivate {
     if (Test-Path $config) {
         $lines = Get-Content $config
         foreach ($line in $lines) {
-            if ($line -match '^default\s*=\s*"(.+)"') {
-                return $matches[1]
+            $trim = $line.Trim()
+            if ($trim -like '[*]') { continue }
+            if ($trim -notlike '*=*') { continue }
+
+            # Split on first '=' and extract right-hand side
+            $parts = $trim -split '=', 2
+            if ($parts.Count -lt 2) { continue }
+            $value = $parts[1].Trim()
+
+            # Unescape common escape sequences (e.g. \" or `") produced by test fixtures
+                $value = $value -replace '\\"', '"' -replace "\\'", "'"
+
+            # Remove leading/trailing backticks or backslashes leftover
+            while ($value.Length -gt 0 -and ($value[0] -eq '`' -or $value[0] -eq '\\')) { $value = $value.Substring(1) }
+            while ($value.Length -gt 0 -and ($value[$value.Length-1] -eq '`' -or $value[$value.Length-1] -eq '\\')) { $value = $value.Substring(0, $value.Length-1) }
+
+            # Remove surrounding quotes (single or double)
+            if ($value.Length -ge 2) {
+                if (($value.StartsWith('"') -and $value.EndsWith('"')) -or ($value.StartsWith("'") -and $value.EndsWith("'"))) {
+                    $value = $value.Substring(1, $value.Length - 2)
+                }
             }
+
+            if ($value) { return $value }
         }
     }
     return $null
@@ -666,7 +694,8 @@ function Invoke-LlvmActivate {
 
     # Determine toolchains path
     if (-not $ToolchainsPath) {
-        $ToolchainsPath = "$env:USERPROFILE\.llvm\toolchains"
+        $homeDir = if ($env:USERPROFILE) { $env:USERPROFILE } elseif ($env:HOME) { $env:HOME } else { [Environment]::GetFolderPath([System.Environment+SpecialFolder]::UserProfile) }
+        $ToolchainsPath = if ($script:TOOLCHAINS_DIR) { $script:TOOLCHAINS_DIR } else { Join-Path $homeDir ".llvm\toolchains" }
     }
 
     # Check if version exists

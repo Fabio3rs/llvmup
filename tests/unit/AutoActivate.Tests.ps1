@@ -9,7 +9,7 @@ Describe 'Auto-activation' {
         # create a version and a .llvmup-config
         New-Item -ItemType Directory -Path (Join-Path $global:toolchains 'llvmorg-21.0.0') -Force | Out-Null
         Set-Location $Script:testDir
-        "[version]`ndefault = `"llvmorg-21.0.0`"" | Set-Content -Path (Join-Path $Script:testDir '.llvmup-config')
+        "[version]`ndefault = \`"llvmorg-21.0.0\`"" | Set-Content -Path (Join-Path $Script:testDir '.llvmup-config')
     }
 
     AfterAll {

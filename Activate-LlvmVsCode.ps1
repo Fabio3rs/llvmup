@@ -7,17 +7,17 @@ param (
     [string]$Version
 )
 
-# Check if USERPROFILE is set (required for cross-platform compatibility)
-if (-not $env:USERPROFILE) {
-    throw "USERPROFILE environment variable is not set. This script requires a user profile directory."
-}
+# Load helper for user home detection
+$modulePath = Join-Path $PSScriptRoot 'Get-UserHome.psm1'
+if (Test-Path $modulePath) { Import-Module $modulePath -Force } else { . "$PSScriptRoot\Get-UserHome.ps1" }
+$homeDir = Get-UserHome
 
 # Check if already activated
 if ($env:LLVM_ACTIVE_VERSION) {
     throw "LLVM version '$env:LLVM_ACTIVE_VERSION' is already active. Please deactivate it first."
 }
 
-$toolchainsDir = Join-Path $env:USERPROFILE ".llvm/toolchains"
+$toolchainsDir = Join-Path $homeDir ".llvm\toolchains"
 $llvmDir = Join-Path $toolchainsDir $Version
 $binDir = Join-Path $llvmDir "bin"
 

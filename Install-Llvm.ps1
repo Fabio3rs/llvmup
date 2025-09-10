@@ -34,10 +34,12 @@ function Get-TrimmedString {
     return $InputString.Trim().Trim('"').Trim("'").Trim()
 }
 
-# Global variables
-$script:LLVM_HOME = "$env:USERPROFILE\.llvm"
-$script:TOOLCHAINS_DIR = "$script:LLVM_HOME\toolchains"
-$script:SOURCES_DIR = "$script:LLVM_HOME\sources"
+$modulePath = Join-Path $PSScriptRoot 'Get-UserHome.psm1'
+if (Test-Path $modulePath) { Import-Module $modulePath -Force } else { . "$PSScriptRoot\Get-UserHome.ps1" }
+$homeDir = Get-UserHome
+$script:LLVM_HOME = Join-Path $homeDir ".llvm"
+$script:TOOLCHAINS_DIR = Join-Path $script:LLVM_HOME "toolchains"
+$script:SOURCES_DIR = Join-Path $script:LLVM_HOME "sources"
 
 # Enhanced logging functions - similar to bash version
 function Write-VerboseLog {

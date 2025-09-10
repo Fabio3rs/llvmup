@@ -1,2 +1,2 @@
 [version]
-default = "llvmorg-21.0.0"
+default = \"llvmorg-21.0.0\"

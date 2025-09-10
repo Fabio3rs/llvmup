@@ -156,11 +156,20 @@ fi
 
 echo "==============================================="
 
-# Run Pester tests if PowerShell is available
+# Run Pester tests if PowerShell is available (prefer pwsh, fallback to pwshd)
+PWSH_BIN=""
 if command_exists pwsh; then
+    PWSH_BIN=$(which pwsh)
+elif command_exists pwshd; then
+    # which may not return a path for shell functions; keep the name so the subshell can invoke it
+    PWSH_BIN=$(command -v pwshd)
+fi
+
+if [ -n "$PWSH_BIN" ]; then
     print_status "Running PowerShell Pester tests..."
-    print_verbose "PowerShell found: $(which pwsh)"
-    pwsh -Command "Import-Module Pester; \$result = Invoke-Pester tests/unit/*.Tests.ps1 -Output Detailed -PassThru; exit \$result.FailedCount"
+    print_verbose "PowerShell found: $PWSH_BIN"
+    # Use single quotes so the shell doesn't expand $result; pwsh will interpret it
+    "$PWSH_BIN" -NoProfile -File "$(pwd)/tests/_pester_runner.ps1"
     PESTER_RESULT=$?
     if [ $PESTER_RESULT -eq 0 ]; then
         print_info "✅ PowerShell tests PASSED"
@@ -168,9 +177,21 @@ if command_exists pwsh; then
         print_error "❌ PowerShell tests FAILED"
     fi
 else
-    print_warning "PowerShell not found. Skipping Pester tests."
-    print_verbose "To run PowerShell tests, install PowerShell: https://docs.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-linux"
-    PESTER_RESULT=0
+    # Fallback: run in an interactive bash shell which may source ~/.bashrc and define functions like pwshd
+    print_status "PowerShell not found in non-interactive PATH; attempting interactive shell fallback..."
+    print_verbose "This can detect functions defined in user shell config (e.g. pwshd in .bashrc)"
+    export RUNNER_PATH="$(pwd)/tests/_pester_runner.ps1"
+    bash -ic 'if command -v pwsh >/dev/null 2>&1; then pwsh -NoProfile -File "$RUNNER_PATH"; elif command -v pwshd >/dev/null 2>&1; then pwshd -NoProfile -File "$RUNNER_PATH"; else echo "No pwsh or pwshd found in interactive shell"; exit 127; fi'
+    PESTER_RESULT=$?
+    if [ $PESTER_RESULT -eq 0 ]; then
+        print_info "✅ PowerShell tests PASSED (via interactive fallback)"
+    elif [ $PESTER_RESULT -eq 127 ]; then
+        print_warning "PowerShell not found. Skipping Pester tests."
+        print_verbose "To run PowerShell tests, install PowerShell or ensure pwshd is available in non-interactive shells."
+        PESTER_RESULT=0
+    else
+        print_error "❌ PowerShell tests FAILED (via interactive fallback)"
+    fi
 fi
 
 echo "==============================================="

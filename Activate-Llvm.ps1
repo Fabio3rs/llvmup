@@ -8,7 +8,11 @@ param (
     [string]$Version
 )
 
-$toolchainsDir = Join-Path $env:USERPROFILE ".llvm/toolchains"
+# Load helper for user home detection
+$modulePath = Join-Path $PSScriptRoot 'Get-UserHome.psm1'
+if (Test-Path $modulePath) { Import-Module $modulePath -Force } else { . "$PSScriptRoot\Get-UserHome.ps1" }
+$homeDir = Get-UserHome
+$toolchainsDir = Join-Path $homeDir ".llvm/toolchains"
 
 # If no version is specified, list installed versions
 if (-not $Version) {

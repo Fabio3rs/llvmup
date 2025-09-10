@@ -61,19 +61,18 @@ function Set-DefaultVersion {
         return 1
     }
 
-    # Check if USERPROFILE is set
-    if (-not $env:USERPROFILE) {
-        Write-LogError "USERPROFILE environment variable is not set"
-        return 1
-    }
+    # Load helper and determine user home directory
+    $modulePath = Join-Path $PSScriptRoot 'Get-UserHome.psm1'
+    if (Test-Path $modulePath) { Import-Module $modulePath -Force } else { . "$PSScriptRoot\Get-UserHome.ps1" }
+    $homeDir = Get-UserHome
 
-    $defaultPath = Join-Path $env:USERPROFILE ".llvm\default"
-    $versionPath = Join-Path $env:USERPROFILE ".llvm\toolchains\$Version"
+    $defaultPath = Join-Path $homeDir ".llvm\default"
+    $versionPath = Join-Path $homeDir ".llvm\toolchains\$Version"
 
     if (-not (Test-Path $versionPath)) {
         Write-LogError "Version $Version is not installed"
         Write-LogInfo "Available versions:"
-        $toolchainsPath = Join-Path $env:USERPROFILE ".llvm\toolchains"
+    $toolchainsPath = Join-Path $homeDir ".llvm\toolchains"
         if (Test-Path $toolchainsPath) {
             Get-ChildItem $toolchainsPath -Directory | ForEach-Object {
                 Write-LogInfo "  - $($_.Name)"
@@ -99,13 +98,10 @@ function Set-DefaultVersion {
 }
 
 function Show-DefaultVersion {
-    # Check if USERPROFILE is set
-    if (-not $env:USERPROFILE) {
-        Write-LogError "USERPROFILE environment variable is not set"
-        return 1
-    }
+    # Determine home directory cross-platform
+    $homeDir = if ($env:USERPROFILE) { $env:USERPROFILE } elseif ($env:HOME) { $env:HOME } else { [Environment]::GetFolderPath([System.Environment+SpecialFolder]::UserProfile) }
 
-    $defaultPath = Join-Path $env:USERPROFILE ".llvm\default"
+    $defaultPath = Join-Path $homeDir ".llvm\default"
 
     if (Test-Path $defaultPath) {
         try {

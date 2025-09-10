@@ -41,10 +41,13 @@ param (
     [switch]$Help
 )
 
-# Global variables
-$script:LLVM_HOME = "$env:USERPROFILE\.llvm"
-$script:TOOLCHAINS_DIR = "$script:LLVM_HOME\toolchains"
-$script:TEMP_DIR = "$env:TEMP\llvm_temp"
+$modulePath = Join-Path $PSScriptRoot 'Get-UserHome.psm1'
+if (Test-Path $modulePath) { Import-Module $modulePath -Force } else { . "$PSScriptRoot\Get-UserHome.ps1" }
+$homeDir = Get-UserHome
+$script:LLVM_HOME = Join-Path $homeDir ".llvm"
+$script:TOOLCHAINS_DIR = Join-Path $script:LLVM_HOME "toolchains"
+$defaultTemp = Get-TempDir
+$script:TEMP_DIR = Join-Path $defaultTemp "llvm_temp"
 
 # =============================================================================
 # LOGGING FUNCTIONS (ported from bash)
