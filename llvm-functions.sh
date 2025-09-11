@@ -938,11 +938,43 @@ llvm-config-apply-directories() {
     elif [ -n "$LLVM_CONFIG_LLVM_HOME" ]; then
         export LLVM_CUSTOM_SOURCES_DIR="$LLVM_CONFIG_LLVM_HOME/sources"
     fi
+
+    # Also export canonical environment variables for portability
+    # Prefer explicit canonical vars if they are already set, otherwise derive from custom vars
+    if [ -n "$LLVM_TOOLCHAINS_DIR" ]; then
+        export LLVM_TOOLCHAINS_DIR="$LLVM_TOOLCHAINS_DIR"
+    elif [ -n "$LLVM_CUSTOM_TOOLCHAINS_DIR" ]; then
+        export LLVM_TOOLCHAINS_DIR="$LLVM_CUSTOM_TOOLCHAINS_DIR"
+    elif [ -n "$LLVM_CUSTOM_HOME" ]; then
+        export LLVM_TOOLCHAINS_DIR="$LLVM_CUSTOM_HOME/toolchains"
+    else
+        export LLVM_TOOLCHAINS_DIR="$HOME/.llvm/toolchains"
+    fi
+
+    if [ -n "$LLVM_SOURCES_DIR" ]; then
+        export LLVM_SOURCES_DIR="$LLVM_SOURCES_DIR"
+    elif [ -n "$LLVM_CUSTOM_SOURCES_DIR" ]; then
+        export LLVM_SOURCES_DIR="$LLVM_CUSTOM_SOURCES_DIR"
+    elif [ -n "$LLVM_CUSTOM_HOME" ]; then
+        export LLVM_SOURCES_DIR="$LLVM_CUSTOM_HOME/sources"
+    else
+        export LLVM_SOURCES_DIR="$HOME/.llvm/sources"
+    fi
+
+    if [ -n "$LLVM_HOME" ]; then
+        export LLVM_HOME="$LLVM_HOME"
+    elif [ -n "$LLVM_CUSTOM_HOME" ]; then
+        export LLVM_HOME="$LLVM_CUSTOM_HOME"
+    else
+        export LLVM_HOME="$HOME/.llvm"
+    fi
 }
 
 # Function to get effective toolchains directory (respects config)
 llvm-get-toolchains-dir() {
-    if [ -n "$LLVM_CUSTOM_TOOLCHAINS_DIR" ]; then
+    if [ -n "$LLVM_TOOLCHAINS_DIR" ]; then
+        echo "$LLVM_TOOLCHAINS_DIR"
+    elif [ -n "$LLVM_CUSTOM_TOOLCHAINS_DIR" ]; then
         echo "$LLVM_CUSTOM_TOOLCHAINS_DIR"
     else
         echo "$HOME/.llvm/toolchains"
@@ -951,7 +983,9 @@ llvm-get-toolchains-dir() {
 
 # Function to get effective sources directory (respects config)
 llvm-get-sources-dir() {
-    if [ -n "$LLVM_CUSTOM_SOURCES_DIR" ]; then
+    if [ -n "$LLVM_SOURCES_DIR" ]; then
+        echo "$LLVM_SOURCES_DIR"
+    elif [ -n "$LLVM_CUSTOM_SOURCES_DIR" ]; then
         echo "$LLVM_CUSTOM_SOURCES_DIR"
     else
         echo "$HOME/.llvm/sources"

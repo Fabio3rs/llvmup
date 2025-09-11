@@ -78,21 +78,27 @@ function Activate-Llvm {
         Write-Host ""
         if (Test-Path $script:TOOLCHAINS_DIR) {
             Get-ChildItem $script:TOOLCHAINS_DIR -Directory |
-                Where-Object { $_.Name -like "$wordToComplete*" } |
                 ForEach-Object { $_.Name }
         }
+        return
     }
 
     # Import core implementation from Llvm-Functions-Core.psm1 to avoid duplication
     $coreModulePath = Join-Path $PSScriptRoot '..\Llvm-Functions-Core.psm1'
     if (Test-Path $coreModulePath) { Import-Module -Force $coreModulePath }
 
-    $result = @{
-        installed_versions = $versionObjects
-        active_version = $env:_ACTIVE_LLVM
+    # Delegate activation to core implementation if available
+    if (Get-Command -Name Invoke-LlvmActivate -ErrorAction SilentlyContinue) {
+        try {
+            return Invoke-LlvmActivate -Version $Version
+        } catch {
+            Write-LlvmLog "Activation failed: $($_.Exception.Message)" -Level Error
+            return $false
+        }
+    } else {
+        Write-LlvmLog "Core activation function not available (Invoke-LlvmActivate)" -Level Error
+        return $false
     }
-
-    return $result | ConvertTo-Json -Depth 3
 }
 
 function Test-LlvmVersionExists {
@@ -413,12 +419,6 @@ function Invoke-LlvmAutoActivate {
         $parent = Split-Path $dir -Parent
         if ([string]::IsNullOrEmpty($parent) -or $parent -eq $dir) { break }
         $dir = $parent
-    }
-}
-
-        Get-ChildItem $script:TOOLCHAINS_DIR -Directory |
-            Where-Object { $_.Name -like "$wordToComplete*" } |
-            ForEach-Object { $_.Name }
     }
 }
 
