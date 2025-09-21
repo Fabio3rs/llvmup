@@ -102,6 +102,16 @@ command -v jq >/dev/null 2>&1 || {
     exit 1
 }
 
+HAS_TIMEOUT=1
+if ! command -v timeout >/dev/null 2>&1; then
+    HAS_TIMEOUT=0
+    echo "Warning: The 'timeout' command is not available; continuing without it." >&2
+    log_verbose "Falling back to a plain curl request without an external timeout wrapper."
+    if [ "$QUIET" -eq 0 ]; then
+        log_info "Install GNU coreutils (e.g., 'brew install coreutils') to restore timeout support."
+    fi
+fi
+
 # GitHub API URL for llvm-project releases
 API_URL="https://api.github.com/repos/llvm/llvm-project/releases"
 
@@ -109,16 +119,26 @@ log_info "Fetching available LLVM releases from GitHub..."
 log_info "This may take a few seconds..."
 log_verbose "API URL: $API_URL"
 
-# Show progress for API call with timeout
+# Show progress for API call with timeout support when available
 echo -n "Connecting to GitHub API... "
-if ! RELEASES=$(timeout 60 curl -f \
-    --connect-timeout 30 \
-    --max-time 60 \
-    --retry 2 \
-    --retry-delay 3 \
-    --silent \
-    --show-error \
-    "$API_URL" 2>&1); then
+CURL_ARGS=(
+    -f
+    --connect-timeout 30
+    --max-time 60
+    --retry 2
+    --retry-delay 3
+    --silent
+    --show-error
+    "$API_URL"
+)
+
+if [ "$HAS_TIMEOUT" -eq 1 ]; then
+    CURL_CMD=(timeout 60 curl "${CURL_ARGS[@]}")
+else
+    CURL_CMD=(curl "${CURL_ARGS[@]}")
+fi
+
+if ! RELEASES=$("${CURL_CMD[@]}" 2>&1); then
     echo "FAILED"
     log_error "Failed to fetch releases from GitHub."
     log_info "This might be due to:"
