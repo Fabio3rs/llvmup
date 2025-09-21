@@ -18,8 +18,8 @@ load "../fixtures/test_helpers.bash"
 @test "llvmup help includes --disable-libc-wno-error option" {
     run ./llvmup --help
 
-    # Help exits with code 1, but that's expected behavior
-    [ "$status" -eq 1 ]
+    # Help exits successfully when requested explicitly
+    assert_success
     assert_output --partial "--disable-libc-wno-error"
     assert_output --partial "Disable LIBC_WNO_ERROR=ON flag"
 }
