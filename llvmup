@@ -209,22 +209,6 @@ case "${1:-}" in
 esac
 
 # Parse command line options
-log_verbose() {
-    if [ "$VERBOSE" -eq 1 ] && [ "$QUIET" -eq 0 ]; then
-        echo "[VERBOSE] $*" >&2
-    fi
-}
-
-log_info() {
-    if [ "$QUIET" -eq 0 ]; then
-        echo "$*"
-    fi
-}
-
-log_error() {
-    echo "Error: $*" >&2
-}
-
 usage() {
     local previous_exit=$?
     local exit_code="${1:-$previous_exit}"
