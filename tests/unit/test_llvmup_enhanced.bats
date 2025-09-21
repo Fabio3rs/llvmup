@@ -26,8 +26,8 @@ teardown() {
 
 @test "llvmup shows enhanced help with new options" {
     run bash "$ORIGINAL_DIR/llvmup" --help
-    # The help command returns 1 (exit after showing help), but shows the help correctly
-    [ "$status" -eq 1 ]
+    # Help exits successfully and shows the enhanced options
+    assert_success
     assert_output --partial "--cmake-flags"
     assert_output --partial "--name"
     assert_output --partial "--default"
@@ -82,32 +82,32 @@ teardown() {
 @test "llvmup install accepts cmake-flags option" {
     # Test that llvmup accepts the cmake-flags option (parsing test)
     run bash "$ORIGINAL_DIR/llvmup" install --help
-    # Help exits with code 1, but shows the help
-    [ "$status" -eq 1 ]
+    # Help exits successfully but still shows the usage text
+    assert_success
     assert_output --partial "--cmake-flags"
 }
 
 @test "llvmup install accepts name option" {
     # Test that llvmup accepts the name option (parsing test)
     run bash "$ORIGINAL_DIR/llvmup" install --help
-    # Help exits with code 1, but shows the help
-    [ "$status" -eq 1 ]
+    # Help exits successfully but still shows the usage text
+    assert_success
     assert_output --partial "--name"
 }
 
 @test "llvmup install accepts default option" {
     # Test that llvmup accepts the default option (parsing test)
     run bash "$ORIGINAL_DIR/llvmup" install --help
-    # Help exits with code 1, but shows the help
-    [ "$status" -eq 1 ]
+    # Help exits successfully but still shows the usage text
+    assert_success
     assert_output --partial "--default"
 }
 
 @test "llvmup install accepts profile option" {
     # Test that llvmup accepts the profile option (parsing test)
     run bash "$ORIGINAL_DIR/llvmup" install --help
-    # Help exits with code 1, but shows the help
-    [ "$status" -eq 1 ]
+    # Help exits successfully but still shows the usage text
+    assert_success
     assert_output --partial "--profile"
 }
 
@@ -120,16 +120,16 @@ teardown() {
 @test "llvmup install accepts component option" {
     # Test that llvmup accepts the component option (parsing test)
     run bash "$ORIGINAL_DIR/llvmup" install --help
-    # Help exits with code 1, but shows the help
-    [ "$status" -eq 1 ]
+    # Help exits successfully but still shows the usage text
+    assert_success
     assert_output --partial "--component"
 }
 
 @test "llvmup install passes multiple cmake-flags correctly" {
     # Test that llvmup accepts multiple cmake-flags (parsing test)
     run bash "$ORIGINAL_DIR/llvmup" install --help
-    # Help exits with code 1, but shows the help
-    [ "$status" -eq 1 ]
+    # Help exits successfully but still shows the usage text
+    assert_success
     assert_output --partial "--cmake-flags"
     assert_output --partial "can be repeated"
 }
@@ -137,8 +137,8 @@ teardown() {
 @test "llvmup install combines all options correctly" {
     # Test that llvmup help shows all the new options
     run bash "$ORIGINAL_DIR/llvmup" install --help
-    # Help exits with code 1, but shows the help
-    [ "$status" -eq 1 ]
+    # Help exits successfully but still shows the usage text
+    assert_success
     assert_output --partial "--name"
     assert_output --partial "--default"
     assert_output --partial "--profile"

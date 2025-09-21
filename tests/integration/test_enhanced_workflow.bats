@@ -224,8 +224,8 @@ EOF
 
 @test "Help system shows all new options" {
     run bash "$ORIGINAL_DIR/llvmup" --help
-    # Help exits with code 1, but shows the help correctly
-    [ "$status" -eq 1 ]
+    # Help exits successfully and shows the help correctly
+    assert_success
 
     # Check for all new options
     assert_output --partial "--cmake-flags"

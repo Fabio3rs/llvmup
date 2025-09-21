@@ -226,6 +226,13 @@ log_error() {
 }
 
 usage() {
+    local previous_exit=$?
+    local exit_code="${1:-$previous_exit}"
+
+    if [ $# -eq 0 ] && [ "$exit_code" -eq 0 ]; then
+        exit_code=1
+    fi
+
     cat <<EOF
 Usage: llvmup [install] [OPTIONS] [VERSION]
 
@@ -262,7 +269,7 @@ Examples:
   llvmup config init                              # Initialize project config
   llvmup config activate                          # Activate from config
 EOF
-    exit 1
+    exit "$exit_code"
 }
 
 # Parse command line arguments
@@ -288,7 +295,7 @@ fi
 # Handle non-install commands early
 case "$COMMAND" in
     help)
-        usage
+        usage 0
         ;;
     default)
         if [ $# -eq 0 ]; then
@@ -373,7 +380,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         -h|--help)
-            usage
+            usage 0
             ;;
         --)
             shift

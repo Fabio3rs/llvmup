@@ -76,7 +76,7 @@ EOF
 @test "llvmup help - shows config command in usage" {
     run "$LLVMUP_SCRIPT" help
 
-    [ "$status" -eq 1 ]
+    [ "$status" -eq 0 ]
     [[ "$output" == *"config           Manage project configuration"* ]]
     [[ "$output" == *"llvmup config init"* ]]
     [[ "$output" == *"llvmup config activate"* ]]
