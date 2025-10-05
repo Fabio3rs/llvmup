@@ -70,7 +70,7 @@ EOF
     run "$LLVMUP_SCRIPT" config
 
     [ "$status" -eq 1 ]
-    [[ "$output" == *"Available subcommands: init, load, activate"* ]]
+    [[ "$output" == *"Available subcommands: init, load, apply, activate"* ]]
 }
 
 @test "llvmup help - shows config command in usage" {
