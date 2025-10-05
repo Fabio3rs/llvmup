@@ -38,6 +38,7 @@ SET_DEFAULT=0
 PROFILE=""
 COMPONENTS=()
 DISABLE_LIBC_WNO_ERROR=0
+RECONFIGURE=0
 
 # Logging functions
 log_verbose() {
@@ -74,7 +75,7 @@ handle_config_command() {
 
     if [ -z "$sub_command" ]; then
         log_error "Missing config subcommand"
-        log_info "Available subcommands: init, load, activate"
+        log_info "Available subcommands: init, load, apply, activate"
         exit 1
     fi
 
@@ -111,9 +112,19 @@ handle_config_command() {
                 exit 1
             fi
             ;;
+        apply)
+            # Call llvm-config-apply function
+            if command -v llvm-config-apply >/dev/null 2>&1; then
+                llvm-config-apply "$@"
+            else
+                log_error "llvm-config-apply function not available"
+                log_info "Make sure LLVM functions are loaded in your shell"
+                exit 1
+            fi
+            ;;
         *)
             log_error "Unknown config subcommand: $sub_command"
-            log_info "Available subcommands: init, load, activate"
+            log_info "Available subcommands: init, load, apply, activate"
             exit 1
             ;;
     esac
@@ -240,6 +251,7 @@ Install Options:
   -p, --profile <PROFILE>     Build profile: minimal, full, custom
   --component <COMPONENT>     Install specific components (can be repeated)
   --disable-libc-wno-error    Disable LIBC_WNO_ERROR=ON flag
+  --reconfigure               Force CMake to reconfigure the build (removes CMakeCache.txt)
   -v, --verbose               Enable verbose output for debugging
   -q, --quiet                 Suppress non-essential output
   -h, --help                  Show this help message
@@ -257,6 +269,8 @@ Examples:
   llvmup default set 18.1.8                      # Set default version
   llvmup default show                             # Show current default
   llvmup config init                              # Initialize project config
+  llvmup config load                              # Load and display config
+  llvmup config apply                             # Install using config settings
   llvmup config activate                          # Activate from config
 EOF
     exit "$exit_code"
@@ -359,6 +373,11 @@ while [[ $# -gt 0 ]]; do
             log_verbose "Option: LIBC_WNO_ERROR flag disabled"
             shift
             ;;
+        --reconfigure)
+            RECONFIGURE=1
+            log_verbose "Option: Force CMake reconfiguration enabled"
+            shift
+            ;;
         -v|--verbose)
             VERBOSE=1
             log_verbose "Option: Verbose output enabled"
@@ -430,6 +449,11 @@ fi
 # Add disable libc wno error flag
 if [ "$DISABLE_LIBC_WNO_ERROR" -eq 1 ]; then
     script_args+=("--disable-libc-wno-error")
+fi
+
+# Add reconfigure flag
+if [ "$RECONFIGURE" -eq 1 ]; then
+    script_args+=("--reconfigure")
 fi
 
 # Add remaining arguments (version, etc.)
