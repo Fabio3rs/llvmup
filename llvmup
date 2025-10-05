@@ -46,19 +46,25 @@ log_verbose() {
     fi
 }
 
+# ANSI color codes
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
 log_info() {
     if [ "$QUIET" -eq 0 ]; then
-        echo "ℹ️  $*" >&2
+        echo -e "${BLUE}Info: $*${NC}" >&2
     fi
 }
 
 log_error() {
-    echo "❌ $*" >&2
+    echo -e "${RED}Error: $*${NC}" >&2
 }
 
 log_success() {
     if [ "$QUIET" -eq 0 ]; then
-        echo "✅ $*" >&2
+        echo -e "${GREEN}$*${NC}" >&2
     fi
 }
 
@@ -154,8 +160,8 @@ set_default_version() {
 
     # Create new symbolic link
     ln -s "$version_path" "$default_link"
-    log_info "✅ Default LLVM version set to: $version"
-    log_info "💡 Use 'llvm-activate \$(\$HOME/.llvm/default/bin/clang --version | head -1)' to activate"
+    log_success "Default LLVM version set to: $version"
+    log_info "Use 'llvm-activate \$(\$HOME/.llvm/default/bin/clang --version | head -1)' to activate"
 }
 
 show_default_version() {
@@ -164,15 +170,15 @@ show_default_version() {
     if [ -L "$default_link" ] && [ -e "$default_link" ]; then
         local target=$(readlink "$default_link")
         local version=$(basename "$target")
-        log_info "📦 Current default LLVM version: $version"
+        log_info "Current default LLVM version: $version"
 
         if [ -x "$default_link/bin/clang" ]; then
             local clang_version=$("$default_link/bin/clang" --version | head -1)
-            log_info "🔍 Clang version: $clang_version"
+            log_info "Clang version: $clang_version"
         fi
     else
-        log_info "❌ No default LLVM version is set"
-        log_info "💡 Use 'llvmup default set <version>' to set one"
+        log_info "No default LLVM version is set"
+        log_info "Use 'llvmup default set <version>' to set one"
     fi
 }
 

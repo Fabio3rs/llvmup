@@ -151,7 +151,7 @@ if ! RELEASES=$("${CURL_CMD[@]}" 2>&1); then
 fi
 
 echo "SUCCESS"
-log_info "✅ Successfully retrieved release information from GitHub"
+log_success "Successfully retrieved release information from GitHub"
 log_verbose "API response received ($(echo "$RELEASES" | wc -c) characters)"
 
 # Validate JSON response
@@ -329,7 +329,7 @@ if ! curl -L \
 fi
 
 echo # Add newline after progress bar
-log_info "✅ Download completed successfully!"
+log_success "Download completed successfully!"
 log_verbose "Downloaded file: $DEST_FILE ($(du -h "$DEST_FILE" | cut -f1))"
 log_info "Download finished, performing optional integrity verification..."
 
@@ -554,7 +554,7 @@ if ! rm -rf "$TEMP_DIR"; then
 fi
 
 log_info ""
-log_info "✅ Installation completed successfully!"
+log_success "Installation completed successfully!"
 log_info "Run 'llvm-activate $SELECTED_VERSION' to activate the installed version."
 log_info ""
 

@@ -1,109 +1,85 @@
-# 🚀 LLVMUP: LLVM Version Manager
+# LLVMUP: LLVM Version Manager
 
-An LLVM version manager inspired by tools like **rustup**, **Python venv**, and **Node Version Manager (nvm)**. LLVMUP allows you to download, install, compile from source, and switch between different LLVM versions easily and efficiently.
+An LLVM version manager inspired by tools like **rustup**, **Python venv**, and **Node Version Manager (nvm)**. LLVMUP allows you to download, install, compile from source, and switch between different LLVM versions.
 
-**⚠️ WARNING:**
-This is a proof-of-concept test version and may contain bugs. Use at your own risk. Contributions and bug reports are welcome!
+**WARNING:**
+This is experimental software and may contain bugs. Use at your own risk. Contributions and bug reports are welcome!
 
-## ✨ Key Features
+## Key Features
 
-- 📦 **Pre-built LLVM version installation**
-- 🛠️ **Build from source** with native optimizations
-- 🔄 **Fast switching** between installed versions
-- 💻 **Automatic VSCode integration**
-- 🎯 **Rich visual interface** with emojis and formatting
-- ⌨️ **Enhanced TAB auto-completion** with remote version fetching
-- 🌐 **Smart caching system** (24h intelligent cache with 99% speed improvement)
-- 📊 **Detailed status** of active environment
-- ⚙️ **Project-specific configuration** via `.llvmup-config` files
-- 🏗️ **Customizable build profiles** (minimal, full, custom)
-- 🔧 **CMake flags support** for advanced builds
-- 🎯 **Default version management** with symlinks
-- 📋 **Component selection** for targeted installations
-- 🪟 **Windows PowerShell parity** with equivalent scripts
-- 🔁 **Subcommand structure** (install, config, default)
-- 📝 **Custom installation naming** for multiple variants
-- 🧪 **Test suite** with 90+ automated tests
-- 🔄 **LIBC_WNO_ERROR control** for compatibility with different systems
-- ♻️ **CMake reconfiguration** with `--reconfigure` flag for clean rebuilds
-- 🎨 **Enhanced logging system** with verbose/quiet mode controls
-- 🔍 **Intelligent version parsing** with support for multiple LLVM version formats
-- 📋 **Comprehensive version management** (list, compare, validate, find latest)
-- 🚀 **Comprehensive version expressions** with smart selectors, ranges, and auto-activation
+- **Pre-built LLVM version installation**
+- **Build from source** with native optimizations
+- **Version switching** between installed versions
+- **VSCode integration**
+- **TAB auto-completion** with remote version fetching
+- **24-hour cache** for remote version queries
+- **Status display** of active environment
+- **Project-specific configuration** via `.llvmup-config` files
+- **Build profiles** (minimal, full, custom)
+- **CMake flags support**
+- **Default version management** with symlinks
+- **Component selection** for targeted installations
+- **Windows PowerShell support** with equivalent scripts
+- **Subcommand structure** (install, config, default)
+- **Custom installation naming** for build variants
+- **Test suite** with 90+ automated tests
+- **LIBC_WNO_ERROR control** for system compatibility
+- **CMake reconfiguration** with `--reconfigure` flag
+- **Logging controls** with verbose/quiet modes
+- **Version parsing** supporting multiple LLVM version formats
+- **Version expressions** with selectors, ranges, and auto-activation
 
-## 🚀 Latest Features (v4.0) - Comprehensive Expression System
+## Latest Features (v4.0) - Version Expression System
 
-### 🎯 **Intelligent Version Selection**
-- **Smart Selectors**: `latest`, `oldest`, `newest`, `earliest` for automatic version selection
-- **Type Filters**: `prebuilt`, `source`, `latest-prebuilt`, `latest-source` for targeted selection
-- **Version Ranges**: `>=18.0.0`, `<=19.1.0`, `~19.1`, `18.*` for flexible version matching
-- **Specific Versions**: Support for `llvmorg-18.1.8`, `source-llvmorg-20.1.0` with intelligent parsing
+### Version Selection
+- **Selectors**: `latest`, `oldest`, `newest`, `earliest` for automatic version selection
+- **Type Filters**: `prebuilt`, `source`, `latest-prebuilt`, `latest-source`
+- **Version Ranges**: `>=18.0.0`, `<=19.1.0`, `~19.1`, `18.*` for version matching
+- **Specific Versions**: Support for `llvmorg-18.1.8`, `source-llvmorg-20.1.0`
 
-### 🔄 **Enhanced Auto-Activation**
-- **Expression-Based**: Use comprehensive expressions in `.llvmup-config` for intelligent auto-activation
+### Auto-Activation
+- **Expression-Based**: Use expressions in `.llvmup-config` for auto-activation
 - **Project-Specific**: Configure expressions like `latest-prebuilt` or `>=18.0.0` per project
-- **Fallback Logic**: Smart fallback when exact versions aren't available
+- **Fallback Logic**: Uses fallback when exact versions aren't available
 
-### 🎛️ **Granular Logging Controls**
+### Logging Controls
 - **EXPRESSION_VERBOSE**: Show expression processing details
-- **EXPRESSION_DEBUG**: Full debug output for troubleshooting
-- **QUIET_MODE**: Clean output for scripts and automation
+- **EXPRESSION_DEBUG**: Debug output for troubleshooting
+- **QUIET_MODE**: Minimal output for scripts and automation
 
-## 🆕 Latest Enhancements (v3.0)
+## Previous Features (v3.0)
 
-### 🔧 **Enhanced Build & Configuration System**
-- **LIBC_WNO_ERROR Control**: Fine-grained control over compatibility flags
+### Build & Configuration System
+- **LIBC_WNO_ERROR Control**: Control over compatibility flags with `--disable-libc-wno-error`
 - **CMake Reconfiguration**: Force clean rebuilds with `--reconfigure`
-- **Separated Config Functions**: Load, Apply, and Activate workflows
+- **Config Functions**: Separate load, apply, and activate workflows
 - **CMake Presets**: Built-in Debug, Release, RelWithDebInfo, MinSizeRel presets
-- **Auto Version Detection**: Intelligent detection of installed versions
-
-### 🎨 **Improved User Experience**
-- **Enhanced Logging**: Intelligent verbosity with specialized log functions
-- **Clean Output**: Reduced "noise" with verbose/quiet mode controls
-- **Better Error Handling**: Clear error messages and recovery suggestions
-- **Variable Trimming**: Robust config parsing with proper whitespace handling
-
-### 🪟 **Windows PowerShell Support**
-- **Unified PowerShell Script**: `Install-Llvm.ps1` with most bash features
-- **Enhanced Logging**: Same intelligent logging system in PowerShell
-- **Config Support**: Config management with load/apply/activate
-- **Force Reconfiguration**: `-Reconfigure` parameter for clean rebuilds
-
-## 🆕 Previous Enhancements (v2.0)
-
-### 🚀 Enhanced Auto-Completion System
-- **Remote Version Fetching**: Automatically fetches latest LLVM versions from GitHub API
-- **Intelligent Caching**: 24-hour cache system with 99% performance improvement
-- **Context-Aware Completion**: Differentiates between prebuilt (⚡) and source (📦) installations
-- **Smart Filtering**: Filters suggestions based on current context and input
-
-### 🏗️ Improved Project Structure
-- **Organized Documentation**: All docs moved to `docs/` directory with cross-references
-- **Example Scripts**: Interactive demos and tests in `examples/` directory
-- **Extensive Testing**: Test suite with unit and integration tests
-
-## 🚀 Latest Features (v3.0)
-
-### 🔧 **Enhanced Build System**
-- **LIBC_WNO_ERROR Control**: `--disable-libc-wno-error` flag for system compatibility
-- **CMake Reconfiguration**: `--reconfigure` flag for clean rebuilds
-- **Improved Logging**: Verbose/quiet mode controls with specialized log functions
-- **Enhanced Config System**: Separated load/apply/activate functions for better workflow
-
-### ⚙️ **Advanced Configuration Management**
-- **Config Subcommands**: `config load`, `config apply`, `config activate` for better separation of concerns
-- **CMake Presets**: Built-in presets (Debug, Release, RelWithDebInfo, MinSizeRel)
 - **Auto Version Detection**: Automatic detection of installed versions during config init
-- **Variable Trimming**: Robust parsing with whitespace and quote handling
+- **Variable Trimming**: Config parsing with whitespace handling
 
-### 🪟 **Windows PowerShell Enhancements**
-- **Feature Parity**: Most bash features now available in PowerShell
-- **Enhanced Logging**: Same intelligent logging system as bash version
-- **Force Reconfiguration**: `-Reconfigure` switch for PowerShell builds
-- **Config Management**: Config system with load/apply/activate functions
+### User Experience
+- **Logging**: Verbose/quiet mode controls with specialized log functions
+- **Error Handling**: Clear error messages and recovery suggestions
 
-## 🚀 Quick Start
+### Windows PowerShell Support
+- **Install-Llvm.ps1**: PowerShell script with most bash features
+- **Config Management**: Config support with load/apply/activate
+- **Reconfiguration**: `-Reconfigure` parameter for clean rebuilds
+
+## Previous Features (v2.0)
+
+### Auto-Completion System
+- **Remote Version Fetching**: Fetches LLVM versions from GitHub API
+- **Caching**: 24-hour cache system
+- **Context-Aware**: Differentiates between prebuilt and source installations
+- **Filtering**: Filters suggestions based on current input
+
+### Project Structure
+- **Documentation**: Organized in `docs/` directory
+- **Examples**: Demo scripts in `examples/` directory
+- **Testing**: Test suite with unit and integration tests
+
+## Quick Start
 
 ### Linux
 
@@ -142,7 +118,7 @@ LLVMUP_INSTALL_DIR=$HOME/bin ./install.sh
 ./install-examples.sh
 ```
 
-For advanced installation options and troubleshooting, see [INSTALL.md](INSTALL.md).
+For detailed installation instructions, see [INSTALL.md](docs/INSTALL.md).
 
 #### 2. Installing an LLVM version
 ```bash
@@ -215,7 +191,7 @@ llvm-vscode-activate 18.1.8
    . .\Activate-Llvm.ps1 <version>
    ```
 
-## 📋 Prerequisites
+## Prerequisites
 
 ### Linux
 - `curl`: For file downloads
@@ -228,25 +204,25 @@ llvm-vscode-activate 18.1.8
 
 ### Windows
 - PowerShell 5.0 or higher
-### Verification controls for downloads
-
-The download scripts attempt to verify downloaded prebuilt assets using a checksum file, a GPG `.sig` signature, or a JSONL attestation when available. By default, if no verification is available the scripts will warn and continue. You can control this behaviour with environment variables:
-
-- `LLVMUP_SKIP_VERIFY=1` — skip verification explicitly.
-- `LLVMUP_REQUIRE_VERIFY=1` — require verification and abort if verification fails or is unavailable.
-
-Set these before running `llvm-prebuilt` or the PowerShell download scripts to change the verification policy.
-
-Note: the tooling will prefer an `asset.digest` field in the release metadata (when present) as a canonical SHA256 fingerprint and compare it directly to the downloaded file before trying companion checksum files.
-
 - Pester module (for tests)
 - Internet connection for downloads
 - Administrator privileges for installation
 - Execution policy set to RemoteSigned (at least for CurrentUser)
 
-## 🛠️ Available Commands
+## Download Verification
 
-### 📦 Installation Commands
+The download scripts attempt to verify downloaded prebuilt assets using a checksum file, a GPG `.sig` signature, or a JSONL attestation when available. By default, if no verification is available the scripts will warn and continue. You can control this behavior with environment variables:
+
+- `LLVMUP_SKIP_VERIFY=1` — skip verification explicitly
+- `LLVMUP_REQUIRE_VERIFY=1` — require verification and abort if verification fails or is unavailable
+
+Set these before running `llvm-prebuilt` or the PowerShell download scripts to change the verification policy.
+
+**Note:** The tooling will prefer an `asset.digest` field in the release metadata (when present) as a canonical SHA256 fingerprint and compare it directly to the downloaded file before trying companion checksum files.
+
+## Available Commands
+
+### Installation Commands
 ```bash
 llvmup                      # Install latest pre-built version
 llvmup 18.1.8              # Install specific version
@@ -254,7 +230,7 @@ llvmup --from-source        # Build from source
 llvmup --verbose            # Show detailed output
 llvmup --quiet             # Suppress non-essential output
 
-# Enhanced build options (from source)
+# Build options (from source)
 llvmup install --from-source --cmake-flags "-DCMAKE_BUILD_TYPE=Debug" 18.1.8
 llvmup install --from-source --profile minimal --name "llvm-18-min" 18.1.8
 llvmup install --from-source --component clang --component lld 18.1.8
@@ -264,7 +240,7 @@ llvmup install --from-source --default 18.1.8               # Set as default aft
 llvmup install --from-source --verbose 18.1.8               # Show verbose output
 ```
 
-### 🔧 Environment Management
+### Environment Management
 ```bash
 llvm-activate <version>      # Activate an LLVM version
 llvm-deactivate            # Deactivate current version
@@ -273,7 +249,7 @@ llvm-list                  # List installed versions
 llvm-help                  # Show detailed usage guide
 ```
 
-### ⚙️ Configuration Management
+### Configuration Management
 ```bash
 llvmup config init         # Create .llvmup-config file
 llvmup config load         # Load and display config
@@ -285,18 +261,18 @@ llvm-config-apply          # Apply config (function)
 llvm-config-activate       # Activate config (function)
 ```
 
-### 🎯 Default Version Management
+### Default Version Management
 ```bash
 llvmup default set <version>  # Set default LLVM version
 llvmup default show           # Show current default version
 ```
 
-### 💻 Development Integration
+### Development Integration
 ```bash
 llvm-vscode-activate <ver>  # Configure VSCode integration
 ```
 
-### 🔍 Version Management & Parsing
+### Version Management & Parsing
 ```bash
 # Version parsing and information
 llvm-parse-version <version>     # Parse version string (e.g., llvmorg-18.1.8 → 18.1.8)
@@ -314,14 +290,14 @@ llvm-version-exists "llvmorg-19.1.7"   # Returns 0 if exists, 1 if not
 llvm-get-latest-version               # Returns latest version identifier
 ```
 
-### 🚀 Comprehensive Version Expressions
+### Version Expressions
 ```bash
 # Expression parsing and matching
 llvm-parse-version-expression <expr>    # Parse and validate expressions
 llvm-match-versions <expression>         # Find versions matching expression
 llvm-version-matches-range <ver> <range> # Check if version matches range
 
-# Smart selectors
+# Selectors
 llvm-match-versions "latest"             # Newest installed version
 llvm-match-versions "oldest"             # Oldest installed version
 
@@ -339,11 +315,11 @@ llvm-match-versions "<=19.1.0"           # Versions <= 19.1.0
 llvm-match-versions "~19.1"              # Tilde range (19.1.x)
 llvm-match-versions "18.*"               # Wildcard (18.x.x)
 
-# Specific versions with intelligent parsing
+# Specific versions
 llvm-match-versions "llvmorg-18.1.8"     # Specific prebuilt version
 llvm-match-versions "source-llvmorg-20.1.0" # Specific source version
 
-# Enhanced auto-activation (in .llvmup-config)
+# Auto-activation (in .llvmup-config)
 [version]
 default = "latest-prebuilt"              # Use expressions for auto-activation
 
@@ -353,12 +329,7 @@ EXPRESSION_DEBUG=1 llvm-match-versions ">=18.0.0"    # Full debug output
 QUIET_MODE=1 llvm-match-versions "latest"            # Silent operation
 ```
 
-### 🏗️ Build Profiles
-- **minimal**: Only `clang` and `lld` (fastest build)
-- **full**: All available LLVM projects (comprehensive)
-- **custom**: User-defined components via config or flags
-
-## ⚙️ Installation Configuration
+## Installation Configuration
 
 LLVMUP supports flexible installation paths through environment variables:
 
@@ -398,18 +369,7 @@ Use the interactive installation helper for guided setup:
 ./install-examples.sh
 ```
 
-For detailed installation documentation, see [INSTALL.md](INSTALL.md).
-
-### 🎯 Intuitive Visual Interface
-
-LLVM Manager provides rich visual feedback with:
-- ✅ **Success status** with clear confirmations
-- ❌ **Informative error messages**
-- 💡 **Contextual hints** for next steps
-- 🔄 **Progress indicators** during operations
-- 📊 **Detailed information** about the active environment
-
-## 🚀 Available Tools After Activation
+## Available Tools After Activation
 
 When you activate an LLVM version, the following tools become available:
 
@@ -422,9 +382,9 @@ When you activate an LLVM version, the following tools become available:
 - **opt**: LLVM optimizer
 - And many other LLVM tools!
 
-## 📚 Example Workflows
+## Example Workflows
 
-### 🔄 Basic Workflow
+### Basic Workflow
 ```bash
 # 1. Install and activate LLVM
 llvmup 18.1.8
@@ -441,7 +401,7 @@ clang hello.c -o hello
 ./hello
 ```
 
-### 💻 VSCode Development Setup
+### VSCode Development Setup
 ```bash
 # 1. Go to your C/C++ project
 cd /my/cpp/project
@@ -456,7 +416,7 @@ code .
 # Ctrl+Shift+P → "Developer: Reload Window"
 ```
 
-### 🔀 Switching Between Versions
+### Switching Between Versions
 ```bash
 # 1. List available versions
 llvm-list
@@ -471,7 +431,7 @@ llvm-activate 19.1.0
 llvm-status
 ```
 
-### 🛠️ Building from Source with Custom Options
+### Building from Source with Custom Options
 ```bash
 # 1. Basic build from source
 llvmup install --from-source 18.1.8
@@ -489,9 +449,9 @@ llvmup install --from-source --component clang --component lld 18.1.8
 llvmup install --from-source --profile full --default 18.1.8
 ```
 
-### 🚀 Comprehensive Expression Workflows
+### Expression Workflows
 ```bash
-# 1. Smart version selection
+# 1. Version selection
 cd /my/cpp/project
 
 # Always use latest prebuilt version
@@ -526,7 +486,7 @@ EXPRESSION_DEBUG=1 llvm-match-versions "latest-source"
 # Shows detailed logs of version selection process
 ```
 
-### ⚙️ Project Configuration Workflow
+### Project Configuration Workflow
 ```bash
 # 1. Initialize configuration in project
 cd /my/cpp/project
@@ -542,7 +502,7 @@ llvmup config load
 llvm-status
 ```
 
-### 🎯 Default Version Management
+### Default Version Management
 ```bash
 # 1. Set a version as system default
 llvmup default set 18.1.8
@@ -554,9 +514,9 @@ llvmup default show
 # New terminals will have the default version available
 ```
 
-## 🔧 Advanced Features
+## Advanced Features
 
-### 📋 Project Configuration Files
+### Project Configuration Files
 LLVMUP supports project-specific configuration through `.llvmup-config` files:
 
 ```ini
@@ -584,7 +544,7 @@ auto_activate = true
 cmake_preset = "Debug"  # Debug, Release, RelWithDebInfo, MinSizeRel
 ```
 
-### 🏗️ Build Customization Options
+### Build Customization Options
 
 #### CMake Flags Support
 ```bash
@@ -599,8 +559,8 @@ llvmup install --from-source \
 ```
 
 #### Build Profiles
-- **minimal**: `clang;lld` - Essential compiler and linker only
-- **full**: `all` - All available LLVM projects (automatic version-aware)
+- **minimal**: `clang;lld` - Compiler and linker only
+- **full**: `all` - All available LLVM projects
 - **custom**: User-defined via `--component` flags or config file
 
 #### Component Selection
@@ -627,7 +587,7 @@ llvmup install --from-source \
   18.1.8
 ```
 
-### 🎯 Default Version System
+### Default Version System
 LLVMUP can manage system-wide default versions:
 
 ```bash
@@ -640,8 +600,8 @@ llvmup default show
 # New terminals automatically have default available
 ```
 
-### 🪟 Windows PowerShell Support
-Enhanced Windows support with equivalent PowerShell scripts:
+### Windows PowerShell Support
+Windows support with equivalent PowerShell scripts:
 
 ```powershell
 # Configuration management
@@ -652,7 +612,7 @@ Enhanced Windows support with equivalent PowerShell scripts:
 .\Llvm-Default.ps1 -Command set -Version "18.1.8"
 .\Llvm-Default.ps1 -Command show
 
-# Enhanced downloads with build options
+# Downloads with build options
 .\Download-Llvm.ps1 -CMakeFlags "-DCMAKE_BUILD_TYPE=Debug" -Name "llvm-18-debug" -Profile minimal
 ```
 
@@ -668,110 +628,104 @@ The `llvm-status` command provides detailed information about the active environ
 ```bash
 llvm-status
 # ╭─ LLVM Environment Status ──────────────────────────────────╮
-# │ ✅ Status: ACTIVE                                          │
-# │ 📦 Version: 18.1.8                                        │
-# │ 📁 Path: ~/.llvm/toolchains/18.1.8                       │
+# │ Status: ACTIVE                                            │
+# │ Version: 18.1.8                                          │
+# │ Path: ~/.llvm/toolchains/18.1.8                          │
 # │                                                           │
-# │ 🛠️  Available tools:                                       │
+# │ Available tools:                                          │
 # │   • clang (C compiler)                                    │
 # │   • clang++ (C++ compiler)                                │
 # │   • clangd (Language Server)                              │
 # │   • lldb (Debugger)                                       │
 # │                                                           │
-# │ 💡 To deactivate: llvm-deactivate                         │
+# │ To deactivate: llvm-deactivate                           │
 # ╰───────────────────────────────────────────────────────────╯
 ```
 
-## ✨ Key Functionalities
+## How It Works
 
-### 📦 **Download & Install (Pre-built Versions)**
+### Download & Install (Pre-built Versions)
 - Fetches available LLVM versions through GitHub API
 - **Linux**: Downloads Linux X64 tarball for selected version, extracts and installs to `~/.llvm/toolchains/<version>`
-- **Windows**: Downloads LLVM NSIS installer and silently installs to `%USERPROFILE%\.llvm\toolchains\<version>`
-- Marks already installed versions when listing available releases
+- **Windows**: Downloads LLVM NSIS installer and installs to `%USERPROFILE%\.llvm\toolchains\<version>`
+- Shows which versions are already installed when listing available releases
 
-### 🛠️ **Enhanced Build From Source**
-- **Subcommand structure**: `llvmup install --from-source` with advanced options
+### Build From Source
+- **Subcommand**: `llvmup install --from-source`
 - **Build profiles**: minimal (clang+lld), full (all projects), custom (user-defined)
-- **CMake flags support**: `--cmake-flags` for custom build configuration
+- **CMake flags**: `--cmake-flags` for custom build configuration
 - **Component selection**: `--component` for specific LLVM projects
 - **Custom naming**: `--name` for multiple build variants
 - **Auto-default**: `--default` to set as system default after build
-- **Version-aware builds**: Automatic handling of LLVM project changes across versions
 - Shallow clone of LLVM repository for selected release tag to `~/.llvm/sources/<tag>`
 - Configuration, compilation and installation using Ninja to `~/.llvm/toolchains/<name>`
 
-### ⚙️ **Project Configuration System**
+### Project Configuration
 - **Configuration files**: `.llvmup-config` with INI-style format
 - **Array support**: cmake_flags and components as arrays
-- **Subcommands**: `llvmup config init`, `llvmup config load`, and `llvmup config activate`
+- **Subcommands**: `llvmup config init`, `llvmup config load`, `llvmup config activate`
 - **Profile integration**: Automatic profile selection from config
-- **Override capability**: Command line options override config file settings
+- **Override**: Command line options override config file settings
 
-### � **Enhanced Logging System**
-- **Intelligent verbosity**: Logs only appear in verbose mode or test mode
+### Logging System
+- **Verbosity**: Logs only appear in verbose mode or test mode
 - **Error handling**: Errors always shown, informational logs controlled
-- **Specialized functions**: `log_verbose`, `log_info`, `log_error`, `log_config`, etc.
-- **Visual feedback**: Rich emoji-based status indicators
-- **Clean output**: Reduces "noise" during normal operations
+- **Log functions**: `log_verbose`, `log_info`, `log_error`, `log_config`, etc.
 - **Subcommands**: `llvmup default set <version>` and `llvmup default show`
-- **Symbolic links**: Automatic creation of default version links
+- **Symbolic links**: Creates default version links
 - **Cross-platform**: Linux symlinks, Windows junction points
-- **Shell integration**: New terminals automatically have access to default version
 
-### 🔄 **Version Activation**
-- **Linux**: Activate a specific LLVM version using bash function `llvm-activate <version>` (no manual sourcing required):
+### Version Activation
+- **Linux**: Use `llvm-activate <version>` (no manual sourcing required):
   - Updates `PATH` to include selected LLVM's `bin` directory
-  - Backs up and sets `CC`, `CXX`, and `LD` to point to LLVM binaries
-  - Modifies terminal prompt (`PS1`) to indicate active LLVM version
-- **Windows**: Use PowerShell scripts with enhanced parameter support
-- Scripts prevent activation of new version if one is already active until deactivation
+  - Sets `CC`, `CXX`, and `LD` environment variables
+  - Modifies terminal prompt (`PS1`) to show active LLVM version
+- **Windows**: Use PowerShell scripts
+- Prevents activation of new version if one is already active
 
-### ❌ **Version Deactivation**
-- **Linux**: Reverts environment changes using bash function `llvm-deactivate`, restoring original `PATH`, `CC`, `CXX`, `LD`, and `PS1` values
-- **Windows**: Use PowerShell scripts to restore original environment variables
+### Version Deactivation
+- **Linux**: `llvm-deactivate` restores original `PATH`, `CC`, `CXX`, `LD`, and `PS1` values
+- **Windows**: PowerShell scripts restore original environment variables
 
-### 💻 **Enhanced VSCode Integration**
-- **Linux**: Use `llvm-vscode-activate <version>` to merge LLVM-specific settings into `.vscode/settings.json`:
+### VSCode Integration
+- **Linux**: `llvm-vscode-activate <version>` merges LLVM-specific settings into `.vscode/settings.json`:
   - `cmake.additionalCompilerSearchDirs`
   - `clangd.path`
   - `clangd.fallbackFlags`
   - `cmake.configureEnvironment` (with updated `PATH`)
   - `cmake.debuggerPath` and debugger environment
-- **Windows**: Use PowerShell script with equivalent functionality
-- Integration preserves pre-existing VSCode settings
+- **Windows**: PowerShell script with equivalent functionality
+- Preserves pre-existing VSCode settings
 
-### ⌨️ **Command Auto-completion**
-- **Linux**: Enhanced bash completion script for:
+### Command Auto-completion
+- **Linux**: Bash completion script for:
   - Available LLVM versions
   - Subcommands (install, config, default)
-  - All command options and flags
+  - Command options and flags
   - Installed versions for activation
 - **Function completion**: All LLVM functions support TAB completion
 
-### 🪟 **Windows PowerShell Parity**
-- **Install-Llvm.ps1**: Installation management with advanced build options
+### Windows PowerShell Support
+- **Install-Llvm.ps1**: Installation management with build options
   - Configuration management (`config init`, `config load`, `config apply`, `config activate`)
-  - Enhanced build options (`-DisableLibcWnoError`, `-Reconfigure`, `-Verbose`)
+  - Build options (`-DisableLibcWnoError`, `-Reconfigure`, `-Verbose`)
   - Default version management (`default set`, `default show`)
-- **Enhanced logging**: Same intelligent logging system as bash version
 - **Parameter validation**: PowerShell parameter sets and validation
 - **Junction links**: Windows-specific default version management
-- **Auto version detection**: Detects existing installations during config init
+- **Version detection**: Detects existing installations during config init
 
-### 🎯 **Enhanced Wrapper System**
+### Wrapper System
 - **Subcommand structure**: `llvmup <command> [options]` format
 - **Commands**: install (default), config, default
 - **Backward compatibility**: Original `llvmup --from-source` still works
-- **Enhanced options**: All new build customization features
-- **Intelligent routing**: Commands route to appropriate scripts/functions
+- **Routing**: Commands route to appropriate scripts/functions
 
-### 🔧 **Profile Integration**
-- Installation script automatically configures your shell profile (`.bashrc` or `.profile`) to load LLVM functions
-- Safe installation: checks if already configured before adding entries
-- Graceful handling: functions provide warnings instead of errors if scripts are missing
+### Profile Integration
+- Installation script configures your shell profile (`.bashrc` or `.profile`) to load LLVM functions
+- Checks if already configured before adding entries
+- Provides warnings instead of errors if scripts are missing
 
-## 📥 Installation Script (install.sh)
+## Installation Script (install.sh)
 
 To facilitate the use of LLVM version manager tools from anywhere, an installation script (`install.sh`) is provided. This script copies the project commands to a directory (by default, `$HOME/.local/bin`) that is typically included in your PATH.
 
@@ -812,7 +766,7 @@ To facilitate the use of LLVM version manager tools from anywhere, an installati
    - Use `llvm-list` to see all installed versions
    - Use `llvm-help` for detailed usage guide
 
-## 🗑️ Uninstallation
+## Uninstallation
 
 For complete removal of the LLVM manager, an uninstallation script (`uninstall.sh`) is provided. This script removes all installed components and cleans up profile configurations.
 
@@ -846,7 +800,7 @@ The uninstaller will:
 rm -rf ~/.llvm
 ```
 
-## 🪟 Windows Scripts
+## Windows Scripts
 
 For Windows users, PowerShell scripts are provided to manage LLVM toolchains:
 
@@ -855,29 +809,29 @@ For Windows users, PowerShell scripts are provided to manage LLVM toolchains:
 - **Deactivate-Llvm.ps1**: Reverts changes made by Activate-Llvm.ps1
 - **Activate-LlvmVsCode.ps1**: PowerShell script for VSCode integration
 
-## 🆕 Latest Version Features
+## Additional Features
 
-### Bash Functions for Simplified Usage
+### Bash Functions
 - **No manual sourcing**: Use `llvm-activate <version>` directly
-- **Automatic loading**: Functions automatically available in new terminals
-- **Enhanced usability**: Additional functions like `llvm-status`, `llvm-list`, and `llvm-help`
-- **TAB completion**: All functions support auto-completion for version names
-- **Graceful fallbacks**: If scripts are missing, functions show helpful warnings
+- **Automatic loading**: Functions available in new terminals
+- **Additional functions**: `llvm-status`, `llvm-list`, and `llvm-help`
+- **TAB completion**: Auto-completion for version names
+- **Fallbacks**: Shows warnings if scripts are missing
 
-### Improved Installation Process
-- **Automatic profile configuration**: Shell profile configured automatically during installation
-- **Smart detection**: Installer chooses the best profile file or creates one if needed
+### Installation Process
+- **Profile configuration**: Shell profile configured automatically during installation
+- **Detection**: Installer chooses the best profile file or creates one if needed
 - **Safe installation**: Checks existing configuration before making changes
-- **Clean uninstallation**: Uninstaller removes all traces including profile configuration
+- **Uninstallation**: Uninstaller removes all traces including profile configuration
 
-### Better User Experience
-- **Consistent interface**: All operations use simple function calls
-- **Status verification**: `llvm-status` shows current active version and path
+### User Interface
+- **Consistent**: All operations use simple function calls
+- **Status**: `llvm-status` shows current active version and path
 - **Version listing**: `llvm-list` shows installed versions with active indicator
-- **Error handling**: Better error messages and user guidance
-- **Rich visual interface**: Feedback with emojis and attractive visual formatting
+- **Error handling**: Clear error messages and guidance
+- **Visual feedback**: Color-coded output for status and errors
 
-## 🤝 Contributing
+## Contributing
 
 Feel free to contribute to this project:
 1. Reporting bugs
@@ -885,44 +839,44 @@ Feel free to contribute to this project:
 3. Submitting pull requests
 4. Improving documentation
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## � Project Organization
+## Project Organization
 
-### 📁 Directory Structure
+### Directory Structure
 ```
 llvmup/
-├── 📖 docs/              # Extensive documentation
-├── 🎯 examples/          # Demos and test scripts
-├── 🧪 tests/             # Automated test suite
-├── 🛠️ scripts/          # Development utilities
-└── 🔧 Core scripts       # Main functionality
+├── docs/              # Extensive documentation
+├── examples/          # Demos and test scripts
+├── tests/             # Automated test suite
+├── scripts/          # Development utilities
+└── Core scripts       # Main functionality
 ```
 
-### 📖 Documentation (`docs/`)
+### Documentation (`docs/`)
 - **[INSTALL.md](docs/INSTALL.md)**: Detailed installation guide
 - **[FEATURE_SUMMARY.md](docs/FEATURE_SUMMARY.md)**: All features overview
 - **[COMPLETION_UX_REPORT.md](docs/COMPLETION_UX_REPORT.md)**: Auto-completion system
 - **[BUILD_EXAMPLE.md](docs/BUILD_EXAMPLE.md)**: Build system examples
 - **[test-powershell-features.md](docs/test-powershell-features.md)**: PowerShell feature documentation
 
-### 🎯 Examples & Demos (`examples/`)
+### Examples & Demos (`examples/`)
 - **Demo scripts**: Interactive completion and feature demonstrations
 - **Test scripts**: Real activation and compatibility testing
 - **Config examples**: Sample configuration files with LIBC_WNO_ERROR control
 - **[examples/demo-libc-wno-error.sh](examples/demo-libc-wno-error.sh)**: LIBC warning flag demonstration
 - **[examples/README.md](examples/README.md)**: Detailed examples guide
 
-### 🧪 Testing (`tests/`)
+### Testing (`tests/`)
 - **Unit tests**: 90+ automated tests (BATS framework)
 - **Integration tests**: Full workflow validation and cross-platform compatibility
 - **PowerShell tests**: Windows-specific functionality validation
 - **LIBC_WNO_ERROR tests**: Warning flag control system validation
 - **Performance tests**: Speed and efficiency benchmarks
 
-## �🔗 Useful Links
+## Useful Links
 
 - [GitHub Repository](https://github.com/Fabio3rs/llvmup)
 - [LLVM Project](https://llvm.org/)
@@ -931,22 +885,22 @@ llvmup/
 
 ---
 
-## 📊 Project Status
+## Project Status
 
-**🧪 v4.0 - Advanced Expression System with Comprehensive Testing**
-- **Comprehensive Version Expressions**: Smart selectors, ranges, and auto-activation
-- **Expression System**: 46 specialized tests covering all expression functionality
-- **Cross-platform support**: Linux + Windows PowerShell with feature parity
-- **Enhanced logging**: Specialized functions with granular verbosity controls
-- **LIBC_WNO_ERROR**: Fine-grained flag control system
-- **CMake reconfiguration**: Force clean rebuilds capability
-- **Test coverage**: 90+ comprehensive tests (all passing)
-- **Documentation**: Extensive documentation in `docs/` folder with expression guides
+**v4.0 - Version Expression System**
+- **Version Expressions**: Selectors, ranges, and auto-activation
+- **Expression Tests**: 46 tests covering expression functionality
+- **Cross-platform**: Linux + Windows PowerShell
+- **Logging**: Verbosity controls
+- **LIBC_WNO_ERROR**: Flag control system
+- **CMake reconfiguration**: Force clean rebuilds
+- **Test coverage**: 90+ tests (all passing)
+- **Documentation**: Documentation in `docs/` folder
 
-✨ **New in v4.0**: Comprehensive version expression system allows intelligent auto-activation with expressions like `latest-prebuilt`, `>=18.0.0`, `~19.1`, enabling sophisticated project-specific version management.
+**New in v4.0**: Version expression system supports auto-activation with expressions like `latest-prebuilt`, `>=18.0.0`, `~19.1` for project-specific version management.
 
-⚠️ **Note**: This is experimental software. Features may change or contain bugs.
+**Note**: This is experimental software. Features may change or contain bugs.
 
 ---
 
-**💡 Tip**: For detailed help on available commands, run `llvm-help` after installation!
+**Tip**: For help on available commands, run `llvm-help` after installation.

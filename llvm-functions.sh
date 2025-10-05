@@ -16,12 +16,20 @@ QUIET_SUCCESS=${QUIET_SUCCESS:-0}
 EXPRESSION_VERBOSE=${EXPRESSION_VERBOSE:-0}
 EXPRESSION_DEBUG=${EXPRESSION_DEBUG:-0}
 
+# ANSI color codes
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
 # Log error messages (always shown)
 log_error() {
     if [ "$QUIET_MODE" -eq 1 ]; then
         return
     fi
-    echo "❌ Error: $*" >&2
+    echo -e "${RED}Error: $*${NC}" >&2
 }
 
 # Log warning messages (always shown)
@@ -29,7 +37,7 @@ log_warn() {
     if [ "$QUIET_MODE" -eq 1 ]; then
         return
     fi
-    echo "⚠️  $*" >&2
+    echo -e "${YELLOW}Warning: $*${NC}" >&2
 }
 
 # Log success messages (always shown)
@@ -37,7 +45,7 @@ log_success() {
     if [ "$QUIET_SUCCESS" -eq 1 ] || [ "$QUIET_MODE" -eq 1 ]; then
         return
     fi
-    echo "✅ $*"
+    echo -e "${GREEN}$*${NC}"
 }
 
 # Log info messages (only in verbose mode or test mode)
@@ -46,7 +54,7 @@ log_info() {
         return
     fi
     if [ -n "$LLVM_VERBOSE" ] || [ -n "$LLVM_TEST_MODE" ]; then
-        echo "💡 $*"
+        echo -e "${BLUE}Info: $*${NC}"
     fi
 }
 
@@ -56,7 +64,7 @@ log_debug() {
         return
     fi
     if [ -n "$LLVM_VERBOSE" ] || [ -n "$LLVM_TEST_MODE" ]; then
-        echo "🔍 $*"
+        echo -e "${CYAN}Debug: $*${NC}"
     fi
 }
 
@@ -66,7 +74,7 @@ log_progress() {
         return
     fi
     if [ -n "$LLVM_VERBOSE" ] || [ -n "$LLVM_TEST_MODE" ]; then
-        echo "🔄 $*"
+        echo -e "${CYAN}Progress: $*${NC}"
     fi
 }
 
@@ -76,7 +84,7 @@ log_config() {
         return
     fi
     if [ -n "$LLVM_VERBOSE" ] || [ -n "$LLVM_TEST_MODE" ]; then
-        echo "🎯 $*"
+        echo -e "${BLUE}Config: $*${NC}"
     fi
 }
 
@@ -86,7 +94,7 @@ log_tip() {
         return
     fi
     if [ -n "$LLVM_VERBOSE" ] || [ -n "$LLVM_TEST_MODE" ]; then
-        echo "💡 $*"
+        echo -e "${BLUE}Tip: $*${NC}"
     fi
 }
 
@@ -96,7 +104,7 @@ log_expression_verbose() {
         return
     fi
     if [ "$EXPRESSION_VERBOSE" -eq 1 ] || [ -n "$LLVM_VERBOSE" ]; then
-        echo "🔍 Expression: $*" >&2
+        echo -e "${CYAN}Expression: $*${NC}" >&2
     fi
 }
 
@@ -106,7 +114,7 @@ log_expression_debug() {
         return
     fi
     if [ "$EXPRESSION_DEBUG" -eq 1 ] || [ -n "$LLVM_VERBOSE" ]; then
-        echo "🐛 Debug: $*" >&2
+        echo -e "${CYAN}Debug: $*${NC}" >&2
     fi
 }
 
@@ -115,7 +123,7 @@ log_expression_result() {
     if [ "$QUIET_MODE" -eq 1 ]; then
         return
     fi
-    echo "✨ $*"
+    echo -e "${GREEN}$*${NC}"
 }
 
 # =============================================================================
@@ -133,7 +141,7 @@ llvm-verbose-on() {
 # Disable verbose logging for this session
 llvm-verbose-off() {
     unset LLVM_VERBOSE
-    echo "✅ Verbose mode disabled for LLVM functions"
+    echo -e "${GREEN}Verbose mode disabled for LLVM functions${NC}"
 }
 
 # Enable expression verbose logging
@@ -183,7 +191,7 @@ llvm-activate() {
         echo "│ To check status: llvm-status                              │"
         echo "╰────────────────────────────────────────────────────────────╯"
         echo ""
-        echo "📦 Installed versions:"
+        echo "Installed versions:"
         llvm-list
         echo ""
         log_tip "Use TAB completion to auto-complete version names"
@@ -255,7 +263,7 @@ llvm-vscode-activate() {
         echo "│ Note: Must be run from your VSCode project root!          │"
         echo "╰────────────────────────────────────────────────────────────╯"
         echo ""
-        echo "📦 Installed versions:"
+        echo "Installed versions:"
         llvm-list
         echo ""
         log_tip "Run this from your VSCode workspace root directory"
@@ -287,13 +295,13 @@ llvm-vscode-activate() {
 llvm-status() {
     echo "╭─ LLVM Environment Status ──────────────────────────────────╮"
     if [ -n "$_ACTIVE_LLVM" ]; then
-        echo "│ ✅ Status: ACTIVE                                          │"
-        echo "│ 📦 Version: $_ACTIVE_LLVM"
+        echo -e "│ ${GREEN}Status: ACTIVE${NC}                                          │"
+        echo "│ Version: $_ACTIVE_LLVM                                    │"
         if [ -n "$_ACTIVE_LLVM_PATH" ]; then
-            echo "│ 📁 Path: $_ACTIVE_LLVM_PATH"
+            echo "│ Path: $_ACTIVE_LLVM_PATH"
         fi
         echo "│                                                            │"
-        echo "│ 🛠️  Available tools:                                        │"
+        echo "│ Available tools:                                           │"
         local llvm_path="$_ACTIVE_LLVM_PATH/bin"
         if [ -d "$llvm_path" ]; then
             if [ -x "$llvm_path/clang" ]; then
@@ -310,13 +318,13 @@ llvm-status() {
             fi
         fi
         echo "│                                                            │"
-        echo "│ 💡 To deactivate: llvm-deactivate                         │"
+        echo -e "│ ${BLUE}To deactivate: llvm-deactivate${NC}                         │"
     else
-        echo "│ ❌ Status: INACTIVE                                        │"
+        echo -e "│ ${RED}Status: INACTIVE${NC}                                        │"
         echo "│                                                            │"
-        echo "│ 💡 To activate a version: llvm-activate <version>         │"
-        echo "│ 📦 To see available versions: llvm-list                   │"
-        echo "│ 🚀 To install new versions: llvmup                        │"
+        echo -e "│ ${BLUE}To activate a version: llvm-activate <version>${NC}         │"
+        echo "│ To see available versions: llvm-list                      │"
+        echo "│ To install new versions: llvmup                           │"
     fi
     echo "╰────────────────────────────────────────────────────────────╯"
 }
@@ -327,9 +335,9 @@ llvm-list() {
 
     echo "╭─ Installed LLVM Versions ──────────────────────────────────╮"
     if [ ! -d "$toolchains_dir" ]; then
-        echo "│ ❌ No LLVM toolchains found                                │"
+        echo -e "│ ${RED}No LLVM toolchains found${NC}                                │"
         echo "│                                                            │"
-        echo "│ 💡 To install LLVM versions:                               │"
+        echo -e "│ ${BLUE}To install LLVM versions:${NC}                               │"
         echo "│   • llvmup                    # Install prebuilt version   │"
         echo "│   • llvmup --from-source      # Build from source          │"
         echo "│   • llvmup 18.1.8            # Install specific version    │"
@@ -343,19 +351,19 @@ llvm-list() {
             has_versions=true
             local version=$(basename "$dir")
             if [ -n "$_ACTIVE_LLVM" ] && [ "$version" = "$_ACTIVE_LLVM" ]; then
-                echo "│ ✅ $version (ACTIVE)"
+                echo -e "│ ${GREEN}$version (ACTIVE)${NC}"
             else
-                echo "│ 📦 $version"
+                echo "│ $version"
             fi
         fi
     done
 
     if [ "$has_versions" = false ]; then
-        echo "│ ❌ No valid LLVM installations found                       │"
+        echo -e "│ ${RED}No valid LLVM installations found${NC}                       │"
     fi
 
     echo "│                                                            │"
-    echo "│ 💡 Usage:                                                   │"
+    echo -e "│ ${BLUE}Usage:${NC}                                                   │"
     echo "│   • llvm-activate <version>   # Activate a version         │"
     echo "│   • llvm-status              # Check current status        │"
     echo "│   • llvmup                   # Install more versions       │"
@@ -374,7 +382,7 @@ _llvm_complete_versions() {
         if [ -z "$versions" ]; then
             # Show helpful message when no versions installed
             echo >&2
-            echo "💡 No LLVM versions installed yet. Use 'llvmup install' to install versions." >&2
+            echo -e "${BLUE}No LLVM versions installed yet. Use 'llvmup install' to install versions.${NC}" >&2
             return 0
         fi
 
@@ -389,15 +397,15 @@ _llvm_complete_versions() {
         # Show status indicators in stderr (doesn't affect completion)
         if [ "$COMP_CWORD" -eq 1 ] && [ ${#COMP_WORDS[@]} -eq 2 ] && [ -z "$cur" ]; then
             echo >&2
-            echo "💡 Available versions:" >&2
+            echo -e "${BLUE}Available versions:${NC}" >&2
             while IFS= read -r version; do
                 local status=""
                 if [ "$version" = "$default_version" ]; then
-                    status="⭐ (default)"
+                    status="(default)"
                 elif [ "$version" = "$active_version" ]; then
-                    status="🟢 (active)"
+                    status="(active)"
                 fi
-                echo "   📦 $version $status" >&2
+                echo "   $version $status" >&2
             done <<< "$versions"
             echo >&2
         fi
@@ -405,7 +413,7 @@ _llvm_complete_versions() {
         COMPREPLY=($(compgen -W "$versions" -- "$cur"))
     else
         echo >&2
-        echo "💡 LLVM toolchains directory not found. Install LLVM versions first." >&2
+        echo -e "${BLUE}LLVM toolchains directory not found. Install LLVM versions first.${NC}" >&2
     fi
 }
 
@@ -419,7 +427,7 @@ fi
 llvm-help() {
     echo "╭─ LLVM Manager - Complete Usage Guide ──────────────────────╮"
     echo "│                                                            │"
-    echo "│ 🚀 INSTALLATION COMMANDS:                                  │"
+    echo -e "│ ${GREEN}INSTALLATION COMMANDS:${NC}                                  │"
     echo "│   llvmup install                  # Install latest prebuilt│"
     echo "│   llvmup install 18.1.8          # Install specific version│"
     echo "│   llvmup install --from-source    # Build from source      │"
@@ -428,7 +436,7 @@ llvm-help() {
     echo "│   llvmup install --profile minimal # Use minimal profile   │"
     echo "│   llvmup install --cmake-flags '-DCMAKE_BUILD_TYPE=Debug'  │"
     echo "│                                                            │"
-    echo "│ 🔧 VERSION MANAGEMENT:                                      │"
+    echo -e "│ ${CYAN}VERSION MANAGEMENT:${NC}                                      │"
     echo "│   llvm-activate <version>     # Activate LLVM version      │"
     echo "│   llvm-deactivate             # Deactivate current version │"
     echo "│   llvm-status                 # Show current status        │"
@@ -436,7 +444,7 @@ llvm-help() {
     echo "│   llvmup default set <ver>    # Set default version        │"
     echo "│   llvmup default show         # Show current default       │"
     echo "│                                                            │"
-    echo "│ 🔍 VERSION PARSING & UTILITIES:                             │"
+    echo -e "│ ${BLUE}VERSION PARSING & UTILITIES:${NC}                             │"
     echo "│   llvm-parse-version <ver>    # Parse version string       │"
     echo "│   llvm-get-versions [format]  # List versions (list/simple/json)│"
     echo "│   llvm-version-exists <ver>   # Check if version exists    │"
@@ -446,25 +454,25 @@ llvm-help() {
     echo "│   llvm-match-versions <expr>  # Match versions by expression│"
     echo "│   llvm-test-expressions       # Test expression matching   │"
     echo "│                                                            │"
-    echo "│ �️  VERBOSITY CONTROLS:                                      │"
+    echo -e "│ ${YELLOW}VERBOSITY CONTROLS:${NC}                                      │"
     echo "│   llvm-verbose-on/off         # Toggle general verbose mode │"
     echo "│   llvm-expression-verbose-on/off # Toggle expression verbose│"
     echo "│   llvm-expression-debug-on/off   # Toggle expression debug  │"
     echo "│                                                            │"
-    echo "│ �🎯 VERSION EXPRESSIONS (for auto-activate):                 │"
+    echo -e "│ ${BLUE}VERSION EXPRESSIONS (for auto-activate):${NC}                 │"
     echo "│   • Selectors: latest, oldest, newest, earliest            │"
     echo "│   • Type filters: prebuilt, source, latest-prebuilt        │"
     echo "│   • Ranges: >=18.0.0, <=19.1.0, ~19.1, 18.*              │"
     echo "│   • Specific: llvmorg-18.1.8, source-llvmorg-20.1.0       │"
     echo "│                                                            │"
-    echo "│ 💻 DEVELOPMENT INTEGRATION:                                 │"
+    echo -e "│ ${GREEN}DEVELOPMENT INTEGRATION:${NC}                                 │"
     echo "│   llvm-vscode-activate <ver>  # Setup VSCode integration   │"
     echo "│   llvm-config-init            # Initialize .llvmup-config  │"
     echo "│   llvm-config-load            # Load project config        │"
     echo "│   llvm-config-apply           # Install from config        │"
     echo "│   llvm-config-activate        # Activate configured version│"
     echo "│                                                            │"
-    echo "│ 🛠️  AVAILABLE TOOLS AFTER ACTIVATION:                       │"
+    echo -e "│ ${CYAN}AVAILABLE TOOLS AFTER ACTIVATION:${NC}                       │"
     echo "│   • clang/clang++    # C/C++ compilers                     │"
     echo "│   • ld.lld          # LLVM linker                          │"
     echo "│   • lldb            # LLVM debugger                        │"
@@ -473,7 +481,7 @@ llvm-help() {
     echo "│   • llvm-nm         # Symbol table dumper                  │"
     echo "│   • opt             # LLVM optimizer                       │"
     echo "│                                                            │"
-    echo "│ 📚 PROJECT CONFIGURATION (.llvmup-config):                  │"
+    echo -e "│ ${BLUE}PROJECT CONFIGURATION (.llvmup-config):${NC}                  │"
     echo "│   [version]                                                │"
     echo "│   default = \"llvmorg-21.1.0\"                              │"
     echo "│   [build]                                                  │"
@@ -482,14 +490,14 @@ llvm-help() {
     echo "│   [profile]                                                │"
     echo "│   type = \"full\"                                           │"
     echo "│                                                            │"
-    echo "│ 💡 TIPS:                                                    │"
+    echo -e "│ ${BLUE}TIPS:${NC}                                                    │"
     echo "│   • Use TAB completion for version names                   │"
     echo "│   • Check llvm-status after activation                     │"
     echo "│   • Your PS1 prompt shows active LLVM version              │"
     echo "│   • Environment is isolated per terminal session           │"
     echo "│   • Use .llvmup-config for project-specific settings       │"
     echo "│                                                            │"
-    echo "│ 🔗 MORE INFO: https://github.com/Fabio3rs/llvmup           │"
+    echo -e "│ ${CYAN}MORE INFO: https://github.com/Fabio3rs/llvmup${NC}           │"
     echo "╰────────────────────────────────────────────────────────────╯"
 }
 
@@ -528,7 +536,7 @@ llvm-config-init() {
         local profile="${LLVM_TEST_PROFILE:-full}"
     else
         # Prompt for configuration
-        echo "📋 Please provide the following information:"
+        echo -e "${BLUE}Please provide the following information:${NC}"
 
         # Check for installed versions first
         local toolchains_dir="$(llvm-get-toolchains-dir)"
@@ -899,9 +907,9 @@ llvm-config-load() {
     llvm-config-apply-directories
 
     log_config "Configuration loaded:"
-    log_info "   📦 Version: $LLVM_CONFIG_VERSION"
-    [ -n "$LLVM_CONFIG_NAME" ] && log_info "   🏷️  Name: $LLVM_CONFIG_NAME"
-    [ -n "$LLVM_CONFIG_PROFILE" ] && log_info "   📋 Profile: $LLVM_CONFIG_PROFILE"
+    log_info "   Version: $LLVM_CONFIG_VERSION"
+    [ -n "$LLVM_CONFIG_NAME" ] && log_info "   Name: $LLVM_CONFIG_NAME"
+    [ -n "$LLVM_CONFIG_PROFILE" ] && log_info "   Profile: $LLVM_CONFIG_PROFILE"
     [ ${#LLVM_CONFIG_CMAKE_FLAGS[@]} -gt 0 ] && log_debug "CMake flags: ${LLVM_CONFIG_CMAKE_FLAGS[*]}"
     [ ${#LLVM_CONFIG_COMPONENTS[@]} -gt 0 ] && log_debug "Components: ${LLVM_CONFIG_COMPONENTS[*]}"
     [ -n "$LLVM_CONFIG_CMAKE_PRESET" ] && log_debug "CMake preset: $LLVM_CONFIG_CMAKE_PRESET"
@@ -1023,7 +1031,7 @@ llvm-config-apply() {
         install_choice="${LLVM_TEST_INSTALL_NOW:-n}"
         log_debug "Test mode: install choice = $install_choice"
     else
-        read -p "🤔 Install now? [y/N]: " -n 1 -r
+        read -p "Install now? [y/N]: " -n 1 -r
         echo
         install_choice="$REPLY"
     fi
@@ -1193,17 +1201,17 @@ llvm-get-versions-list() {
 
             # Format output
             if [ -n "$parsed_version" ] && [ "$parsed_version" != "$version_name" ]; then
-                printf "│ 📦 %-20s (v%s)%s%s\n" "$version_name" "$parsed_version" "$type_info" "$is_active"
+                printf "│ %-20s (v%s)%s%s\n" "$version_name" "$parsed_version" "$type_info" "$is_active"
             else
-                printf "│ 📦 %-35s%s%s\n" "$version_name" "$type_info" "$is_active"
+                printf "│ %-35s%s%s\n" "$version_name" "$type_info" "$is_active"
             fi
         fi
     done
 
     if [ "$found_versions" = false ]; then
-        echo "│ ❌ No LLVM versions found                                   │"
+        echo -e "│ ${RED}No LLVM versions found${NC}                                   │"
         echo "│                                                            │"
-        echo "│ 💡 Use 'llvmup' to install LLVM versions                   │"
+        echo -e "│ ${BLUE}Use 'llvmup' to install LLVM versions${NC}                   │"
     fi
 
     echo "╰────────────────────────────────────────────────────────────╯"
@@ -1700,7 +1708,7 @@ llvm-autoactivate-enhanced() {
 
 # Test function for comprehensive expressions
 llvm-test-expressions() {
-    echo "🧪 Testing Comprehensive Version Expressions"
+    echo -e "${CYAN}Testing Comprehensive Version Expressions${NC}"
     echo "============================================="
 
     local test_expressions=(
@@ -1722,24 +1730,24 @@ llvm-test-expressions() {
 
     for expr in "${test_expressions[@]}"; do
         echo ""
-        echo "📋 Expression: '$expr'"
+        echo -e "${BLUE}Expression: '$expr'${NC}"
         echo "----------------------------------------"
 
         local matches=()
         mapfile -t matches < <(llvm-match-versions "$expr" 2>/dev/null)
 
         if [ ${#matches[@]} -gt 0 ]; then
-            echo "✅ Matches found:"
+            echo -e "${GREEN}Matches found:${NC}"
             for match in "${matches[@]}"; do
                 local parsed=$(llvm-parse-version "$match" 2>/dev/null)
                 local type="[Prebuilt]"
                 if echo "$match" | grep -q "^source-"; then
                     type="[Source Build]"
                 fi
-                echo "   📦 $match (v$parsed) $type"
+                echo "   $match (v$parsed) $type"
             done
         else
-            echo "❌ No matches found"
+            echo -e "${RED}No matches found${NC}"
         fi
     done
 
@@ -1749,7 +1757,7 @@ llvm-test-expressions() {
     fi
 
     echo ""
-    echo "🎉 Expression testing completed!"
+    echo -e "${GREEN}Expression testing completed!${NC}"
 }
 
 llvm-autoactivate() {

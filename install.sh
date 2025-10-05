@@ -257,5 +257,5 @@ else
 fi
 
 echo ""
-print_success "🚀 LLVMUP is now installed and ready to use!"
-print_info "📚 Run 'llvmup --help' or 'llvm-help' for more information."
+print_success "LLVMUP is now installed and ready to use!"
+print_info "Run 'llvmup --help' or 'llvm-help' for more information."

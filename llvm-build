@@ -97,7 +97,7 @@ load_config() {
     local config_file=".llvmup-config"
 
     if [ -f "$config_file" ]; then
-        log_info "📋 Found .llvmup-config file, loading settings..."
+        log_info "Found .llvmup-config file, loading settings..."
 
         # Parse config file (simple ini-style parser)
         while IFS= read -r line; do
@@ -294,12 +294,12 @@ done
 # Load config file settings (can be overridden by command line)
 load_config
 
-log_info "🚀 LLVM Build System"
-log_info "📋 Fetching available LLVM release tags..."
+log_info "LLVM Build System"
+log_info "Fetching available LLVM release tags..."
 
 # Mock implementation for testing - check if git command is available
 if ! command -v git >/dev/null 2>&1; then
-    log_info "📋 Git not available, using mock tags for testing"
+    log_info "Git not available, using mock tags for testing"
     tags="llvmorg-18.1.8\nllvmorg-19.1.0\nllvmorg-21.1.0"
 else
     # Fetch tags from remote
@@ -338,7 +338,7 @@ select_version() {
 # Version selection
 if [ "${#remaining_args[@]}" -ge 1 ]; then
     if select_version "${remaining_args[0]}"; then
-        log_info "📦 Selected version: $selectedTag"
+        log_info "Selected version: $selectedTag"
     else
         log_error "Invalid selection: ${remaining_args[0]}"
         exit 1
@@ -349,7 +349,7 @@ else
         # In test mode, use first available version or default
         if [ -n "$LLVM_TEST_VERSION" ]; then
             if select_version "$LLVM_TEST_VERSION"; then
-                log_info "📦 Test mode: Selected version: $selectedTag"
+                log_info "Test mode: Selected version: $selectedTag"
             else
                 log_error "Test mode: Invalid version: $LLVM_TEST_VERSION"
                 exit 1
@@ -357,7 +357,7 @@ else
         else
             # Use first available version in test mode
             selectedTag="${tagArray[0]}"
-            log_info "📦 Test mode: Using first available version: $selectedTag"
+            log_info "Test mode: Using first available version: $selectedTag"
         fi
     elif [ -n "$LLVM_LIST_ONLY" ]; then
         # List only mode - show available versions and exit
@@ -386,7 +386,7 @@ else
 
         read -p "Enter the number of the release you want to build: " choice
         if select_version "$choice"; then
-            log_info "📦 Selected version: $selectedTag"
+            log_info "Selected version: $selectedTag"
         else
             log_error "Invalid selection."
             exit 1
@@ -413,13 +413,13 @@ else
     projects_to_build=$(get_profile_projects "" "$selectedTag")
 fi
 
-log_info "🔧 Build Configuration:"
-log_info "   📦 Version: $selectedTag (LLVM $major_version)"
-log_info "   🏷️  Name: $build_name"
-log_info "   📋 Profile: ${PROFILE:-default}"
-log_info "   🧩 Projects: $projects_to_build"
+log_info "Build Configuration:"
+log_info "   Version: $selectedTag (LLVM $major_version)"
+log_info "   Name: $build_name"
+log_info "   Profile: ${PROFILE:-default}"
+log_info "   Projects: $projects_to_build"
 if [ "${#CMAKE_FLAGS[@]}" -gt 0 ]; then
-    log_info "   🔧 Custom CMake flags: ${CMAKE_FLAGS[*]}"
+    log_info "   Custom CMake flags: ${CMAKE_FLAGS[*]}"
 fi
 
 # Show LIBC_WNO_ERROR flag status
@@ -431,27 +431,27 @@ fi
 
 # Check if we're in mock mode
 if [ -n "$LLVM_TEST_MODE" ]; then
-    log_info "🧪 Test mode: Mock build completed successfully!"
-    log_info "📁 LLVM $build_name would be installed to: $TOOLCHAINS_DIR/$build_name"
-    log_info "🚀 To activate: llvm-activate $build_name"
+    log_info "Test mode: Mock build completed successfully!"
+    log_info "LLVM $build_name would be installed to: $TOOLCHAINS_DIR/$build_name"
+    log_info "To activate: llvm-activate $build_name"
 
     if [ "$SET_DEFAULT" -eq 1 ]; then
-        log_info "🔗 This version would be set as default"
+        log_info "This version would be set as default"
     fi
     exit 0
 fi
 
 # Real build process starts here
-log_info "🏗️  Starting real LLVM build process..."
+log_info "Starting real LLVM build process..."
 
 # Prepare source directory
 target_source_dir="$SOURCES_DIR/$selectedTag"
 mkdir -p "$SOURCES_DIR"
 
 if [ -d "$target_source_dir" ]; then
-    log_info "📁 Source for version $selectedTag already exists at $target_source_dir"
+    log_info "Source for version $selectedTag already exists at $target_source_dir"
 else
-    log_info "📥 Cloning LLVM project (tag: $selectedTag) with depth 1..."
+    log_info "Cloning LLVM project (tag: $selectedTag) with depth 1..."
     git clone --depth 1 --branch "$selectedTag" "$REPO_URL" "$target_source_dir"
 fi
 
@@ -492,7 +492,7 @@ fi
 build_dir="$target_source_dir/build"
 install_dir="$TOOLCHAINS_DIR/$build_name"
 
-log_info "🗂️  Creating build directory: $build_dir"
+log_info "Creating build directory: $build_dir"
 mkdir -p "$build_dir"
 mkdir -p "$TOOLCHAINS_DIR"
 
@@ -531,18 +531,18 @@ done
 
 # Force reconfiguration if requested and CMakeCache.txt exists
 if [ "$CMAKE_FORCE_RECONFIGURE" -eq 1 ] && [ -f "$build_dir/CMakeCache.txt" ]; then
-    log_info "♻️  Forcing CMake reconfiguration..."
+    log_info "Forcing CMake reconfiguration..."
     rm -f "$build_dir/CMakeCache.txt"
     rm -rf "$build_dir/CMakeFiles"
 fi
 
-log_info "🔧 Configuring build with CMake (using Ninja generator)..."
+log_info "Configuring build with CMake (using Ninja generator)..."
 log_verbose "CMake command: cmake ${cmake_args[*]}"
 
 cmake "${cmake_args[@]}"
 
-log_info "🔨 Building LLVM (this may take a while)..."
-log_info "💡 Tip: This process can take 30+ minutes depending on your system"
+log_info "Building LLVM (this may take a while)..."
+log_info "Tip: This process can take 30+ minutes depending on your system"
 
 # Determine number of parallel jobs
 if command -v nproc >/dev/null 2>&1; then
@@ -553,30 +553,30 @@ else
     jobs=4  # fallback
 fi
 
-log_info "🚀 Using $jobs parallel build jobs"
+log_info "Using $jobs parallel build jobs"
 cmake --build "$build_dir" -- -j "$jobs"
 
-log_info "📦 Installing LLVM to $install_dir..."
+log_info "Installing LLVM to $install_dir..."
 cmake --build "$build_dir" --target install
 
-log_info "✅ Build and installation complete!"
-log_info "📁 LLVM version $selectedTag has been installed in $install_dir"
-log_info "🚀 To activate: llvm-activate $build_name"
+log_success "Build and installation complete!"
+log_info "LLVM version $selectedTag has been installed in $install_dir"
+log_info "To activate: llvm-activate $build_name"
 
 # Set as default if requested
 if [ "$SET_DEFAULT" -eq 1 ]; then
     if [ -f "$HOME/.local/bin/llvm-activate" ]; then
-        log_info "🔗 Setting $build_name as default version..."
+        log_info "Setting $build_name as default version..."
         # Use the llvm functions to set default
         source "$HOME/.local/share/llvm-manager/llvm-functions.sh" 2>/dev/null || true
         if command -v llvm-set-default >/dev/null 2>&1; then
             llvm-set-default "$build_name"
         else
-            log_info "💡 To set as default later, run: llvmup default set $build_name"
+            log_info "To set as default later, run: llvmup default set $build_name"
         fi
     else
-        log_info "💡 To set as default, run: llvmup default set $build_name"
+        log_info "To set as default, run: llvmup default set $build_name"
     fi
 fi
 
-log_info "🎉 LLVM $build_name build completed successfully!"
+log_success "LLVM $build_name build completed successfully!"
