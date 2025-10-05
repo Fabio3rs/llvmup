@@ -305,7 +305,7 @@ teardown() {
     [ "$status" -eq 0 ]
 
     # Output should contain verbose logs
-    echo "$output" | grep -q "🔍 Expression:"
+    echo "$output" | grep -q "Expression:"
 }
 
 @test "llvm-match-versions: debug mode shows detailed logs" {
@@ -317,7 +317,7 @@ teardown() {
     [ "$status" -eq 0 ]
 
     # Output should contain debug logs
-    echo "$output" | grep -q "🐛 Debug:"
+    echo "$output" | grep -q "Debug:"
 }
 
 # =============================================================================

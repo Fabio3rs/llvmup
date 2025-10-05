@@ -99,10 +99,10 @@ EOF
         echo "Installation args: $@"
         # Verify essential arguments are present
         if [[ "$*" == *"llvmorg-19.1.0"* ]] && [[ "$*" == *"--name"* ]] && [[ "$*" == *"debug-build"* ]]; then
-            echo "✅ Arguments validated successfully"
+            echo "Arguments validated successfully"
             return 0
         else
-            echo "❌ Missing required arguments"
+            echo "Missing required arguments"
             return 1
         fi
     }

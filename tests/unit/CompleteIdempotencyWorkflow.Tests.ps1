@@ -58,7 +58,7 @@ Describe 'Complete Auto-Activation Idempotency Workflow' {
             $needsActivation = -not (Test-LlvmVersionSatisfiesExpression -ActiveVersion $currentlyActive -Expression $configExpression -ToolchainsPath $script:TestToolchainsPath)
             $needsActivation | Should -Be $false
 
-            Write-Host "✅ Already on latest version ($currentlyActive), no activation needed" -ForegroundColor Green
+            Write-Host "Already on latest version ($currentlyActive), no activation needed" -ForegroundColor Green
         }
     }
 
@@ -117,7 +117,7 @@ Describe 'Complete Auto-Activation Idempotency Workflow' {
             $needsActivation = -not (Test-LlvmVersionSatisfiesExpression -ActiveVersion $currentlyActive -Expression $configExpression -ToolchainsPath $script:TestToolchainsPath)
             $needsActivation | Should -Be $false
 
-            Write-Host "✅ Wildcard pattern satisfied: $currentlyActive matches $configExpression" -ForegroundColor Green
+            Write-Host "Wildcard pattern satisfied: $currentlyActive matches $configExpression" -ForegroundColor Green
         }
 
         It 'should detect wildcard pattern violation' {
@@ -132,7 +132,7 @@ Describe 'Complete Auto-Activation Idempotency Workflow' {
             $needsActivation = -not (Test-LlvmVersionSatisfiesExpression -ActiveVersion $currentlyActive -Expression $configExpression -ToolchainsPath $script:TestToolchainsPath)
             $needsActivation | Should -Be $true
 
-            Write-Host "❌ Wildcard pattern violated: $currentlyActive doesn't match $configExpression" -ForegroundColor Red
+            Write-Host "Wildcard pattern violated: $currentlyActive doesn't match $configExpression" -ForegroundColor Red
         }
     }
 
@@ -175,7 +175,7 @@ Describe 'Complete Auto-Activation Idempotency Workflow' {
                 # Verificação
                 $needsActivation | Should -Be $case.ShouldActivate
 
-                $status = if ($needsActivation) { "🔄 ACTIVATE" } else { "✅ SKIP" }
+                $status = if ($needsActivation) { "ACTIVATE" } else { "SKIP" }
                 Write-Host "$status - $($case.Scenario): config=$($case.Config), active=$($case.Active)" -ForegroundColor $(if ($needsActivation) { 'Yellow' } else { 'Green' })
             }
         }

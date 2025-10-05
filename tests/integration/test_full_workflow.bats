@@ -124,7 +124,7 @@ echo "Mock '$binary' from '$TEST_VERSION'"' > "$TOOLCHAINS_DIR/$TEST_VERSION/bin
     (
         # 1. Check initial status
         result=$(llvm-status 2>&1)
-        [[ "$result" == *"❌ Status: INACTIVE"* ]]
+        [[ "$result" == *"Status: INACTIVE"* ]]
 
         # 2. List available versions
         result=$(llvm-list 2>&1)
@@ -230,7 +230,7 @@ EOF
     # Test deactivation without active version
     run llvm-deactivate
     [ "$status" -eq 0 ]
-    [[ "$output" == *"✅ LLVM environment successfully deactivated"* ]]
+    [[ "$output" == *"LLVM environment successfully deactivated"* ]]
 
     # Test VSCode activation outside workspace
     cd "$TEST_DIR"

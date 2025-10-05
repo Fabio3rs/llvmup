@@ -93,7 +93,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 fi
 
 if [ -z "$_ACTIVE_LLVM" ]; then
-    echo "✅ LLVM environment successfully deactivated"
+    echo "No LLVM version is currently active."
     return 0
 fi
 
@@ -231,7 +231,7 @@ teardown() {
 @test "llvm-deactivate function works without active version" {
     run llvm-deactivate
     [ "$status" -eq 0 ]
-    [[ "$output" == *"✅ LLVM environment successfully deactivated"* ]]
+    [[ "$output" == *"LLVM environment successfully deactivated"* ]]
 }
 
 @test "llvm-status function shows no active version initially" {
@@ -303,17 +303,17 @@ teardown() {
 
     run llvm-activate "$TEST_VERSION"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"❌ Error:"* ]]
+    [[ "$output" == *"Error:"* ]]
     [[ "$output" == *"not found"* ]]
 
     run llvm-deactivate
     [ "$status" -eq 1 ]
-    [[ "$output" == *"❌ Error:"* ]]
+    [[ "$output" == *"Error:"* ]]
     [[ "$output" == *"not found"* ]]
 
     run llvm-vscode-activate "$TEST_VERSION"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"❌ Error:"* ]]
+    [[ "$output" == *"Error:"* ]]
     [[ "$output" == *"not found"* ]]
 }
 
@@ -323,6 +323,6 @@ teardown() {
 
     run llvm-list
     [ "$status" -eq 0 ]
-    [[ "$output" == *"❌ No LLVM toolchains found"* ]]
+    [[ "$output" == *"No LLVM toolchains found"* ]]
     [[ "$output" == *"llvmup"* ]]
 }
