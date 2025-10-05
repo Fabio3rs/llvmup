@@ -1,202 +1,166 @@
-# 📋 CHANGELOG
+# CHANGELOG
 
 All notable changes to LLVMUP will be documented in this file.
 
-## [4.0.0] - 2024-12-06
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-### 🚀 Major Feature: Comprehensive Version Expression System
+## [Unreleased]
 
-#### 🎯 Intelligent Version Selection
-- **NEW**: Smart selectors (`latest`, `oldest`, `newest`, `earliest`) for automatic version selection
-- **NEW**: Type filters (`prebuilt`, `source`, `latest-prebuilt`, `latest-source`) for targeted selection
-- **NEW**: Version ranges (`>=18.0.0`, `<=19.1.0`, `~19.1`, `18.*`) for flexible version matching
-- **NEW**: Specific version support with intelligent parsing (`llvmorg-18.1.8`, `source-llvmorg-20.1.0`)
+### Added
 
-#### 🔄 Enhanced Auto-Activation System
-- **NEW**: Expression-based auto-activation in `.llvmup-config` files
-- **NEW**: Project-specific intelligent version selection using comprehensive expressions
-- **NEW**: Smart fallback logic when exact versions aren't available
-- **NEW**: Integration with existing configuration system
+#### Version Expression System
+- Smart selectors: `latest`, `oldest`, `newest`, `earliest` for automatic version selection
+- Type filters: `prebuilt`, `source`, `latest-prebuilt`, `latest-source` for targeted selection
+- Version ranges: `>=18.0.0`, `<=19.1.0`, `~19.1`, `18.*` for flexible version matching
+- Specific version support with intelligent parsing (`llvmorg-18.1.8`, `source-llvmorg-20.1.0`)
+- Expression-based auto-activation in `.llvmup-config` files
+- Project-specific intelligent version selection using comprehensive expressions
+- Smart fallback logic when exact versions aren't available
+- Core functions: `llvm-parse-version-expression`, `llvm-match-versions`, `llvm-version-matches-range`
+- 46 specialized tests for expression system functionality
 
-#### 🎛️ Advanced Logging Controls
-- **NEW**: `EXPRESSION_VERBOSE=1` for expression processing details
-- **NEW**: `EXPRESSION_DEBUG=1` for full debug output and troubleshooting
-- **NEW**: Enhanced `QUIET_MODE=1` for clean script output
-- **IMPROVED**: Granular control over expression system verbosity
+#### Auto-Completion System
+- Remote version fetching from GitHub API
+- Intelligent 24-hour caching system with 99% speed improvement
+- Context-aware completion differentiating prebuilt vs source versions
+- Smart filtering based on input context
+- Performance optimization with minimal API calls
+- Fallback to local versions when remote unavailable
+- JSON-based cache with metadata (timestamp, source)
+- Automatic cache expiry (24 hours)
+- Cache validation and refresh mechanisms
 
-#### 🧪 Comprehensive Testing
-- **NEW**: 46 specialized tests for expression system functionality
-- **NEW**: Complete coverage of parsing, matching, ranges, and integration
-- **NEW**: Edge case testing and error handling validation
-- **NEW**: Verbosity control testing and output validation
-- **IMPROVED**: Total test count increased to 90+ comprehensive tests
+#### Build System
+- LIBC_WNO_ERROR flag control with `--disable-libc-wno-error` option
+- Configuration file support for LIBC_WNO_ERROR control
+- CMake reconfiguration with `--reconfigure` flag
+- Build profiles: minimal, full, custom
+- Component selection for targeted installations
+- Custom installation naming for build variants
+- Default version management with `--default` flag
+- Better CMake flag management and visibility
 
-#### 🔧 Core Expression Functions
-- **NEW**: `llvm-parse-version-expression <expr>` - Parse and validate expressions
-- **NEW**: `llvm-match-versions <expression>` - Find versions matching expression
-- **NEW**: `llvm-version-matches-range <version> <range>` - Check range compatibility
-- **NEW**: `llvm-autoactivate-enhanced` - Expression-based auto-activation
+#### Configuration System
+- Project-specific `.llvmup-config` files (INI format with array support)
+- Auto-activation support
+- CMake presets: Debug, Release, RelWithDebInfo, MinSizeRel
+- Auto version detection during config init
+- Variable trimming and whitespace handling
+- Subcommands: `llvmup config init`, `load`, `apply`, `activate`
 
-#### 📖 Documentation Updates
-- **NEW**: Comprehensive expression documentation in `docs/VERSION_FUNCTIONS.md`
-- **UPDATED**: `docs/FEATURE_SUMMARY.md` with expression system details
-- **UPDATED**: Main `README.md` with expression examples and workflows
-- **NEW**: Practical usage examples and common scenarios
-- **NEW**: Performance metrics and testing results
+#### Logging and Verbosity
+- `LLVM_VERBOSE=1` for general verbose output
+- `EXPRESSION_VERBOSE=1` for expression processing details
+- `EXPRESSION_DEBUG=1` for full debug output and troubleshooting
+- `QUIET_MODE=1` for clean script output
+- `QUIET_SUCCESS=1` for minimal success messages
+- Specialized log functions: `log_error`, `log_warn`, `log_success`, `log_info`, `log_debug`, `log_config`
+- User-toggleable verbose functions: `llvm-verbose-on/off`, `llvm-expression-verbose-on/off`
 
-### 🐛 Bug Fixes
-- **FIXED**: Tilde range (`~19.1`) parsing using `sed` instead of bash parameter expansion
-- **FIXED**: Source version specific matching with enhanced regex support (`source-llvmorg-`)
-- **FIXED**: Expression parsing edge cases and error handling
+#### Testing
+- 90+ comprehensive automated tests (BATS + Pester)
+- Unit tests for core functionality validation
+- Integration tests for end-to-end workflow testing
+- Performance validation tests
+- Cache system testing
+- Remote API integration tests
+- Context-aware completion tests
+- Version expression tests (46 tests)
+- Cross-platform test coverage (Linux + Windows PowerShell)
 
-### 🔧 Technical Improvements
-- **IMPROVED**: Version expression parsing with robust regex patterns
-- **IMPROVED**: Range matching logic with proper semantic versioning
-- **IMPROVED**: Error messages and debugging output
-- **IMPROVED**: Integration with existing LLVM version management functions
+#### Documentation
+- Comprehensive `docs/` directory with organized documentation
+- `examples/` directory with interactive demos and test scripts
+- README files for both `docs/` and `examples/` directories
+- `docs/INSTALL.md` - Detailed installation guide
+- `docs/FEATURE_SUMMARY.md` - Complete feature list
+- `docs/BUILD_EXAMPLE.md` - Build system examples
+- `docs/VERSION_FUNCTIONS.md` - Version management functions
+- `docs/COMPLETION_UX_REPORT.md` - Auto-completion system
+- `docs/CUSTOM_DIRECTORIES.md` - Custom directory configuration
+- `docs/commit-sha-support.md` - Git commit SHA support
+- `CLAUDE.md` - AI assistant guidance for working with codebase
 
-## [2.0.0] - 2024-12-19
-
-### 🚀 Major Enhancements
-
-#### Enhanced Auto-Completion System
-- **NEW**: Remote version fetching from GitHub API
-- **NEW**: Intelligent 24-hour caching system with 99% speed improvement
-- **NEW**: Context-aware completion differentiating prebuilt (⚡) vs source (📦)
-- **NEW**: Smart filtering based on input context
-- **IMPROVED**: Performance optimization with minimal API calls
-- **IMPROVED**: Fallback to local versions when remote unavailable
-
-#### Build System Improvements
-- **NEW**: LIBC_WNO_ERROR flag control with `--disable-libc-wno-error` option
-- **NEW**: Configuration file support for LIBC_WNO_ERROR control
-- **IMPROVED**: Better CMake flag management and visibility
-- **IMPROVED**: Enhanced verbose logging for build configuration
-
-#### Project Organization
-- **NEW**: Comprehensive `docs/` directory with organized documentation
-- **NEW**: `examples/` directory with interactive demos and test scripts
-- **NEW**: README files for both `docs/` and `examples/` directories
-- **MOVED**: All documentation files to `docs/` directory
-- **MOVED**: All demo and test scripts to `examples/` directory
-- **MOVED**: Configuration examples to `examples/` directory
-
-#### Testing & Quality Assurance
-- **NEW**: 24 comprehensive automated tests (unit + integration)
-- **NEW**: Performance validation tests
-- **NEW**: Cache system testing
-- **NEW**: Remote API integration tests
-- **NEW**: Context-aware completion tests
-
-### 🔧 Technical Improvements
-
-#### Caching System
-- **NEW**: JSON-based cache with metadata (timestamp, source)
-- **NEW**: Automatic cache expiry (24 hours)
-- **NEW**: Cache validation and refresh mechanisms
-- **NEW**: Performance monitoring and metrics
-
-#### Code Quality
-- **IMPROVED**: Better error handling and user feedback
-- **IMPROVED**: Modular code structure with reusable functions
-- **IMPROVED**: Comprehensive logging and debugging options
-- **IMPROVED**: Cross-platform compatibility
-
-### 📚 Documentation
-
-#### New Documentation Files
-- `docs/README.md` - Documentation navigation guide
-- `examples/README.md` - Examples and demos guide
-- `CHANGELOG.md` - This changelog file
-
-#### Updated Documentation
-- Enhanced main README with new features and organization
-- Updated installation guides with latest features
-- Improved feature summaries with performance metrics
-- Better code examples and usage patterns
-
-### 🧪 Testing
-
-#### Test Coverage
-- **Unit Tests**: Core functionality validation
-- **Integration Tests**: End-to-end workflow testing
-- **Performance Tests**: Speed and efficiency benchmarks
-- **API Tests**: Remote GitHub API integration
-- **Cache Tests**: Intelligent caching system validation
-
-#### Test Organization
-- Comprehensive test suite in `tests/` directory
-- Both BATS (Bash Automated Testing System) and shell script tests
-- Integration with CI/CD workflows
-- Performance regression testing
-
-### 🛠️ Developer Experience
-
-#### Examples & Demos
-- Interactive completion demonstration scripts
-- Real activation testing in isolated environments
-- Compatibility and system requirement validation
-- Configuration file examples and templates
-
-#### Development Tools
-- Enhanced development setup scripts
-- Better debugging and logging capabilities
-- Comprehensive error reporting
-- Performance profiling tools
-
-## [1.0.0] - 2024-12-01
-
-### Initial Release
+#### Windows PowerShell Support
+- Full feature parity with Linux/Bash implementation
+- PowerShell modules: `Llvm-Functions.psm1`, `Llvm-Functions-Core.psm1`, `Llvm-Completion.psm1`
+- Scripts: `Install-Llvm.ps1`, `Download-Llvm.ps1`, `Activate-Llvm.ps1`, `Deactivate-Llvm.ps1`
+- Configuration management via `Llvm-Config.ps1`
+- Default version management via `Llvm-Default.ps1`
+- PowerShell tab completion
+- Pester test framework integration
 
 #### Core Features
 - LLVM version management (install, activate, deactivate)
-- Pre-built and source installation support
-- VSCode integration
-- Basic auto-completion
-- Windows PowerShell support
-- Project-specific configuration
-- Build customization options
+- Pre-built LLVM version installation from GitHub releases
+- Build from source with native optimizations
+- Version switching between installed versions
+- VSCode integration via `llvm-vscode-activate`
+- Status display with `llvm-status`
+- Version listing with `llvm-list`
+- Default version management with symlinks/junctions
+- Custom installation directories support
+- Environment variable management (PATH, CC, CXX, LD, PS1)
 
-#### Supported Platforms
-- Linux (bash)
-- Windows (PowerShell)
+#### Security
+- Download verification via SHA256 checksums
+- GPG signature verification support
+- JSONL attestation support
+- `LLVMUP_SKIP_VERIFY=1` to skip verification
+- `LLVMUP_REQUIRE_VERIFY=1` to require verification
 
-#### Basic Functionality
-- Version switching
-- Environment management
-- Profile integration
-- Default version management
+### Changed
+- Removed all emoji usage from user-facing messages and tests
+- Simplified log messages for better scriptability
+- Improved error messages and debugging output
+- Better cross-platform compatibility
+- Modular code structure with reusable functions
 
----
-
-## 🔮 Upcoming Features
-
-### Planned for v2.1.0
-- [ ] Enhanced Windows PowerShell completion
-- [ ] Configuration file validation
-- [ ] Performance monitoring dashboard
-- [ ] Plugin system for extensions
-
-### Planned for v2.2.0
-- [ ] GUI interface (optional)
-- [ ] Docker integration
-- [ ] Multi-platform binary distribution
-- [ ] Advanced build optimization
-- [ ] Integration with more IDEs
+### Fixed
+- Tilde range (`~19.1`) parsing using `sed` instead of bash parameter expansion
+- Source version specific matching with enhanced regex support (`source-llvmorg-`)
+- Expression parsing edge cases and error handling
+- Timeout handling in llvm-prebuilt
+- Duplicate log function overrides
 
 ---
 
-## 📝 Version Numbering
+## Development Status
+
+This project is currently in **active development** and has not had an official versioned release yet. All features are in the `Unreleased` section above.
+
+When the project reaches a stable state, the first official release will be tagged as `v1.0.0`.
+
+### Planned for v1.0.0 Release
+- [ ] Comprehensive documentation review
+- [ ] Full test coverage verification
+- [ ] Performance benchmarking
+- [ ] Installation script hardening
+- [ ] Windows installer improvements
+
+### Future Considerations
+- Enhanced Windows PowerShell completion
+- Configuration file validation
+- Plugin system for extensions
+- GUI interface (optional)
+- Docker integration
+- Multi-platform binary distribution
+- Integration with more IDEs
+
+---
+
+## Version Numbering
 
 This project follows [Semantic Versioning](https://semver.org/):
 - **MAJOR**: Incompatible API changes
 - **MINOR**: New functionality (backward compatible)
 - **PATCH**: Bug fixes (backward compatible)
 
-## 🤝 Contributing
+## Contributing
 
 See our [Contributing Guidelines](CONTRIBUTING.md) for information on how to contribute to this project.
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

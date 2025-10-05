@@ -2,8 +2,7 @@
 
 An LLVM version manager inspired by tools like **rustup**, **Python venv**, and **Node Version Manager (nvm)**. LLVMUP allows you to download, install, compile from source, and switch between different LLVM versions.
 
-**WARNING:**
-This is experimental software and may contain bugs. Use at your own risk. Contributions and bug reports are welcome!
+**Development Status:** This project is in active development and has not reached v1.0 yet. While functional, features and APIs may change. Contributions and bug reports are welcome!
 
 ## Key Features
 
@@ -29,7 +28,7 @@ This is experimental software and may contain bugs. Use at your own risk. Contri
 - **Version parsing** supporting multiple LLVM version formats
 - **Version expressions** with selectors, ranges, and auto-activation
 
-## Latest Features (v4.0) - Version Expression System
+## Latest Features - Version Expression System
 
 ### Version Selection
 - **Selectors**: `latest`, `oldest`, `newest`, `earliest` for automatic version selection
@@ -47,9 +46,9 @@ This is experimental software and may contain bugs. Use at your own risk. Contri
 - **EXPRESSION_DEBUG**: Debug output for troubleshooting
 - **QUIET_MODE**: Minimal output for scripts and automation
 
-## Previous Features (v3.0)
+## Build & Configuration Features
 
-### Build & Configuration System
+### Build System
 - **LIBC_WNO_ERROR Control**: Control over compatibility flags with `--disable-libc-wno-error`
 - **CMake Reconfiguration**: Force clean rebuilds with `--reconfigure`
 - **Config Functions**: Separate load, apply, and activate workflows
@@ -57,27 +56,11 @@ This is experimental software and may contain bugs. Use at your own risk. Contri
 - **Auto Version Detection**: Automatic detection of installed versions during config init
 - **Variable Trimming**: Config parsing with whitespace handling
 
-### User Experience
-- **Logging**: Verbose/quiet mode controls with specialized log functions
-- **Error Handling**: Clear error messages and recovery suggestions
-
-### Windows PowerShell Support
-- **Install-Llvm.ps1**: PowerShell script with most bash features
-- **Config Management**: Config support with load/apply/activate
-- **Reconfiguration**: `-Reconfigure` parameter for clean rebuilds
-
-## Previous Features (v2.0)
-
-### Auto-Completion System
+## Auto-Completion Features
 - **Remote Version Fetching**: Fetches LLVM versions from GitHub API
 - **Caching**: 24-hour cache system
 - **Context-Aware**: Differentiates between prebuilt and source installations
 - **Filtering**: Filters suggestions based on current input
-
-### Project Structure
-- **Documentation**: Organized in `docs/` directory
-- **Examples**: Demo scripts in `examples/` directory
-- **Testing**: Test suite with unit and integration tests
 
 ## Quick Start
 
@@ -887,19 +870,19 @@ llvmup/
 
 ## Project Status
 
-**v4.0 - Version Expression System**
-- **Version Expressions**: Selectors, ranges, and auto-activation
-- **Expression Tests**: 46 tests covering expression functionality
-- **Cross-platform**: Linux + Windows PowerShell
-- **Logging**: Verbosity controls
-- **LIBC_WNO_ERROR**: Flag control system
-- **CMake reconfiguration**: Force clean rebuilds
-- **Test coverage**: 90+ tests (all passing)
-- **Documentation**: Documentation in `docs/` folder
+**Current Development Features:**
+- Version Expression System with selectors, ranges, and auto-activation
+- 90+ comprehensive automated tests (BATS + Pester)
+- Cross-platform support (Linux Bash + Windows PowerShell)
+- Advanced build customization and configuration management
+- Remote version fetching with intelligent caching
+- Comprehensive documentation in `docs/` folder
 
-**New in v4.0**: Version expression system supports auto-activation with expressions like `latest-prebuilt`, `>=18.0.0`, `~19.1` for project-specific version management.
+**In Development:**
+- Working towards v1.0.0 stable release
+- See [CHANGELOG.md](CHANGELOG.md) for complete feature list and development status
 
-**Note**: This is experimental software. Features may change or contain bugs.
+**Note**: This is experimental software in active development. Features and APIs may change.
 
 ---
 
