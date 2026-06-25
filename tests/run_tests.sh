@@ -86,6 +86,7 @@ test_files=(
     "tests/unit/test_llvmup.bats"
     "tests/unit/test_version_expressions.bats"
     "tests/unit/test_completion_enhanced.bats"
+    "tests/unit/test_zsh_completion.bats"
     "tests/unit/test_enhanced_config.bats"
     "tests/unit/test_install_customization.bats"
     "tests/unit/test_libc_wno_error_flag.bats"

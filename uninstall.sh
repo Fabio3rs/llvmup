@@ -10,6 +10,7 @@
 #   LLVMUP_INSTALL_DIR  : Directory where scripts were installed
 #   LLVMUP_COMPLETION_DIR: Directory where bash completion was installed
 #   LLVMUP_SYSTEM_INSTALL: Set to 1 if original installation was system-wide
+#   LLVMUP_ZSH_COMPLETION_DIR: Directory where zsh completion was installed
 
 set -e
 
@@ -43,11 +44,13 @@ fi
 PREFIX="${LLVMUP_PREFIX:-$DEFAULT_PREFIX}"
 INSTALL_DIR="${LLVMUP_INSTALL_DIR:-$PREFIX/bin}"
 COMPLETION_DIR="${LLVMUP_COMPLETION_DIR:-$PREFIX/share/bash-completion/completions}"
+ZSH_COMPLETION_DIR="${LLVMUP_ZSH_COMPLETION_DIR:-$PREFIX/share/zsh/site-functions}"
 FUNCTIONS_FILE="$INSTALL_DIR/llvm-functions.sh"
 
 print_info "Uninstallation Configuration:"
 print_info "  Install Directory: $INSTALL_DIR"
 print_info "  Completion Directory: $COMPLETION_DIR"
+print_info "  Zsh Completion Directory: $ZSH_COMPLETION_DIR"
 print_info "  Functions File: $FUNCTIONS_FILE"
 print_info "  System Uninstall: $($REQUIRES_SUDO && echo "Yes (requires sudo)" || echo "No")"
 
@@ -73,6 +76,7 @@ scripts=(
     "llvm-build"
     "llvmup"
     "llvm-functions.sh"
+    "llvmup-completion-common.sh"
 )
 
 for script in "${scripts[@]}"; do
@@ -92,6 +96,14 @@ if [ -f "$completion_path" ]; then
     print_success "Removed bash completion: $completion_path"
 else
     print_warning "Bash completion not found: $completion_path"
+fi
+
+zsh_completion_path="$ZSH_COMPLETION_DIR/_llvmup"
+if [ -f "$zsh_completion_path" ]; then
+    $SUDO_CMD rm "$zsh_completion_path"
+    print_success "Removed zsh completion: $zsh_completion_path"
+else
+    print_warning "Zsh completion not found: $zsh_completion_path"
 fi
 
 # Function to safely remove LLVM configuration from profile
@@ -150,14 +162,20 @@ safe_remove_from_profile() {
         print_info "No LLVM configuration found in $profile_file"
     fi
 
+    if grep -q "# LLVMUP Zsh Completion - Start" "$profile_file"; then
+        sed -i '/# LLVMUP Zsh Completion - Start/,/# LLVMUP Zsh Completion - End/d' "$profile_file"
+        print_info "Removed LLVMUP zsh completion markers from $profile_file"
+    fi
+
     print_info "Backup created at $profile_file.llvmup-backup"
 }
 
 # Remove from profile files (only for user installations)
-if [ "$REQUIRES_SUDO" = false ]; then
+    if [ "$REQUIRES_SUDO" = false ]; then
     print_info "Cleaning shell profile configuration..."
     safe_remove_from_profile "$HOME/.bashrc" || true
     safe_remove_from_profile "$HOME/.profile" || true
+    safe_remove_from_profile "$HOME/.zshrc" || true
 else
     print_info "System-wide uninstallation - skipping user profile cleanup"
 fi

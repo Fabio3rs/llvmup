@@ -193,7 +193,94 @@ function Invoke-LlvmVersionMatchesRange {
         }
     }
 
+    # Handle standard comparison operators (>=, <=, >, <, =)
+    if ($parsed.kind -eq 'range' -and $parsed.range.op -ne '~') {
+        $op = $parsed.range.op
+        $targetVersion = $parsed.range.version
+
+        $candidateNorm = Normalize-LlvmSemver $candidateObj.Version
+        $targetNorm = Normalize-LlvmSemver $targetVersion
+
+        try {
+            $candidateSystem = [System.Version]$candidateNorm
+            $targetSystem = [System.Version]$targetNorm
+
+            switch ($op) {
+                '>=' { return $candidateSystem -ge $targetSystem }
+                '<=' { return $candidateSystem -le $targetSystem }
+                '>'  { return $candidateSystem -gt $targetSystem }
+                '<'  { return $candidateSystem -lt $targetSystem }
+                '='  { return $candidateSystem -eq $targetSystem }
+            }
+        } catch {
+            $cmp = Compare-LlvmVersion $candidateObj.Full $targetVersion
+            switch ($op) {
+                '>=' { return $cmp -ge 0 }
+                '<=' { return $cmp -le 0 }
+                '>'  { return $cmp -gt 0 }
+                '<'  { return $cmp -lt 0 }
+                '='  { return $cmp -eq 0 }
+            }
+        }
+    }
+
     return $false
+}
+
+# Internal helper: parse .llvmup-config and return expression + auto_activate flag
+function Get-LlvmAutoActivateConfig {
+    [CmdletBinding()]
+    param([string]$StartDirectory = (Get-Location).Path)
+
+    $configPath = Join-Path $StartDirectory '.llvmup-config'
+    if (-not (Test-Path $configPath)) {
+        return @{ Expression = $null; AutoActivate = $true; Path = $configPath }
+    }
+
+    $expression = $null
+    $autoActivate = $true
+    $currentSection = ''
+
+    Get-Content $configPath | ForEach-Object {
+        $line = $_.Trim()
+        if (-not $line -or $line -match '^[#;]') { return }
+
+        if ($line -match '^\[(.+)\]$') {
+            $currentSection = $matches[1].ToLower()
+            return
+        }
+
+        if ($line -notmatch '=') { return }
+
+        $parts = $line -split '=', 2
+        if ($parts.Count -lt 2) { return }
+        $key = $parts[0].Trim().ToLower()
+        $value = $parts[1].Trim()
+
+        # Remove surrounding backticks/backslashes and quotes
+        $value = $value.Trim().TrimStart('`','\').TrimEnd('`','\')
+        if (($value.StartsWith('"') -and $value.EndsWith('"')) -or ($value.StartsWith("'") -and $value.EndsWith("'"))) {
+            $value = $value.Substring(1, $value.Length - 2)
+        }
+        # Be forgiving of trailing path separators that can sneak in from escaping
+        $value = $value.TrimEnd('\','/')
+
+        switch ($currentSection) {
+            'version' {
+                if ($key -eq 'default') { $expression = $value }
+            }
+            'project' {
+                if ($key -eq 'auto_activate') {
+                    $autoActivate = $value.ToLower() -ne 'false'
+                }
+            }
+            default {
+                if ($key -eq 'default') { $expression = $value }
+            }
+        }
+    }
+
+    return @{ Expression = $expression; AutoActivate = $autoActivate; Path = $configPath }
 }
 
 function Get-LlvmVersionsSimple {
@@ -364,7 +451,23 @@ function Invoke-LlvmMatchVersions {
                     $res += $v
                 }
             }
-            return $res
+            # For '=' ranges, prefer prebuilt over source when both share same version number
+            if ($parsed.range.op -eq '=') {
+                $grouped = $res | Group-Object {
+                    $obj = ConvertFrom-LlvmVersion $_
+                    if ($obj) { $obj.Version } else { $_ }
+                }
+                $res = @()
+                foreach ($g in $grouped) {
+                    $prebuilt = @($g.Group | Where-Object { $_ -notmatch '^source-' })
+                    if ($prebuilt.Count -gt 0) {
+                        $res += $prebuilt[0]
+                    } else {
+                        $res += @($g.Group)[0]
+                    }
+                }
+            }
+            return @($res)
         }
         default { return @() }
     }
@@ -374,37 +477,9 @@ function Invoke-LlvmAutoActivate {
     [CmdletBinding()]
     param([string]$StartDirectory = (Get-Location).Path)
 
-    $config = Join-Path $StartDirectory '.llvmup-config'
-    if (Test-Path $config) {
-        $lines = Get-Content $config
-        foreach ($line in $lines) {
-            $trim = $line.Trim()
-            if ($trim -like '[*]') { continue }
-            if ($trim -notlike '*=*') { continue }
-
-            # Split on first '=' and extract right-hand side
-            $parts = $trim -split '=', 2
-            if ($parts.Count -lt 2) { continue }
-            $value = $parts[1].Trim()
-
-            # Unescape common escape sequences (e.g. \" or `") produced by test fixtures
-                $value = $value -replace '\\"', '"' -replace "\\'", "'"
-
-            # Remove leading/trailing backticks or backslashes leftover
-            while ($value.Length -gt 0 -and ($value[0] -eq '`' -or $value[0] -eq '\\')) { $value = $value.Substring(1) }
-            while ($value.Length -gt 0 -and ($value[$value.Length-1] -eq '`' -or $value[$value.Length-1] -eq '\\')) { $value = $value.Substring(0, $value.Length-1) }
-
-            # Remove surrounding quotes (single or double)
-            if ($value.Length -ge 2) {
-                if (($value.StartsWith('"') -and $value.EndsWith('"')) -or ($value.StartsWith("'") -and $value.EndsWith("'"))) {
-                    $value = $value.Substring(1, $value.Length - 2)
-                }
-            }
-
-            if ($value) { return $value }
-        }
-    }
-    return $null
+    $config = Get-LlvmAutoActivateConfig -StartDirectory $StartDirectory
+    if (-not $config.AutoActivate) { return $null }
+    return $config.Expression
 }
 
 function Get-LlvmActiveVersion {
@@ -448,47 +523,44 @@ function Invoke-LlvmAutoActivateEnhanced {
         [string]$ToolchainsPath = $null
     )
 
-    # Get configuration from file or parameter
-    $versionExpr = $ConfigExpression
-    if (-not $versionExpr) {
-        $versionExpr = Invoke-LlvmAutoActivate -StartDirectory $StartDirectory
+    $config = if ($ConfigExpression) {
+        @{ Expression = $ConfigExpression; AutoActivate = $true }
+    } else {
+        Get-LlvmAutoActivateConfig -StartDirectory $StartDirectory
     }
 
-    if (-not $versionExpr) {
+    if (-not $config.Expression) {
         Write-Verbose "No version expression found in configuration"
-        return $null
-    }
-
-    Write-Verbose "Auto-activation with expression: '$versionExpr'"
-
-    # Check if already activated
-    $activeVersion = Get-LlvmActiveVersion
-    if ($activeVersion) {
-        Write-Verbose "LLVM already active: $activeVersion"
-
-        # Check if current version satisfies the expression
-        if (Test-LlvmVersionSatisfiesExpression -ActiveVersion $activeVersion -Expression $versionExpr -ToolchainsPath $ToolchainsPath) {
-            Write-Verbose "Current version $activeVersion satisfies expression '$versionExpr'"
-            return @{
-                Action = 'NoChange'
-                ActiveVersion = $activeVersion
-                Expression = $versionExpr
-                Reason = 'Current version satisfies expression'
-            }
-        } else {
-            Write-Verbose "Current version $activeVersion does not satisfy expression '$versionExpr'"
-            # In a real implementation, we would deactivate here
-            # For now, we'll just return the recommendation
-            return @{
-                Action = 'ShouldDeactivateAndReactivate'
-                ActiveVersion = $activeVersion
-                Expression = $versionExpr
-                Reason = 'Current version does not satisfy expression'
-            }
+        return @{
+            Action = 'SkippedNoConfig'
+            ActiveVersion = (Get-LlvmActiveVersion)
+            Expression = $null
+            Reason = 'No configuration expression present'
         }
     }
 
-    # Find matching versions
+    if (-not $config.AutoActivate) {
+        return @{
+            Action = 'SkippedAutoActivateDisabled'
+            ActiveVersion = (Get-LlvmActiveVersion)
+            Expression = $config.Expression
+            Reason = 'auto_activate is false'
+        }
+    }
+
+    $versionExpr = $config.Expression
+    Write-Verbose "Auto-activation with expression: '$versionExpr'"
+
+    $activeVersion = Get-LlvmActiveVersion
+    if ($activeVersion -and (Test-LlvmVersionSatisfiesExpression -ActiveVersion $activeVersion -Expression $versionExpr -ToolchainsPath $ToolchainsPath)) {
+        return @{
+            Action = 'NoChange'
+            ActiveVersion = $activeVersion
+            Expression = $versionExpr
+            Reason = 'Current version satisfies expression'
+        }
+    }
+
     try {
         $matched = Invoke-LlvmMatchVersions -Expression $versionExpr -ToolchainsPath $ToolchainsPath
 
@@ -502,10 +574,17 @@ function Invoke-LlvmAutoActivateEnhanced {
             }
         }
 
-        # Select the first (best) match
         $selectedVersion = $matched[0]
 
-        Write-Verbose "Auto-activating version: $selectedVersion (matched expression: $versionExpr)"
+        if ($activeVersion) {
+            return @{
+                Action = 'ShouldDeactivateAndReactivate'
+                ActiveVersion = $activeVersion
+                Expression = $versionExpr
+                Reason = 'Current version does not satisfy expression'
+                MatchedVersions = $matched
+            }
+        }
 
         return @{
             Action = 'ShouldActivate'
@@ -804,6 +883,7 @@ Export-ModuleMember -Function @(
     'Compare-LlvmVersion',
     'Invoke-LlvmParseVersionExpression',
     'Invoke-LlvmVersionMatchesRange',
+    'Get-LlvmAutoActivateConfig',
     'Get-LlvmVersionsSimple',
     'Invoke-LlvmMatchVersions',
     'Invoke-LlvmAutoActivate',

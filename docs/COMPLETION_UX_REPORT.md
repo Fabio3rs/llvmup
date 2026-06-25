@@ -2,11 +2,11 @@
 
 ## 📋 Overview
 
-O sistema de auto-completion do LLVMUP foi completamente redesenhado para fornecer uma experiência de usuário superior, com foco em:
+O sistema de auto-completion do LLVMUP foi redesenhado para fornecer uma experiência de usuário superior, com foco em:
 
 - **Inteligência contextual**: Completions diferentes para contextos específicos
 - **Performance otimizada**: Sistema de cache inteligente para versões remotas
-- **Diferenciação visual**: Indicadores claros para tipos de versão diferentes
+- **Diferenças por shell**: Bash usa ordenação e dicas; Zsh usa grupos nativos com descrições
 - **Busca remota automática**: Sempre mostra as versões mais recentes disponíveis
 
 ## 🚀 Funcionalidades Implementadas
@@ -26,16 +26,19 @@ LLVM_CACHE_EXPIRY_HOURS=24
 - 🔄 Atualização automática após expiração
 - 🌐 Sempre mostra versões mais recentes do GitHub
 
-### 2. **Diferenciação Source vs Prebuilt**
+### 2. **Expressões, Local vs Remoto e Contexto**
 
 #### Para instalação prebuilt (`llvmup install <TAB>`):
-- ⚡ **Versões remotas**: Marcadas com indicador de prebuilt
-- 🏠 **Versões locais**: Já instaladas localmente
-- 🔧 **Flags disponíveis**: Opções específicas para prebuilt
+- **Expressões**: `latest`, `latest-prebuilt`, `source`, `oldest`
+- **Templates**: `>=18.0.0`, `~19.1`, `18.*`
+- **Versões locais**: Já instaladas localmente
+- **Versões remotas**: Disponíveis para download
+- **Flags disponíveis**: Opções específicas da instalação
 
 #### Para build from source (`llvmup install --from-source <TAB>`):
-- 📦 **Versões remotas**: Marcadas com indicador de source
-- 🏠 **Versões locais**: Builds existentes
+- **Expressões**: Mesma linguagem suportada pelo sistema de versões
+- **Versões locais**: Builds existentes
+- **Versões remotas**: Tags disponíveis para reconstrução
 - ⚙️ **Flags específicas**: Opções de compilação e CMake
 
 ### 3. **Completion Contextual por Comando**
@@ -62,8 +65,17 @@ show       # Mostrar versão padrão atual
 
 #### Subcomando Config (`llvmup config <TAB>`):
 ```bash
+Sem `.llvmup-config`:
 init       # Inicializar .llvmup-config
+load       # Carregar depois de criar a configuração
+apply      # Instalar depois de criar a configuração
+activate   # Ativar depois de criar a configuração
+
+Com `.llvmup-config` presente:
 load       # Carregar configuração existente
+apply      # Instalar usando a configuração carregada
+activate   # Ativar uma instalação existente da configuração
+init       # Recriar ou atualizar a configuração
 ```
 
 ### 4. **Completion Avançado de Opções**
@@ -96,7 +108,16 @@ libcxx libcxxabi llvm-ar llvm-nm opt
 --cmake-flags --name --default --profile --component
 ```
 
-### 5. **Completion Aprimorado para Funções LLVM**
+### 5. **Bash e Zsh**
+
+- **Bash**: usa sugestões simples com dicas contextuais em stderr
+- **Zsh**: usa completion nativo com grupos separados para:
+  - expressões
+  - versões instaladas localmente
+  - versões disponíveis remotamente
+  - ações de config e flags
+
+### 6. **Completion Aprimorado para Funções LLVM**
 
 #### Ativação (`llvm-activate <TAB>`):
 - 📦 **Versões instaladas** com indicadores visuais
@@ -108,7 +129,7 @@ libcxx libcxxabi llvm-ar llvm-nm opt
 - Mesmo sistema de completion do `llvm-activate`
 - Específico para integração com VSCode
 
-### 6. **Sistema de Cache Otimizado**
+### 7. **Sistema de Cache Otimizado**
 
 ```bash
 # Verificação inteligente de cache

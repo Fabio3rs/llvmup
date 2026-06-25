@@ -1,0 +1,200 @@
+#compdef llvmup llvm-activate llvm-vscode-activate
+
+emulate -L zsh
+setopt extendedglob
+
+_llvmup__resolve_helper() {
+    local current_file helper_path llvm_path
+    current_file="${${(%):-%N}:A}"
+
+    for helper_path in \
+        "${current_file:h}/llvmup-completion-common.sh" \
+        "${LLVMUP_INSTALL_DIR:-}/llvmup-completion-common.sh"
+    do
+        if [[ -n "$helper_path" && -f "$helper_path" ]]; then
+            echo "$helper_path"
+            return 0
+        fi
+    done
+
+    llvm_path="$(command -v llvmup 2>/dev/null)"
+    if [[ -n "$llvm_path" && -f "${llvm_path:h}/llvmup-completion-common.sh" ]]; then
+        echo "${llvm_path:h}/llvmup-completion-common.sh"
+        return 0
+    fi
+
+    return 1
+}
+
+typeset -g _LLVMUP_ZSH_COMMON_HELPER
+_LLVMUP_ZSH_COMMON_HELPER="$(_llvmup__resolve_helper)"
+if [[ -n "$_LLVMUP_ZSH_COMMON_HELPER" ]]; then
+    source "$_LLVMUP_ZSH_COMMON_HELPER"
+fi
+
+_llvmup_zsh_collect_specs() {
+    local generator="$1"
+    local line value group desc
+    local -a expressions locals remotes configs commands flags profiles components cmake templates
+
+    while IFS=$'\t' read -r value group desc; do
+        [[ -z "$value" ]] && continue
+        case "$group" in
+            expression) expressions+=("${value}:${desc}") ;;
+            local) locals+=("${value}:${desc}") ;;
+            remote) remotes+=("${value}:${desc}") ;;
+            config) configs+=("${value}:${desc}") ;;
+            command) commands+=("${value}:${desc}") ;;
+            flag) flags+=("${value}:${desc}") ;;
+            profile) profiles+=("${value}:${desc}") ;;
+            component) components+=("${value}:${desc}") ;;
+            cmake) cmake+=("${value}:${desc}") ;;
+            template) templates+=("${value}:${desc}") ;;
+        esac
+    done < <("$generator")
+
+    typeset -g -a _LLVMUP_ZSH_EXPRESSIONS _LLVMUP_ZSH_LOCALS _LLVMUP_ZSH_REMOTES _LLVMUP_ZSH_CONFIGS \
+        _LLVMUP_ZSH_COMMANDS _LLVMUP_ZSH_FLAGS _LLVMUP_ZSH_PROFILES _LLVMUP_ZSH_COMPONENTS \
+        _LLVMUP_ZSH_CMAKE _LLVMUP_ZSH_TEMPLATES
+    _LLVMUP_ZSH_EXPRESSIONS=("${expressions[@]}")
+    _LLVMUP_ZSH_LOCALS=("${locals[@]}")
+    _LLVMUP_ZSH_REMOTES=("${remotes[@]}")
+    _LLVMUP_ZSH_CONFIGS=("${configs[@]}")
+    _LLVMUP_ZSH_COMMANDS=("${commands[@]}")
+    _LLVMUP_ZSH_FLAGS=("${flags[@]}")
+    _LLVMUP_ZSH_PROFILES=("${profiles[@]}")
+    _LLVMUP_ZSH_COMPONENTS=("${components[@]}")
+    _LLVMUP_ZSH_CMAKE=("${cmake[@]}")
+    _LLVMUP_ZSH_TEMPLATES=("${templates[@]}")
+}
+
+_llvmup_zsh_complete_local_versions() {
+    _llvmup_zsh_collect_specs _llvmup_get_activation_version_items
+    _describe -t llvmup-local-versions 'Installed locally' _LLVMUP_ZSH_LOCALS
+}
+
+_llvmup_zsh_complete_config_actions() {
+    _llvmup_zsh_collect_specs _llvmup_get_config_action_items
+    _describe -t llvmup-config-actions 'Config actions' _LLVMUP_ZSH_CONFIGS
+}
+
+_llvmup_zsh_complete_install_targets() {
+    _llvmup_zsh_collect_specs _llvmup_get_install_target_items
+    [[ ${#_LLVMUP_ZSH_EXPRESSIONS[@]} -gt 0 ]] && _describe -t llvmup-expressions 'Expressions' _LLVMUP_ZSH_EXPRESSIONS
+    [[ ${#_LLVMUP_ZSH_TEMPLATES[@]} -gt 0 ]] && _describe -t llvmup-templates 'Range and wildcard templates' _LLVMUP_ZSH_TEMPLATES
+    [[ ${#_LLVMUP_ZSH_LOCALS[@]} -gt 0 ]] && _describe -t llvmup-local-versions 'Installed locally' _LLVMUP_ZSH_LOCALS
+    [[ ${#_LLVMUP_ZSH_REMOTES[@]} -gt 0 ]] && _describe -t llvmup-remote-versions 'Available remotely' _LLVMUP_ZSH_REMOTES
+}
+
+_llvmup_zsh_complete_install_flags() {
+    _llvmup_zsh_collect_specs _llvmup_get_install_flag_items
+    _describe -t llvmup-flags 'Flags' _LLVMUP_ZSH_FLAGS
+}
+
+_llvmup_zsh_complete_main_commands() {
+    _llvmup_zsh_collect_specs _llvmup_get_main_command_items
+    _describe -t llvmup-commands 'Commands' _LLVMUP_ZSH_COMMANDS
+}
+
+_llvmup_zsh_complete_profiles() {
+    _llvmup_zsh_collect_specs _llvmup_get_profile_items
+    _describe -t llvmup-profiles 'Build profiles' _LLVMUP_ZSH_PROFILES
+}
+
+_llvmup_zsh_complete_components() {
+    _llvmup_zsh_collect_specs _llvmup_get_component_items
+    _describe -t llvmup-components 'Components' _LLVMUP_ZSH_COMPONENTS
+}
+
+_llvmup_zsh_complete_cmake_flags() {
+    _llvmup_zsh_collect_specs _llvmup_get_cmake_flag_items
+    _describe -t llvmup-cmake 'CMake flags' _LLVMUP_ZSH_CMAKE
+}
+
+_llvmup() {
+    emulate -L zsh
+
+    if [[ "$service" == "llvm-activate" || "$service" == "llvm-vscode-activate" ]]; then
+        _llvmup_zsh_complete_local_versions
+        return 0
+    fi
+
+    local command="${words[2]:-}"
+    local prev="${words[CURRENT-1]:-}"
+    local cur="${words[CURRENT]:-}"
+    local has_target=0
+    local arg
+
+    if (( CURRENT == 2 )); then
+        _llvmup_zsh_complete_main_commands
+        return 0
+    fi
+
+    if [[ "$command" == "" || "$command" == -* || "$command" == <->* || "$command" == llvmorg-* ]]; then
+        command="install"
+    fi
+
+    case "$command" in
+        default)
+            if (( CURRENT == 3 )); then
+                compadd -- set show
+                return 0
+            fi
+            if [[ "$prev" == "set" ]]; then
+                _llvmup_zsh_complete_local_versions
+            fi
+            ;;
+        config)
+            if (( CURRENT == 3 )); then
+                _llvmup_zsh_complete_config_actions
+            fi
+            ;;
+        help)
+            return 0
+            ;;
+        install)
+            case "$prev" in
+                -p|--profile)
+                    _llvmup_zsh_complete_profiles
+                    return 0
+                    ;;
+                --component)
+                    _llvmup_zsh_complete_components
+                    return 0
+                    ;;
+                -c|--cmake-flags)
+                    _llvmup_zsh_complete_cmake_flags
+                    return 0
+                    ;;
+                -n|--name)
+                    return 0
+                    ;;
+            esac
+
+            if [[ "$cur" == -* ]]; then
+                _llvmup_zsh_complete_install_flags
+                return 0
+            fi
+
+            for arg in "${words[@]:3}"; do
+                case "$arg" in
+                    ""|--from-source|--verbose|--quiet|--default|--reconfigure|--disable-libc-wno-error|help)
+                        ;;
+                    -c|--cmake-flags|-n|--name|-p|--profile|--component)
+                        ;;
+                    -*)
+                        ;;
+                    *)
+                        has_target=1
+                        ;;
+                esac
+            done
+
+            if (( has_target == 0 )); then
+                _llvmup_zsh_complete_install_targets
+            fi
+            ;;
+    esac
+}
+
+compdef _llvmup llvmup llvm-activate llvm-vscode-activate

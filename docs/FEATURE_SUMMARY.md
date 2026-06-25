@@ -24,8 +24,8 @@
 ### ⚙️ **Configuration Management**
 - ✅ **Configuration files**: `.llvmup-config` (INI format)
 - ✅ **Array support**: cmake_flags and components as arrays
-- ✅ **Subcommands**: `llvmup config init` and `llvmup config load`
-- ✅ **Functions**: `llvm-config-init` and `llvm-config-load`
+- ✅ **Subcommands**: `llvmup config init`, `load`, `apply` and `activate`
+- ✅ **Functions**: `llvm-config-init`, `llvm-config-load`, `llvm-config-apply` and `llvm-config-activate`
 - ✅ **Override system**: CLI options override config file
 
 ### 🎯 **Default Version System**
@@ -60,6 +60,8 @@
 - ✅ **Command completion**: All subcommands and options
 - ✅ **Function completion**: All LLVM functions
 - ✅ **Bash completion**: Full system integration
+- ✅ **Zsh completion**: Native grouped suggestions
+- ✅ **Expression completion**: `latest`, `prebuilt`, ranges and wildcards
 
 ### 🧪 **Testing & Quality**
 - ✅ **Test mode**: `LLVM_TEST_MODE=1` for automation
@@ -91,7 +93,9 @@
 # All of these work perfectly:
 llvmup install --from-source --profile minimal --cmake-flags "-DCMAKE_BUILD_TYPE=Debug" --name "llvm-18-debug" --default llvmorg-18.1.8
 llvmup config init  # Creates .llvmup-config
-llvmup config load  # Installs from config
+llvmup config load  # Loads and displays config
+llvmup config apply # Installs from config
+llvmup config activate  # Activates an installed config target
 llvmup default set llvmorg-18.1.8  # Sets system default
 ```
 

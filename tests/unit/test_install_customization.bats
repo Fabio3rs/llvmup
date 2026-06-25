@@ -17,6 +17,8 @@ setup() {
     cp -r "$BATS_TEST_DIRNAME/../../"llvm-* .
     cp "$BATS_TEST_DIRNAME/../../llvmup" .
     cp "$BATS_TEST_DIRNAME/../../llvmup-completion.sh" .
+    cp "$BATS_TEST_DIRNAME/../../llvmup-completion-common.sh" .
+    cp "$BATS_TEST_DIRNAME/../../_llvmup" .
 }
 
 teardown() {
@@ -45,10 +47,12 @@ teardown() {
     # Should create directories under custom prefix
     [ -d "$LLVMUP_PREFIX/bin" ]
     [ -d "$LLVMUP_PREFIX/share/bash-completion/completions" ]
+    [ -d "$LLVMUP_PREFIX/share/zsh/site-functions" ]
 
     # Should install scripts to custom location
     [ -f "$LLVMUP_PREFIX/bin/llvmup" ]
     [ -f "$LLVMUP_PREFIX/bin/llvm-functions.sh" ]
+    [ -f "$LLVMUP_PREFIX/bin/llvmup-completion-common.sh" ]
     [ -x "$LLVMUP_PREFIX/bin/llvmup" ]
 }
 
@@ -64,6 +68,25 @@ teardown() {
     [ -x "$LLVMUP_INSTALL_DIR/llvmup" ]
 }
 
+@test "installed functions use custom install directory at runtime" {
+    export LLVMUP_INSTALL_DIR="$BATS_TMPDIR/runtime_custom_bin"
+
+    run timeout 5 ./install.sh
+    [ "$status" -eq 0 ]
+
+    cat > "$LLVMUP_INSTALL_DIR/llvm-activate" <<'EOF'
+#!/bin/bash
+echo "custom runtime activate: $1"
+exit 0
+EOF
+    chmod +x "$LLVMUP_INSTALL_DIR/llvm-activate"
+
+    run bash -lc "source \"$LLVMUP_INSTALL_DIR/llvm-functions.sh\" && llvm-activate llvmorg-18.1.8"
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"custom runtime activate: llvmorg-18.1.8"* ]]
+}
+
 @test "install.sh respects LLVMUP_COMPLETION_DIR environment variable" {
     export LLVMUP_COMPLETION_DIR="$BATS_TMPDIR/custom_completions"
 
@@ -74,6 +97,15 @@ teardown() {
     [ -f "$LLVMUP_COMPLETION_DIR/llvmup" ]
 }
 
+@test "install.sh respects LLVMUP_ZSH_COMPLETION_DIR environment variable" {
+    export LLVMUP_ZSH_COMPLETION_DIR="$BATS_TMPDIR/custom_zsh_completions"
+
+    run timeout 5 ./install.sh
+
+    [ -d "$LLVMUP_ZSH_COMPLETION_DIR" ]
+    [ -f "$LLVMUP_ZSH_COMPLETION_DIR/_llvmup" ]
+}
+
 @test "uninstall.sh works with same custom directories" {
     # First install to custom location
     export LLVMUP_PREFIX="$BATS_TMPDIR/custom_uninstall_prefix"
@@ -82,6 +114,7 @@ teardown() {
     # Verify installation
     [ -f "$LLVMUP_PREFIX/bin/llvmup" ]
     [ -f "$LLVMUP_PREFIX/share/bash-completion/completions/llvmup" ]
+    [ -f "$LLVMUP_PREFIX/share/zsh/site-functions/_llvmup" ]
 
     # Then uninstall from same location
     run timeout 5 ./uninstall.sh
@@ -89,6 +122,7 @@ teardown() {
     # Should remove files
     [ ! -f "$LLVMUP_PREFIX/bin/llvmup" ]
     [ ! -f "$LLVMUP_PREFIX/share/bash-completion/completions/llvmup" ]
+    [ ! -f "$LLVMUP_PREFIX/share/zsh/site-functions/_llvmup" ]
 }
 
 @test "install.sh creates proper directory structure" {
@@ -101,6 +135,7 @@ teardown() {
     [ -d "$LLVMUP_PREFIX/share" ]
     [ -d "$LLVMUP_PREFIX/share/bash-completion" ]
     [ -d "$LLVMUP_PREFIX/share/bash-completion/completions" ]
+    [ -d "$LLVMUP_PREFIX/share/zsh/site-functions" ]
 }
 
 @test "install.sh installed scripts are executable" {
@@ -132,6 +167,7 @@ teardown() {
     assert_output --partial "Installation Configuration:"
     assert_output --partial "Install Directory:"
     assert_output --partial "Completion Directory:"
+    assert_output --partial "Zsh Completion Directory:"
 
     # Should show success messages
     assert_output --partial "Installation complete!"

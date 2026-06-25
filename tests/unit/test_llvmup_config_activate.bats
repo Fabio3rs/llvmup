@@ -58,12 +58,16 @@ EOF
 @test "llvmup config activate - shows error when function not available" {
     # Ensure llvm-config-activate is not available
     export PATH="/usr/bin:/bin"
+    export TEST_ISOLATED_DIR="$TEST_DIR/isolated"
+    mkdir -p "$TEST_ISOLATED_DIR"
+    cp "$LLVMUP_SCRIPT" "$TEST_ISOLATED_DIR/llvmup"
+    chmod +x "$TEST_ISOLATED_DIR/llvmup"
 
-    run "$LLVMUP_SCRIPT" config activate
+    run "$TEST_ISOLATED_DIR/llvmup" config activate
 
     [ "$status" -eq 1 ]
     [[ "$output" == *"llvm-config-activate function not available"* ]]
-    [[ "$output" == *"Make sure LLVM functions are loaded in your shell"* ]]
+    [[ "$output" == *"Make sure llvm-functions.sh is installed next to llvmup or loaded in your shell"* ]]
 }
 
 @test "llvmup config - shows available subcommands including activate" {
@@ -71,6 +75,24 @@ EOF
 
     [ "$status" -eq 1 ]
     [[ "$output" == *"Available subcommands: init, load, apply, activate"* ]]
+}
+
+@test "llvmup config init auto-loads sibling llvm-functions.sh" {
+    export TEST_CONFIG_DIR="$TEST_DIR/config_sibling"
+    mkdir -p "$TEST_CONFIG_DIR"
+    cp "$LLVMUP_SCRIPT" "$TEST_CONFIG_DIR/llvmup"
+    cp "$(pwd)/llvm-functions.sh" "$TEST_CONFIG_DIR/llvm-functions.sh"
+    chmod +x "$TEST_CONFIG_DIR/llvmup"
+
+    cd "$TEST_CONFIG_DIR"
+    export LLVM_TEST_MODE=1
+    export LLVM_TEST_DEFAULT_VERSION="llvmorg-18.1.8"
+    export LLVM_TEST_PROFILE="full"
+
+    run ./llvmup config init
+
+    [ "$status" -eq 0 ]
+    [ -f "$TEST_CONFIG_DIR/.llvmup-config" ]
 }
 
 @test "llvmup help - shows config command in usage" {

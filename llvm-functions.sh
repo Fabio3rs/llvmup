@@ -172,6 +172,44 @@ llvm-expression-debug-off() {
     log_success "Expression debug mode disabled"
 }
 
+# Resolve the directory that contains the installed LLVMUP executables.
+llvm-get-install-dir() {
+    if [ -n "$LLVMUP_INSTALL_DIR" ]; then
+        echo "$LLVMUP_INSTALL_DIR"
+        return 0
+    fi
+
+    if [ -n "${BASH_SOURCE[0]:-}" ]; then
+        local source_dir
+        source_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        if [ -n "$source_dir" ]; then
+            echo "$source_dir"
+            return 0
+        fi
+    fi
+
+    echo "$HOME/.local/bin"
+}
+
+# Find a runtime helper script either in the install dir or in the legacy default path.
+llvm-find-runtime-script() {
+    local script_name="$1"
+    local install_dir
+    install_dir="$(llvm-get-install-dir)"
+
+    if [ -f "$install_dir/$script_name" ]; then
+        echo "$install_dir/$script_name"
+        return 0
+    fi
+
+    if [ -f "$HOME/.local/bin/$script_name" ]; then
+        echo "$HOME/.local/bin/$script_name"
+        return 0
+    fi
+
+    return 1
+}
+
 # Function to activate an LLVM version
 llvm-activate() {
     if [ $# -eq 0 ]; then
@@ -199,7 +237,8 @@ llvm-activate() {
     fi
 
     local version="$1"
-    local script_path="$HOME/.local/bin/llvm-activate"
+    local script_path
+    script_path="$(llvm-find-runtime-script llvm-activate)" || script_path=""
 
     if [ -f "$script_path" ]; then
         log_progress "Activating LLVM version $version..."
@@ -217,7 +256,8 @@ llvm-activate() {
             return $exit_code
         fi
     else
-        log_error "llvm-activate script not found at $script_path"
+        log_error "llvm-activate script not found"
+        log_tip "Expected install directory: $(llvm-get-install-dir)"
         log_tip "Run the installation script to install LLVM manager tools."
         log_tip "  ./install.sh"
         return 1
@@ -226,7 +266,8 @@ llvm-activate() {
 
 # Function to deactivate the current LLVM version
 llvm-deactivate() {
-    local script_path="$HOME/.local/bin/llvm-deactivate"
+    local script_path
+    script_path="$(llvm-find-runtime-script llvm-deactivate)" || script_path=""
 
     if [ -f "$script_path" ]; then
         log_progress "Deactivating LLVM environment..."
@@ -238,7 +279,8 @@ llvm-deactivate() {
         fi
         return $exit_code
     else
-        log_error "llvm-deactivate script not found at $script_path"
+        log_error "llvm-deactivate script not found"
+        log_tip "Expected install directory: $(llvm-get-install-dir)"
         log_tip "Run the installation script to install LLVM manager tools."
         log_tip "  ./install.sh"
         return 1
@@ -272,7 +314,8 @@ llvm-vscode-activate() {
     fi
 
     local version="$1"
-    local script_path="$HOME/.local/bin/llvm-vscode-activate"
+    local script_path
+    script_path="$(llvm-find-runtime-script llvm-vscode-activate)" || script_path=""
 
     if [ -f "$script_path" ]; then
         log_progress "Configuring VSCode workspace for LLVM $version..."
@@ -284,7 +327,8 @@ llvm-vscode-activate() {
         fi
         return $exit_code
     else
-        log_error "llvm-vscode-activate script not found at $script_path"
+        log_error "llvm-vscode-activate script not found"
+        log_tip "Expected install directory: $(llvm-get-install-dir)"
         log_tip "Run the installation script to install LLVM manager tools."
         log_tip "  ./install.sh"
         return 1
@@ -1603,11 +1647,16 @@ llvm-version-matches-range() {
         "~"*)
             # Tilde range: ~1.2.3 := >=1.2.3 <1.3.0
             local base_version=$(echo "$range_expr" | sed 's/^~//')
-            local major_minor=$(echo "$base_version" | cut -d. -f1-2)
-            local next_minor=$(($(echo "$base_version" | cut -d. -f2) + 1))
-            local next_version="$(echo "$base_version" | cut -d. -f1).$next_minor.0"
+            local major=$(echo "$base_version" | cut -d. -f1)
+            local minor=$(echo "$base_version" | cut -d. -f2)
+            if [ -z "$minor" ]; then
+                minor=0
+            fi
+            local next_minor=$((minor + 1))
+            local next_version="$major.$next_minor.0"
+            local floor_version="$major.$minor.0"
 
-            llvm-version-compare "$parsed_version" "$base_version" 2>/dev/null && \
+            llvm-version-compare "$parsed_version" "$floor_version" 2>/dev/null && \
             ! llvm-version-compare "$parsed_version" "$next_version" 2>/dev/null
             ;;
         *"*")

@@ -18,6 +18,7 @@ This installs LLVMUP to `~/.local/bin` and configures your shell profile automat
 | `LLVMUP_PREFIX` | Base installation prefix | `$HOME/.local` |
 | `LLVMUP_INSTALL_DIR` | Directory for executable scripts | `$LLVMUP_PREFIX/bin` |
 | `LLVMUP_COMPLETION_DIR` | Directory for bash completion | `$LLVMUP_PREFIX/share/bash-completion/completions` |
+| `LLVMUP_ZSH_COMPLETION_DIR` | Directory for zsh completion | `$LLVMUP_PREFIX/share/zsh/site-functions` |
 | `LLVMUP_SYSTEM_INSTALL` | Set to 1 for system-wide installation | `0` (user install) |
 
 ## Installation Examples
@@ -41,7 +42,7 @@ LLVMUP_INSTALL_DIR=~/bin ./install.sh
 ```bash
 LLVMUP_PREFIX=~/.llvmup ./install.sh
 ```
-- Install to `~/.llvmup/bin` and `~/.llvmup/share/bash-completion/completions`
+- Install to `~/.llvmup/bin`, `~/.llvmup/share/bash-completion/completions` and `~/.llvmup/share/zsh/site-functions`
 - Keeps all LLVMUP files in a dedicated directory
 
 ### 4. System-Wide Installation
@@ -97,10 +98,12 @@ This script provides an interactive menu to choose installation options.
 - Shell profile is automatically configured
 - Restart terminal or run `source ~/.bashrc`
 - Functions are available immediately
+- If `~/.zshrc` exists, LLVMUP also configures `fpath` and `compinit` for native zsh completion
 
 ### For System-Wide Installations
 - Add to system-wide profile: `/etc/profile.d/llvmup.sh`
 - Or users add to their profile: `source /usr/local/bin/llvm-functions.sh`
+- For zsh, add the installation's `share/zsh/site-functions` directory to `fpath` and run `compinit`
 
 ### Verify Installation
 ```bash

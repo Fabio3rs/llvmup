@@ -169,6 +169,8 @@ EOF
     completions="${COMPREPLY[*]}"
     [[ "$completions" == *"init"* ]]
     [[ "$completions" == *"load"* ]]
+    [[ "$completions" == *"apply"* ]]
+    [[ "$completions" == *"activate"* ]]
 }
 
 @test "version and option completions work" {
@@ -185,6 +187,10 @@ EOF
 
     # Should contain versions OR flags
     [[ "$completions" == *"llvmorg-"* ]] || [[ "$completions" == *"--from-source"* ]]
+    [[ "$completions" == *"latest"* ]]
+    [[ "$completions" == *"latest-prebuilt"* ]]
+    [[ "$completions" == *"18.*"* ]]
+    [[ "$completions" == *"~20.1"* ]] || [[ "$completions" == *"~21.1"* ]]
 
     # Test option completions
     COMP_WORDS=("llvmup" "install" "--profile" "")
@@ -197,6 +203,29 @@ EOF
     [[ "$completions" == *"minimal"* ]]
     [[ "$completions" == *"full"* ]]
     [[ "$completions" == *"custom"* ]]
+}
+
+@test "config completion prioritizes init when config is absent" {
+    COMP_WORDS=("llvmup" "config" "")
+    COMP_CWORD=2
+    COMPREPLY=()
+
+    _llvmup_completions
+
+    [ "${COMPREPLY[0]}" = "init" ]
+}
+
+@test "config completion prioritizes load when config exists" {
+    touch "$TEST_DIR/.llvmup-config"
+    cd "$TEST_DIR"
+
+    COMP_WORDS=("llvmup" "config" "")
+    COMP_CWORD=2
+    COMPREPLY=()
+
+    _llvmup_completions
+
+    [ "${COMPREPLY[0]}" = "load" ]
 }
 
 @test "completion handles network timeouts gracefully" {

@@ -324,8 +324,9 @@ LLVMUP_PREFIX=/opt/llvmup
 # Specific installation directory (overrides PREFIX)
 LLVMUP_INSTALL_DIR=$HOME/bin
 
-# Shell completion directory
+# Shell completion directories
 LLVMUP_COMPLETION_DIR=/usr/share/bash-completion/completions
+LLVMUP_ZSH_COMPLETION_DIR=/usr/share/zsh/site-functions
 
 # System-wide installation (requires sudo)
 LLVMUP_SYSTEM_INSTALL=1
@@ -603,6 +604,8 @@ Windows support with equivalent PowerShell scripts:
 ```bash
 llvm-activate <TAB><TAB>     # List installed versions
 llvmup --<TAB><TAB>         # List available options
+llvmup install <TAB><TAB>   # Expressions, local installs and remote versions
+llvmup config <TAB><TAB>    # Guided config actions based on .llvmup-config
 ```
 
 ### Detailed Status Verification
@@ -646,7 +649,7 @@ llvm-status
 ### Project Configuration
 - **Configuration files**: `.llvmup-config` with INI-style format
 - **Array support**: cmake_flags and components as arrays
-- **Subcommands**: `llvmup config init`, `llvmup config load`, `llvmup config activate`
+- **Subcommands**: `llvmup config init`, `llvmup config load`, `llvmup config apply`, `llvmup config activate`
 - **Profile integration**: Automatic profile selection from config
 - **Override**: Command line options override config file settings
 
@@ -681,12 +684,18 @@ llvm-status
 - Preserves pre-existing VSCode settings
 
 ### Command Auto-completion
-- **Linux**: Bash completion script for:
+- **Bash**: Contextual completion for:
   - Available LLVM versions
-  - Subcommands (install, config, default)
-  - Command options and flags
+  - Expression keywords like `latest`, `latest-prebuilt`, `source`
+  - Range and wildcard templates like `>=18.0.0`, `~19.1`, `18.*`
+  - Subcommands (`install`, `config`, `default`) and command flags
   - Installed versions for activation
-- **Function completion**: All LLVM functions support TAB completion
+- **Zsh**: Native completion with grouped suggestions for:
+  - Expressions
+  - Installed local versions
+  - Remote available versions
+  - Config actions and flags
+- **Function completion**: `llvm-activate` and `llvm-vscode-activate` continue completing only installed local versions
 
 ### Windows PowerShell Support
 - **Install-Llvm.ps1**: Installation management with build options

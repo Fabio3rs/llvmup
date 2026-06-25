@@ -301,17 +301,20 @@ teardown() {
     rm -f "$MOCK_SCRIPT_DIR/llvm-deactivate"
     rm -f "$MOCK_SCRIPT_DIR/llvm-vscode-activate"
 
-    run llvm-activate "$TEST_VERSION"
+    mkdir -p "$TEST_DIR/isolated"
+    cp "$BATS_TEST_DIRNAME/../../llvm-functions.sh" "$TEST_DIR/isolated/llvm-functions.sh"
+
+    run bash -lc "export HOME='$TEST_DIR'; export LLVM_TEST_MODE=1; source '$TEST_DIR/isolated/llvm-functions.sh'; llvm-activate '$TEST_VERSION'"
     [ "$status" -eq 1 ]
     [[ "$output" == *"Error:"* ]]
     [[ "$output" == *"not found"* ]]
 
-    run llvm-deactivate
+    run bash -lc "export HOME='$TEST_DIR'; export LLVM_TEST_MODE=1; source '$TEST_DIR/isolated/llvm-functions.sh'; llvm-deactivate"
     [ "$status" -eq 1 ]
     [[ "$output" == *"Error:"* ]]
     [[ "$output" == *"not found"* ]]
 
-    run llvm-vscode-activate "$TEST_VERSION"
+    run bash -lc "export HOME='$TEST_DIR'; export LLVM_TEST_MODE=1; source '$TEST_DIR/isolated/llvm-functions.sh'; llvm-vscode-activate '$TEST_VERSION'"
     [ "$status" -eq 1 ]
     [[ "$output" == *"Error:"* ]]
     [[ "$output" == *"not found"* ]]

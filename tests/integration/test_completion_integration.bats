@@ -137,6 +137,8 @@ teardown() {
 
     # Should also show --from-source for building from source
     [[ "$completions" == *"--from-source"* ]]
+    [[ "$completions" == *"latest-prebuilt"* ]]
+    [[ "$completions" == *"18.*"* ]]
 }
 
 @test "user workflow: source build completion shows context-aware versions" {
@@ -201,6 +203,15 @@ teardown() {
     local config_completions="${COMPREPLY[*]}"
     [[ "$config_completions" == *"init"* ]]
     [[ "$config_completions" == *"load"* ]]
+    [ "${COMPREPLY[0]}" = "init" ]
+
+    touch "$TEST_DIR/.llvmup-config"
+    cd "$TEST_DIR"
+    COMP_WORDS=("llvmup" "config" "")
+    COMP_CWORD=2
+    COMPREPLY=()
+    _llvmup_completions
+    [ "${COMPREPLY[0]}" = "load" ]
 
     # 2. llvmup install --profile <TAB> - shows build profiles
     COMP_WORDS=("llvmup" "install" "--profile" "")
