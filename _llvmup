@@ -3,12 +3,14 @@
 emulate -L zsh
 setopt extendedglob
 
+typeset -g _LLVMUP_ZSH_SOURCE_FILE
+_LLVMUP_ZSH_SOURCE_FILE="${${(%):-%N}:A}"
+
 _llvmup__resolve_helper() {
-    local current_file helper_path llvm_path
-    current_file="${${(%):-%N}:A}"
+    local helper_path llvm_path
 
     for helper_path in \
-        "${current_file:h}/llvmup-completion-common.sh" \
+        "${_LLVMUP_ZSH_SOURCE_FILE:h}/llvmup-completion-common.sh" \
         "${LLVMUP_INSTALL_DIR:-}/llvmup-completion-common.sh"
     do
         if [[ -n "$helper_path" && -f "$helper_path" ]]; then
@@ -197,4 +199,6 @@ _llvmup() {
     esac
 }
 
-compdef _llvmup llvmup llvm-activate llvm-vscode-activate
+if (( $+functions[compdef] )); then
+    compdef _llvmup llvmup llvm-activate llvm-vscode-activate
+fi
