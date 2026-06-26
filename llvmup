@@ -171,6 +171,12 @@ handle_default_command() {
 }
 
 set_default_version() {
+    source_local_functions >/dev/null 2>&1 || true
+    if command -v llvm-default-set >/dev/null 2>&1; then
+        llvm-default-set "$1"
+        return $?
+    fi
+
     local version="$1"
     local default_link="$HOME/.llvm/default"
     local version_path="$HOME/.llvm/toolchains/$version"
@@ -193,6 +199,12 @@ set_default_version() {
 }
 
 show_default_version() {
+    source_local_functions >/dev/null 2>&1 || true
+    if command -v llvm-default-show >/dev/null 2>&1; then
+        llvm-default-show
+        return $?
+    fi
+
     local default_link="$HOME/.llvm/default"
 
     if [ -L "$default_link" ] && [ -e "$default_link" ]; then

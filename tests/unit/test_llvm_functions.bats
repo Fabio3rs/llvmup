@@ -188,6 +188,12 @@ teardown() {
     [ "$status" -eq 0 ]
 }
 
+@test "llvmup function is available when llvm-functions.sh is sourced" {
+    run bash -lc "export HOME='$TEST_DIR'; export LLVMUP_DISABLE_AUTOACTIVATE=1; source '$BATS_TEST_DIRNAME/../../llvm-functions.sh'; type llvmup"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"llvmup is a function"* ]]
+}
+
 @test "llvm-activate function exists and shows usage when called without arguments" {
     run llvm-activate
     [ "$status" -eq 1 ]
@@ -289,6 +295,20 @@ teardown() {
     [[ "$output" == *"VSCode workspace settings updated"* ]]
 }
 
+@test "llvm-vscode-activate script respects custom LLVM_HOME" {
+    mkdir -p "$TEST_DIR/custom-llvm/toolchains/$TEST_VERSION/bin"
+    mkdir -p "$TEST_DIR/custom-llvm/toolchains/$TEST_VERSION/include"
+    touch "$TEST_DIR/custom-llvm/toolchains/$TEST_VERSION/bin/clangd"
+    touch "$TEST_DIR/custom-llvm/toolchains/$TEST_VERSION/bin/lldb"
+    chmod +x "$TEST_DIR/custom-llvm/toolchains/$TEST_VERSION/bin/clangd"
+    chmod +x "$TEST_DIR/custom-llvm/toolchains/$TEST_VERSION/bin/lldb"
+    mkdir -p "$TEST_DIR/project-script/.vscode"
+
+    run bash -lc "export HOME='$TEST_DIR'; unset LLVM_TOOLCHAINS_DIR LLVM_CUSTOM_TOOLCHAINS_DIR LLVM_CUSTOM_HOME; export LLVM_HOME='$TEST_DIR/custom-llvm'; cd '$TEST_DIR/project-script'; '$BATS_TEST_DIRNAME/../../llvm-vscode-activate' '$TEST_VERSION' >/dev/null; cat .vscode/settings.json"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"$TEST_DIR/custom-llvm/toolchains/$TEST_VERSION/bin/clangd"* ]]
+}
+
 @test "completion function is registered" {
     # Check if the completion function exists
     run declare -F _llvm_complete_versions
@@ -318,6 +338,37 @@ teardown() {
     [ "$status" -eq 1 ]
     [[ "$output" == *"Error:"* ]]
     [[ "$output" == *"not found"* ]]
+}
+
+@test "llvmup config activate updates the current shell environment" {
+    mkdir -p "$TEST_DIR/project"
+    cat > "$TEST_DIR/project/.llvmup-config" <<EOF
+[version]
+default = "$TEST_VERSION"
+
+[project]
+auto_activate = false
+EOF
+
+    run bash -lc "export HOME='$TEST_DIR'; export LLVMUP_DISABLE_AUTOACTIVATE=1; export LLVM_CUSTOM_TOOLCHAINS_DIR='$TEST_DIR/.llvm/toolchains'; export LLVM_CUSTOM_SOURCES_DIR='$TEST_DIR/.llvm/sources'; cd '$TEST_DIR/project'; source '$BATS_TEST_DIRNAME/../../llvm-functions.sh'; llvmup config activate >/dev/null; printf '%s|%s' \"\$_ACTIVE_LLVM\" \"\$CC\""
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"$TEST_VERSION|$TEST_DIR/.llvm/toolchains/$TEST_VERSION/bin/clang"* ]]
+}
+
+@test "llvm-autoactivate discovers config in parent directory and deactivates after leaving project" {
+    mkdir -p "$TEST_DIR/workspace/project/src"
+    cat > "$TEST_DIR/workspace/project/.llvmup-config" <<EOF
+[version]
+default = "$TEST_VERSION"
+
+[project]
+auto_activate = true
+EOF
+
+    run bash -lc "export HOME='$TEST_DIR'; unset LLVM_TEST_MODE LLVMUP_DISABLE_AUTOACTIVATE; export LLVM_CUSTOM_TOOLCHAINS_DIR='$TEST_DIR/.llvm/toolchains'; export LLVM_CUSTOM_SOURCES_DIR='$TEST_DIR/.llvm/sources'; cd '$TEST_DIR/workspace/project/src'; source '$BATS_TEST_DIRNAME/../../llvm-functions.sh'; llvm-autoactivate >/dev/null; printf '%s|%s\n' \"\${_ACTIVE_LLVM:-}\" \"\${_LLVMUP_AUTOACTIVATE_ROOT:-}\"; cd '$TEST_DIR'; llvm-autoactivate >/dev/null; printf '%s' \"\${_ACTIVE_LLVM:-inactive}\""
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"$TEST_VERSION|$TEST_DIR/workspace/project"* ]]
+    [[ "$output" == *"inactive"* ]]
 }
 
 @test "llvm-list function handles missing toolchains directory" {

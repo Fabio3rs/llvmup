@@ -79,6 +79,34 @@ teardown() {
     assert_output --partial "Current default LLVM version: test-version"
 }
 
+@test "llvmup default set respects custom LLVM_HOME and LLVM_TOOLCHAINS_DIR" {
+    export LLVM_HOME="$TEST_HOME/custom-home"
+    export LLVM_TOOLCHAINS_DIR="$TEST_HOME/custom-toolchains"
+
+    mkdir -p "$LLVM_TOOLCHAINS_DIR/test-version/bin"
+    echo '#!/bin/bash\necho "clang version 18.0.0"' > "$LLVM_TOOLCHAINS_DIR/test-version/bin/clang"
+    chmod +x "$LLVM_TOOLCHAINS_DIR/test-version/bin/clang"
+
+    run bash "$LLVMUP_SCRIPT" default set "test-version"
+    assert_success
+    [ -L "$LLVM_HOME/default" ]
+}
+
+@test "llvmup default show respects custom LLVM_HOME" {
+    export LLVM_HOME="$TEST_HOME/custom-home"
+    export LLVM_TOOLCHAINS_DIR="$TEST_HOME/custom-toolchains"
+
+    mkdir -p "$LLVM_TOOLCHAINS_DIR/test-version/bin"
+    echo '#!/bin/bash\necho "clang version 18.0.0"' > "$LLVM_TOOLCHAINS_DIR/test-version/bin/clang"
+    chmod +x "$LLVM_TOOLCHAINS_DIR/test-version/bin/clang"
+    mkdir -p "$LLVM_HOME"
+    ln -s "$LLVM_TOOLCHAINS_DIR/test-version" "$LLVM_HOME/default"
+
+    run bash "$LLVMUP_SCRIPT" default show
+    assert_success
+    assert_output --partial "Current default LLVM version: test-version"
+}
+
 @test "llvmup install accepts cmake-flags option" {
     # Test that llvmup accepts the cmake-flags option (parsing test)
     run bash "$ORIGINAL_DIR/llvmup" install --help

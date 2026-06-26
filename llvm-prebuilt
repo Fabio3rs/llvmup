@@ -183,10 +183,11 @@ fi
 
 log_verbose "Found ${#versionList[@]} available versions"
 log_info "Available versions:"
+LLVM_TOOLCHAINS_DIR_EFFECTIVE="$(llvm-get-toolchains-dir 2>/dev/null || echo "$HOME/.llvm/toolchains")"
 for i in "${!versionList[@]}"; do
     version="${versionList[$i]}"
     INSTALLED_FLAG=""
-    if [ -d "$HOME/.llvm/toolchains/$version" ]; then
+    if [ -d "$LLVM_TOOLCHAINS_DIR_EFFECTIVE/$version" ]; then
         INSTALLED_FLAG=" [installed]"
     fi
     log_info "$((i+1))) $version$INSTALLED_FLAG"
@@ -574,4 +575,3 @@ else
         ls -la "$TARGET_DIR" 2>/dev/null || log_verbose "Directory listing failed"
     fi
 fi
-

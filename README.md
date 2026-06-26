@@ -86,6 +86,8 @@ cd llvmup
 source ~/.bashrc
 ```
 
+After reloading your shell profile, Linux commands such as `llvm-activate`, `llvm-deactivate`, `llvmup config activate`, `llvm-status`, and `llvm-list` are provided by shell functions loaded from `llvm-functions.sh`. Those functions call the helper scripts installed in your `bin` directory when needed.
+
 ##### Custom Installation Paths
 ```bash
 # Install to custom location
@@ -237,7 +239,7 @@ llvm-help                  # Show detailed usage guide
 llvmup config init         # Create .llvmup-config file
 llvmup config load         # Load and display config
 llvmup config apply        # Install using config settings
-llvmup config activate     # Activate existing installation from config
+llvmup config activate     # Activate existing installation in the current shell
 llvm-config-init           # Initialize config (function)
 llvm-config-load           # Load config (function)
 llvm-config-apply          # Apply config (function)
@@ -444,7 +446,7 @@ default = "latest-prebuilt"
 [project]
 auto_activate = true' > .llvmup-config
 
-# Auto-activation happens when entering directory
+# Auto-activation happens when entering this directory (or a subdirectory)
 
 # 2. Range-based version management
 # Use any version >= 18.0.0
@@ -666,6 +668,7 @@ llvm-status
   - Updates `PATH` to include selected LLVM's `bin` directory
   - Sets `CC`, `CXX`, and `LD` environment variables
   - Modifies terminal prompt (`PS1`) to show active LLVM version
+  - Works through shell functions loaded from `llvm-functions.sh`
 - **Windows**: Use PowerShell scripts
 - Prevents activation of new version if one is already active
 
@@ -711,9 +714,11 @@ llvm-status
 - **Commands**: install (default), config, default
 - **Backward compatibility**: Original `llvmup --from-source` still works
 - **Routing**: Commands route to appropriate scripts/functions
+- **Shell-aware activation**: `llvmup config activate` runs through the shell function layer so environment changes persist in the current Linux shell
 
 ### Profile Integration
 - Installation script configures your shell profile (`.bashrc` or `.profile`) to load LLVM functions
+- User installs work immediately after reloading the profile; system-wide installs require users to source `llvm-functions.sh` manually in their shell profile
 - Checks if already configured before adding entries
 - Provides warnings instead of errors if scripts are missing
 
@@ -806,7 +811,7 @@ For Windows users, PowerShell scripts are provided to manage LLVM toolchains:
 ### Bash Functions
 - **No manual sourcing**: Use `llvm-activate <version>` directly
 - **Automatic loading**: Functions available in new terminals
-- **Additional functions**: `llvm-status`, `llvm-list`, and `llvm-help`
+- **Additional functions**: `llvmup`, `llvm-status`, `llvm-list`, and `llvm-help`
 - **TAB completion**: Auto-completion for version names
 - **Fallbacks**: Shows warnings if scripts are missing
 

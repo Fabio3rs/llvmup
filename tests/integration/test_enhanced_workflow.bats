@@ -244,6 +244,7 @@ EOF
     source "$ORIGINAL_DIR/llvm-functions.sh"
 
     # Test that new functions are defined
+    declare -F llvmup >/dev/null
     declare -F llvm-config-init >/dev/null
     declare -F llvm-config-load >/dev/null
     declare -F llvm-help >/dev/null

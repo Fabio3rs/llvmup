@@ -5,7 +5,31 @@
 
 set -e
 
-LLVM_TOOLCHAINS_DIR="$HOME/.llvm/toolchains"
+SCRIPT_DIR="$(dirname "$0")"
+if [ -f "$SCRIPT_DIR/llvm-functions.sh" ]; then
+    # shellcheck source=/dev/null
+    source "$SCRIPT_DIR/llvm-functions.sh"
+
+    if [ -f ".llvmup-config" ]; then
+        llvm-config-load >/dev/null 2>&1 || true
+    fi
+fi
+
+DEFAULT_TOOLCHAINS_DIR="$HOME/.llvm/toolchains"
+
+if [ -n "$LLVM_HOME" ] && [ "${LLVM_TOOLCHAINS_DIR:-$DEFAULT_TOOLCHAINS_DIR}" = "$DEFAULT_TOOLCHAINS_DIR" ]; then
+    LLVM_TOOLCHAINS_DIR="$LLVM_HOME/toolchains"
+elif [ -n "$LLVM_TOOLCHAINS_DIR" ]; then
+    LLVM_TOOLCHAINS_DIR="$LLVM_TOOLCHAINS_DIR"
+elif [ -n "$LLVM_CUSTOM_TOOLCHAINS_DIR" ]; then
+    LLVM_TOOLCHAINS_DIR="$LLVM_CUSTOM_TOOLCHAINS_DIR"
+elif [ -n "$LLVM_HOME" ]; then
+    LLVM_TOOLCHAINS_DIR="$LLVM_HOME/toolchains"
+elif [ -n "$LLVM_CUSTOM_HOME" ]; then
+    LLVM_TOOLCHAINS_DIR="$LLVM_CUSTOM_HOME/toolchains"
+else
+    LLVM_TOOLCHAINS_DIR="$(llvm-get-toolchains-dir 2>/dev/null || echo "$HOME/.llvm/toolchains")"
+fi
 
 if [ "$#" -ne 1 ]; then
     echo "Usage: $0 <version>"

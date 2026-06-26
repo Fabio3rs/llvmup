@@ -210,6 +210,192 @@ llvm-find-runtime-script() {
     return 1
 }
 
+llvm-run-runtime-script() {
+    local script_name="$1"
+    shift
+
+    local script_path
+    script_path="$(llvm-find-runtime-script "$script_name")" || script_path=""
+
+    if [ ! -f "$script_path" ]; then
+        log_error "$script_name script not found"
+        log_tip "Expected install directory: $(llvm-get-install-dir)"
+        log_tip "Run the installation script to install LLVM manager tools."
+        log_tip "  ./install.sh"
+        return 1
+    fi
+
+    "$script_path" "$@"
+}
+
+llvm-get-home-dir() {
+    if [ -n "$LLVM_HOME" ]; then
+        echo "$LLVM_HOME"
+    elif [ -n "$LLVM_CUSTOM_HOME" ]; then
+        echo "$LLVM_CUSTOM_HOME"
+    else
+        echo "$HOME/.llvm"
+    fi
+}
+
+llvm-get-default-link() {
+    echo "$(llvm-get-home-dir)/default"
+}
+
+llvm-default-set() {
+    local version="$1"
+    local toolchains_dir
+    local default_link
+    local version_path
+
+    toolchains_dir="$(llvm-get-toolchains-dir)"
+    default_link="$(llvm-get-default-link)"
+    version_path="$toolchains_dir/$version"
+
+    if [ ! -d "$version_path" ]; then
+        log_error "Version $version is not installed"
+        log_info "Use 'llvm-list' to see installed versions"
+        return 1
+    fi
+
+    mkdir -p "$(dirname "$default_link")"
+
+    if [ -L "$default_link" ] || [ -e "$default_link" ]; then
+        rm -f "$default_link"
+    fi
+
+    ln -s "$version_path" "$default_link"
+    log_success "Default LLVM version set to: $version"
+    log_info "Default link: $default_link"
+}
+
+llvm-default-show() {
+    local default_link
+    default_link="$(llvm-get-default-link)"
+
+    if [ -L "$default_link" ] && [ -e "$default_link" ]; then
+        local target
+        local version
+        target=$(readlink "$default_link")
+        version=$(basename "$target")
+        echo "Current default LLVM version: $version"
+
+        if [ -x "$default_link/bin/clang" ]; then
+            local clang_version
+            if clang_version=$("$default_link/bin/clang" --version 2>/dev/null | head -1); then
+                [ -n "$clang_version" ] && echo "Clang version: $clang_version"
+            fi
+        fi
+    else
+        echo "No default LLVM version is set"
+        echo "Use 'llvmup default set <version>' to set one"
+    fi
+
+    return 0
+}
+
+llvm-find-config-root() {
+    local dir="${1:-$PWD}"
+
+    while [ -n "$dir" ] && [ "$dir" != "/" ]; do
+        if [ -f "$dir/.llvmup-config" ]; then
+            echo "$dir"
+            return 0
+        fi
+        dir="$(dirname "$dir")"
+    done
+
+    if [ -f "/.llvmup-config" ]; then
+        echo "/"
+        return 0
+    fi
+
+    return 1
+}
+
+llvm-load-config-from-root() {
+    local config_root="$1"
+    local current_dir="$PWD"
+
+    if [ -z "$config_root" ] || [ ! -f "$config_root/.llvmup-config" ]; then
+        log_error "No .llvmup-config file found"
+        return 1
+    fi
+
+    cd "$config_root" || return 1
+    llvm-config-load
+    local load_result=$?
+    cd "$current_dir" || return 1
+    return $load_result
+}
+
+llvmup() {
+    local runtime_script
+    runtime_script="$(llvm-find-runtime-script llvmup)" || runtime_script=""
+
+    case "${1:-}" in
+        config)
+            local config_subcommand="${2:-}"
+            shift
+            [ $# -gt 0 ] && shift
+
+            case "$config_subcommand" in
+                init)
+                    llvm-config-init "$@"
+                    ;;
+                load)
+                    llvm-config-load "$@"
+                    ;;
+                apply)
+                    llvm-config-load >/dev/null && llvm-config-apply "$@"
+                    ;;
+                activate)
+                    llvm-config-load >/dev/null && llvm-config-activate "$@"
+                    ;;
+                *)
+                    if [ -n "$runtime_script" ]; then
+                        "$runtime_script" config "$config_subcommand" "$@"
+                    else
+                        log_error "llvmup runtime script not found"
+                        return 1
+                    fi
+                    ;;
+            esac
+            return $?
+            ;;
+        default)
+            local default_subcommand="${2:-show}"
+            case "$default_subcommand" in
+                set)
+                    if [ $# -lt 3 ]; then
+                        log_error "Missing version argument for 'default set'"
+                        return 1
+                    fi
+                    llvm-default-set "$3"
+                    ;;
+                show)
+                    llvm-default-show
+                    ;;
+                *)
+                    log_error "Unknown default subcommand: $default_subcommand"
+                    log_info "Available subcommands: set, show"
+                    return 1
+                    ;;
+            esac
+            return $?
+            ;;
+    esac
+
+    if [ -n "$runtime_script" ]; then
+        "$runtime_script" "$@"
+        return $?
+    fi
+
+    log_error "llvmup runtime script not found"
+    log_tip "Expected install directory: $(llvm-get-install-dir)"
+    return 1
+}
+
 # Function to activate an LLVM version
 llvm-activate() {
     if [ $# -eq 0 ]; then
@@ -245,6 +431,13 @@ llvm-activate() {
         source "$script_path" "$version"
         local exit_code=$?
         if [ $exit_code -eq 0 ]; then
+            if [ "${LLVMUP_AUTOACTIVATE_MODE:-0}" = "1" ]; then
+                export _LLVMUP_AUTOACTIVATE_ACTIVE=1
+                export _LLVMUP_AUTOACTIVATE_ROOT="${LLVMUP_AUTOACTIVATE_ROOT:-}"
+            else
+                unset _LLVMUP_AUTOACTIVATE_ACTIVE
+                unset _LLVMUP_AUTOACTIVATE_ROOT
+            fi
             log_success "LLVM $version successfully activated!"
             log_info "Available tools are now in PATH:"
             log_info "  • clang, clang++, ld.lld, lldb, clangd, etc."
@@ -274,6 +467,8 @@ llvm-deactivate() {
         source "$script_path"
         local exit_code=$?
         if [ $exit_code -eq 0 ]; then
+            unset _LLVMUP_AUTOACTIVATE_ACTIVE
+            unset _LLVMUP_AUTOACTIVATE_ROOT
             log_success "LLVM environment successfully deactivated"
             log_tip "Your shell prompt and environment variables have been restored"
         fi
@@ -434,8 +629,10 @@ _llvm_complete_versions() {
         local default_version=""
         local active_version="$_ACTIVE_LLVM"
 
-        if [ -L "$HOME/.llvm/default" ]; then
-            default_version=$(basename "$(readlink "$HOME/.llvm/default" 2>/dev/null)" 2>/dev/null)
+        local default_link
+        default_link="$(llvm-get-default-link)"
+        if [ -L "$default_link" ]; then
+            default_version=$(basename "$(readlink "$default_link" 2>/dev/null)" 2>/dev/null)
         fi
 
         # Show status indicators in stderr (doesn't affect completion)
@@ -1024,10 +1221,16 @@ llvm-config-apply-directories() {
 
 # Function to get effective toolchains directory (respects config)
 llvm-get-toolchains-dir() {
-    if [ -n "$LLVM_TOOLCHAINS_DIR" ]; then
+    local default_toolchains_dir="$HOME/.llvm/toolchains"
+
+    if [ -n "$LLVM_TOOLCHAINS_DIR" ] && { [ -z "$LLVM_HOME" ] || [ "$LLVM_TOOLCHAINS_DIR" != "$default_toolchains_dir" ]; }; then
         echo "$LLVM_TOOLCHAINS_DIR"
     elif [ -n "$LLVM_CUSTOM_TOOLCHAINS_DIR" ]; then
         echo "$LLVM_CUSTOM_TOOLCHAINS_DIR"
+    elif [ -n "$LLVM_HOME" ]; then
+        echo "$LLVM_HOME/toolchains"
+    elif [ -n "$LLVM_CUSTOM_HOME" ]; then
+        echo "$LLVM_CUSTOM_HOME/toolchains"
     else
         echo "$HOME/.llvm/toolchains"
     fi
@@ -1035,13 +1238,51 @@ llvm-get-toolchains-dir() {
 
 # Function to get effective sources directory (respects config)
 llvm-get-sources-dir() {
-    if [ -n "$LLVM_SOURCES_DIR" ]; then
+    local default_sources_dir="$HOME/.llvm/sources"
+
+    if [ -n "$LLVM_SOURCES_DIR" ] && { [ -z "$LLVM_HOME" ] || [ "$LLVM_SOURCES_DIR" != "$default_sources_dir" ]; }; then
         echo "$LLVM_SOURCES_DIR"
     elif [ -n "$LLVM_CUSTOM_SOURCES_DIR" ]; then
         echo "$LLVM_CUSTOM_SOURCES_DIR"
+    elif [ -n "$LLVM_HOME" ]; then
+        echo "$LLVM_HOME/sources"
+    elif [ -n "$LLVM_CUSTOM_HOME" ]; then
+        echo "$LLVM_CUSTOM_HOME/sources"
     else
         echo "$HOME/.llvm/sources"
     fi
+}
+
+llvm-register-autoactivate-hooks() {
+    if [ -n "$LLVMUP_DISABLE_AUTOACTIVATE" ] || [ -n "$LLVM_TEST_MODE" ]; then
+        return 0
+    fi
+
+    if [ -n "${BASH_VERSION:-}" ]; then
+        case ";${PROMPT_COMMAND:-};" in
+            *";__llvmup_autoactivate_hook;"*)
+                ;;
+            "")
+                PROMPT_COMMAND="__llvmup_autoactivate_hook"
+                ;;
+            *)
+                PROMPT_COMMAND="__llvmup_autoactivate_hook;$PROMPT_COMMAND"
+                ;;
+        esac
+        export PROMPT_COMMAND
+    fi
+
+    if [ -n "${ZSH_VERSION:-}" ]; then
+        autoload -Uz add-zsh-hook 2>/dev/null || true
+        if typeset -f add-zsh-hook >/dev/null 2>&1; then
+            add-zsh-hook chpwd __llvmup_autoactivate_hook 2>/dev/null || true
+            add-zsh-hook precmd __llvmup_autoactivate_hook 2>/dev/null || true
+        fi
+    fi
+}
+
+__llvmup_autoactivate_hook() {
+    llvm-autoactivate 2>/dev/null || true
 }
 
 # Function to apply loaded .llvmup-config settings
@@ -1678,8 +1919,15 @@ llvm-autoactivate-enhanced() {
         return 0
     fi
 
-    if [ ! -f ".llvmup-config" ]; then
-        return 0
+    if [ -z "$LLVM_CONFIG_VERSION" ]; then
+        local config_root="${LLVMUP_AUTOACTIVATE_ROOT:-}"
+        if [ -n "$config_root" ] && [ -f "$config_root/.llvmup-config" ]; then
+            llvm-load-config-from-root "$config_root" >/dev/null 2>&1 || return 0
+        elif [ -f ".llvmup-config" ]; then
+            llvm-config-load >/dev/null 2>&1 || return 0
+        else
+            return 0
+        fi
     fi
 
     local backup_quiet_success=$QUIET_SUCCESS
@@ -1743,12 +1991,38 @@ llvm-autoactivate-enhanced() {
     log_expression_debug "Auto-activating version: $selected_version (matched expression: $version_expr)"
 
     # Activate the selected version
+    local previous_mode="${LLVMUP_AUTOACTIVATE_MODE:-}"
+    local previous_root="${LLVMUP_AUTOACTIVATE_ROOT:-}"
+    export LLVMUP_AUTOACTIVATE_MODE=1
+    export LLVMUP_AUTOACTIVATE_ROOT="${LLVMUP_AUTOACTIVATE_ROOT:-$PWD}"
+
     if llvm-activate "$selected_version" >/dev/null 2>&1; then
         log_success "Auto-activated LLVM $selected_version (expression: $version_expr)"
     else
+        if [ -n "$previous_mode" ]; then
+            export LLVMUP_AUTOACTIVATE_MODE="$previous_mode"
+        else
+            unset LLVMUP_AUTOACTIVATE_MODE
+        fi
+        if [ -n "$previous_root" ]; then
+            export LLVMUP_AUTOACTIVATE_ROOT="$previous_root"
+        else
+            unset LLVMUP_AUTOACTIVATE_ROOT
+        fi
         log_error "Failed to auto-activate LLVM $selected_version"
         QUIET_SUCCESS=$backup_quiet_success
         return 1
+    fi
+
+    if [ -n "$previous_mode" ]; then
+        export LLVMUP_AUTOACTIVATE_MODE="$previous_mode"
+    else
+        unset LLVMUP_AUTOACTIVATE_MODE
+    fi
+    if [ -n "$previous_root" ]; then
+        export LLVMUP_AUTOACTIVATE_ROOT="$previous_root"
+    else
+        unset LLVMUP_AUTOACTIVATE_ROOT
     fi
 
     QUIET_SUCCESS=$backup_quiet_success
@@ -1820,20 +2094,40 @@ llvm-autoactivate() {
         return 0
     fi
 
-    if [ -f ".llvmup-config" ]; then
-        BACKUP_QUIET_SUCCESS=$QUIET_SUCCESS
-        QUIET_SUCCESS=1
-        llvm-config-load || return 0
-        if [ "$LLVM_CONFIG_AUTO_ACTIVATE" = "true" ]; then
-            # Use enhanced auto-activation with expressions
-            llvm-autoactivate-enhanced || return 0
+    local config_root=""
+    config_root="$(llvm-find-config-root "$PWD")" || config_root=""
+
+    if [ -z "$config_root" ]; then
+        if [ "${_LLVMUP_AUTOACTIVATE_ACTIVE:-0}" = "1" ] && [ -n "${_ACTIVE_LLVM:-}" ]; then
+            llvm-deactivate >/dev/null 2>&1 || true
         fi
-        QUIET_SUCCESS=$BACKUP_QUIET_SUCCESS
+        return 0
     fi
+
+    BACKUP_QUIET_SUCCESS=$QUIET_SUCCESS
+    QUIET_SUCCESS=1
+
+    llvm-load-config-from-root "$config_root" >/dev/null 2>&1 || {
+        QUIET_SUCCESS=$BACKUP_QUIET_SUCCESS
+        return 0
+    }
+
+    if [ "$LLVM_CONFIG_AUTO_ACTIVATE" = "true" ]; then
+        export LLVMUP_AUTOACTIVATE_ROOT="$config_root"
+        llvm-autoactivate-enhanced || {
+            QUIET_SUCCESS=$BACKUP_QUIET_SUCCESS
+            return 0
+        }
+    elif [ "${_LLVMUP_AUTOACTIVATE_ACTIVE:-0}" = "1" ] && [ "${_LLVMUP_AUTOACTIVATE_ROOT:-}" != "$config_root" ]; then
+        llvm-deactivate >/dev/null 2>&1 || true
+    fi
+
+    QUIET_SUCCESS=$BACKUP_QUIET_SUCCESS
 }
 
 # Auto-ativação: executar sempre se houver .llvmup-config no diretório atual
 # A função llvm-autoactivate já tem lógica para não reativar se a versão atual já satisfaz a expressão
 if [ -z "$LLVMUP_DISABLE_AUTOACTIVATE" ] && [ -z "$LLVM_TEST_MODE" ]; then
+    llvm-register-autoactivate-hooks
     llvm-autoactivate 2>/dev/null || true
 fi
