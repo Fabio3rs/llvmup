@@ -50,6 +50,20 @@ teardown() {
     [[ "$output" == *"18.*:Any 18.x version"* ]]
 }
 
+@test "zsh completion exposes new wrapper commands and local activation targets" {
+    if ! command -v zsh >/dev/null 2>&1; then
+        skip "zsh not installed"
+    fi
+
+    run zsh -fc "export HOME='$TEST_DIR'; export PATH='$TEST_DIR/bin:'\"\$PATH\"; source '$BATS_TEST_DIRNAME/../../_llvmup'; _llvmup_zsh_collect_specs _llvmup_get_main_command_items; print -r -- \"\${_LLVMUP_ZSH_COMMANDS[*]}\"; _llvmup_zsh_collect_specs _llvmup_get_activation_version_items; print -r -- \"\${_LLVMUP_ZSH_LOCALS[*]}\""
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"activate:Activate an installed LLVM version in the current shell"* ]]
+    [[ "$output" == *"deactivate:Deactivate the current LLVM version in the current shell"* ]]
+    [[ "$output" == *"status:Show the current LLVM environment status"* ]]
+    [[ "$output" == *"llvmorg-19.1.7:Installed locally"* ]]
+    [[ "$output" == *"source-llvmorg-20.1.0:Installed locally"* ]]
+}
+
 @test "zsh completion adapts config actions to config presence" {
     if ! command -v zsh >/dev/null 2>&1; then
         skip "zsh not installed"

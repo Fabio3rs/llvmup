@@ -28,11 +28,68 @@ teardown() {
     run bash "$ORIGINAL_DIR/llvmup" --help
     # Help exits successfully and shows the enhanced options
     assert_success
+    assert_output --partial "activate"
+    assert_output --partial "deactivate"
+    assert_output --partial "status"
+    assert_output --partial "list"
     assert_output --partial "--cmake-flags"
     assert_output --partial "--name"
     assert_output --partial "--default"
     assert_output --partial "--profile"
     assert_output --partial "--component"
+}
+
+@test "llvmup help uses shell help when functions are available" {
+    run bash -lc "export HOME='$TEST_HOME'; export LLVMUP_DISABLE_AUTOACTIVATE=1; source '$ORIGINAL_DIR/llvm-functions.sh'; llvmup help"
+    assert_success
+    assert_output --partial "LLVM Manager - Complete Usage Guide"
+}
+
+@test "llvmup status routes to shell function" {
+    run bash -lc "export HOME='$TEST_HOME'; export LLVMUP_DISABLE_AUTOACTIVATE=1; source '$ORIGINAL_DIR/llvm-functions.sh'; llvmup status"
+    assert_success
+    assert_output --partial "LLVM Environment Status"
+}
+
+@test "llvmup list routes to shell function" {
+    mkdir -p "$TEST_HOME/.llvm/toolchains/test-version"
+
+    run bash -lc "export HOME='$TEST_HOME'; export LLVMUP_DISABLE_AUTOACTIVATE=1; source '$ORIGINAL_DIR/llvm-functions.sh'; llvmup list"
+    assert_success
+    assert_output --partial "Installed LLVM Versions"
+    assert_output --partial "test-version"
+}
+
+@test "llvmup activate requires version argument" {
+    run bash "$ORIGINAL_DIR/llvmup" activate
+    assert_failure
+    assert_output --partial "Missing version argument for 'activate'"
+}
+
+@test "llvmup activate works through shell function wrapper" {
+    mkdir -p "$TEST_HOME/.llvm/toolchains/test-version/bin"
+    printf '#!/bin/bash\necho "clang version 18.0.0"\n' > "$TEST_HOME/.llvm/toolchains/test-version/bin/clang"
+    chmod +x "$TEST_HOME/.llvm/toolchains/test-version/bin/clang"
+
+    run bash -lc "export HOME='$TEST_HOME'; export LLVMUP_DISABLE_AUTOACTIVATE=1; source '$ORIGINAL_DIR/llvm-functions.sh'; llvmup activate test-version >/dev/null; printf '%s' \"\$_ACTIVE_LLVM\""
+    assert_success
+    [ "$output" = "test-version" ]
+}
+
+@test "llvmup deactivate works through shell function wrapper" {
+    mkdir -p "$TEST_HOME/.llvm/toolchains/test-version/bin"
+    printf '#!/bin/bash\necho "clang version 18.0.0"\n' > "$TEST_HOME/.llvm/toolchains/test-version/bin/clang"
+    chmod +x "$TEST_HOME/.llvm/toolchains/test-version/bin/clang"
+
+    run bash -lc "export HOME='$TEST_HOME'; export LLVMUP_DISABLE_AUTOACTIVATE=1; source '$ORIGINAL_DIR/llvm-functions.sh'; llvmup activate test-version >/dev/null; llvmup deactivate >/dev/null; printf '%s' \"\${_ACTIVE_LLVM:-inactive}\""
+    assert_success
+    [ "$output" = "inactive" ]
+}
+
+@test "llvmup vscode-activate requires version argument" {
+    run bash "$ORIGINAL_DIR/llvmup" vscode-activate
+    assert_failure
+    assert_output --partial "Missing version argument for 'vscode-activate'"
 }
 
 @test "llvmup default command shows help when no args" {

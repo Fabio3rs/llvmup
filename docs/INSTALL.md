@@ -98,7 +98,7 @@ This script provides an interactive menu to choose installation options.
 - Shell profile is automatically configured
 - Restart terminal or run `source ~/.bashrc`
 - Functions are available immediately
-- If `~/.zshrc` exists, LLVMUP also configures `fpath` and `compinit` for native zsh completion
+- If `~/.zshrc` exists, LLVMUP also sources `llvm-functions.sh` and configures `fpath` and `compinit` for native zsh completion
 
 ### For System-Wide Installations
 - Add to system-wide profile: `/etc/profile.d/llvmup.sh`

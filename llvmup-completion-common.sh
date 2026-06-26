@@ -83,6 +83,11 @@ _llvmup_get_major_minor_templates() {
 _llvmup_get_main_command_items() {
     cat <<'EOF'
 install	command	Install an LLVM version
+activate	command	Activate an installed LLVM version in the current shell
+deactivate	command	Deactivate the current LLVM version in the current shell
+vscode-activate	command	Configure the current workspace for an installed LLVM version
+status	command	Show the current LLVM environment status
+list	command	List installed LLVM versions
 default	command	Manage the global default LLVM version
 config	command	Manage project configuration
 help	command	Show help

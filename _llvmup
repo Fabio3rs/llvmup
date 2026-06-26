@@ -137,6 +137,13 @@ _llvmup() {
     fi
 
     case "$command" in
+        activate|vscode-activate)
+            _llvmup_zsh_complete_local_versions
+            return 0
+            ;;
+        deactivate|status|list|help)
+            return 0
+            ;;
         default)
             if (( CURRENT == 3 )); then
                 compadd -- set show

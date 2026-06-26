@@ -148,6 +148,19 @@ EOF
 }
 
 @test "subcommand completions work correctly" {
+    COMP_WORDS=("llvmup" "")
+    COMP_CWORD=1
+    COMPREPLY=()
+
+    _llvmup_completions
+
+    local completions="${COMPREPLY[*]}"
+    [[ "$completions" == *"activate"* ]]
+    [[ "$completions" == *"deactivate"* ]]
+    [[ "$completions" == *"vscode-activate"* ]]
+    [[ "$completions" == *"status"* ]]
+    [[ "$completions" == *"list"* ]]
+
     # Test "llvmup default <TAB>"
     COMP_WORDS=("llvmup" "default" "")
     COMP_CWORD=2
@@ -171,6 +184,21 @@ EOF
     [[ "$completions" == *"load"* ]]
     [[ "$completions" == *"apply"* ]]
     [[ "$completions" == *"activate"* ]]
+}
+
+@test "wrapper activation completions use only local versions" {
+    COMP_WORDS=("llvmup" "activate" "")
+    COMP_CWORD=2
+    COMPREPLY=()
+
+    _llvmup_completions
+
+    local completions="${COMPREPLY[*]}"
+    [[ "$completions" == *"llvmorg-19.1.7"* ]]
+    [[ "$completions" == *"llvmorg-20.1.0"* ]]
+    [[ "$completions" == *"source-llvmorg-21-init"* ]]
+    [[ "$completions" != *"latest"* ]]
+    [[ "$completions" != *"llvmorg-21.1.0"* ]]
 }
 
 @test "version and option completions work" {

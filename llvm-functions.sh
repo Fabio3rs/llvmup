@@ -334,6 +334,36 @@ llvmup() {
     runtime_script="$(llvm-find-runtime-script llvmup)" || runtime_script=""
 
     case "${1:-}" in
+        activate)
+            shift
+            llvm-activate "$@"
+            return $?
+            ;;
+        deactivate)
+            shift
+            llvm-deactivate "$@"
+            return $?
+            ;;
+        vscode-activate)
+            shift
+            llvm-vscode-activate "$@"
+            return $?
+            ;;
+        status)
+            shift
+            llvm-status "$@"
+            return $?
+            ;;
+        list)
+            shift
+            llvm-list "$@"
+            return $?
+            ;;
+        help)
+            shift
+            llvm-help "$@"
+            return $?
+            ;;
         config)
             local config_subcommand="${2:-}"
             shift

@@ -3,11 +3,22 @@
 #
 # Usage:
 #   llvmup [install] [--from-source] [-v|--verbose] [-q|--quiet] [-h|--help] [args...]
+#   llvmup activate <version>
+#   llvmup deactivate
+#   llvmup vscode-activate <version>
+#   llvmup status
+#   llvmup list
+#   llvmup help
 #   llvmup default <set|show> [version]
 #   llvmup config <init|load|activate>
 #
 # Options:
 #   install              Install LLVM version (default command if version specified)
+#   activate             Activate an installed LLVM version in the current shell
+#   deactivate           Deactivate the current LLVM version in the current shell
+#   vscode-activate      Configure VSCode for an installed LLVM version
+#   status               Show current LLVM status
+#   list                 List installed LLVM versions
 #   default              Manage default LLVM version
 #   config               Manage project configuration
 #   --from-source        Build LLVM from source instead of installing a pre-built release.
@@ -82,6 +93,24 @@ source_local_functions() {
 }
 
 # Command handling functions
+run_shell_function_command() {
+    local function_name="$1"
+    shift
+
+    if ! command -v "$function_name" >/dev/null 2>&1; then
+        source_local_functions >/dev/null 2>&1 || true
+    fi
+
+    if command -v "$function_name" >/dev/null 2>&1; then
+        "$function_name" "$@"
+        return $?
+    fi
+
+    log_error "$function_name function not available"
+    log_info "Make sure llvm-functions.sh is installed next to llvmup or loaded in your shell"
+    return 1
+}
+
 handle_config_command() {
     local sub_command="$1"
     local config_handler="llvm-config-$sub_command"
@@ -228,6 +257,10 @@ case "${1:-}" in
         COMMAND="install"
         shift
         ;;
+    activate|deactivate|vscode-activate|status|list|help)
+        COMMAND="$1"
+        shift
+        ;;
     default)
         COMMAND="default"
         shift
@@ -268,6 +301,11 @@ Usage: llvmup [install] [OPTIONS] [VERSION]
 
 Commands:
   install          Install an LLVM version (default command)
+  activate         Activate an installed LLVM version in the current shell
+  deactivate       Deactivate the current LLVM version in the current shell
+  vscode-activate  Configure VSCode for an installed LLVM version
+  status           Show the current LLVM environment status
+  list             List installed LLVM versions
   default          Manage default LLVM version
   config           Manage project configuration
   help             Show this help message
@@ -295,6 +333,11 @@ Examples:
     -n "21.1.0-debug" --default                   # Custom build with name
   llvmup install --profile minimal 18.1.8        # Install minimal profile
   llvmup install --component clang --component lldb  # Specific components
+  llvmup activate 18.1.8                         # Activate in the current shell
+  llvmup deactivate                              # Deactivate the current shell
+  llvmup vscode-activate 18.1.8                  # Configure VSCode integration
+  llvmup status                                  # Show current LLVM status
+  llvmup list                                    # List installed LLVM versions
   llvmup default set 18.1.8                      # Set default version
   llvmup default show                             # Show current default
   llvmup config init                              # Initialize project config
@@ -309,26 +352,59 @@ EOF
 remaining_args=()
 
 # Parse main command first
-if [[ $# -gt 0 ]] && [[ "$1" != -* ]]; then
-    case "$1" in
-        install|default|help)
-            COMMAND="$1"
-            shift
-            ;;
-        *)
-            # Default to install command if first arg is not a command
-            COMMAND="install"
-            ;;
-    esac
-else
-    # Default to install command
-    COMMAND="install"
+if [ -z "$COMMAND" ]; then
+    if [[ $# -gt 0 ]] && [[ "$1" != -* ]]; then
+        case "$1" in
+            install|activate|deactivate|vscode-activate|status|list|default|help)
+                COMMAND="$1"
+                shift
+                ;;
+            *)
+                # Default to install command if first arg is not a command
+                COMMAND="install"
+                ;;
+        esac
+    else
+        # Default to install command
+        COMMAND="install"
+    fi
 fi
 
 # Handle non-install commands early
 case "$COMMAND" in
     help)
-        usage 0
+        if ! run_shell_function_command llvm-help; then
+            usage 0
+        fi
+        exit 0
+        ;;
+    activate)
+        if [ $# -eq 0 ]; then
+            log_error "Missing version argument for 'activate'"
+            exit 1
+        fi
+        run_shell_function_command llvm-activate "$1"
+        exit $?
+        ;;
+    deactivate)
+        run_shell_function_command llvm-deactivate
+        exit $?
+        ;;
+    vscode-activate)
+        if [ $# -eq 0 ]; then
+            log_error "Missing version argument for 'vscode-activate'"
+            exit 1
+        fi
+        run_shell_function_command llvm-vscode-activate "$1"
+        exit $?
+        ;;
+    status)
+        run_shell_function_command llvm-status
+        exit $?
+        ;;
+    list)
+        run_shell_function_command llvm-list
+        exit $?
         ;;
     default)
         if [ $# -eq 0 ]; then

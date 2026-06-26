@@ -19,6 +19,8 @@ setup() {
     cp "$BATS_TEST_DIRNAME/../../llvmup-completion.sh" .
     cp "$BATS_TEST_DIRNAME/../../llvmup-completion-common.sh" .
     cp "$BATS_TEST_DIRNAME/../../_llvmup" .
+
+    touch "$HOME/.zshrc"
 }
 
 teardown() {
@@ -104,6 +106,16 @@ EOF
 
     [ -d "$LLVMUP_ZSH_COMPLETION_DIR" ]
     [ -f "$LLVMUP_ZSH_COMPLETION_DIR/_llvmup" ]
+}
+
+@test "install.sh configures zsh functions and completion" {
+    export LLVMUP_PREFIX="$BATS_TMPDIR/zsh_profile_test"
+
+    run timeout 5 ./install.sh
+
+    [ -f "$HOME/.zshrc" ]
+    grep -Fq "source \"$LLVMUP_PREFIX/bin/llvm-functions.sh\"" "$HOME/.zshrc"
+    grep -Fq "LLVMUP Zsh Completion - Start" "$HOME/.zshrc"
 }
 
 @test "uninstall.sh works with same custom directories" {

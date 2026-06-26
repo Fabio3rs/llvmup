@@ -99,7 +99,7 @@ EOF
     run "$LLVMUP_SCRIPT" help
 
     [ "$status" -eq 0 ]
-    [[ "$output" == *"config           Manage project configuration"* ]]
-    [[ "$output" == *"llvmup config init"* ]]
-    [[ "$output" == *"llvmup config activate"* ]]
+    [[ "$output" == *"LLVM Manager - Complete Usage Guide"* ]]
+    [[ "$output" == *"llvm-config-init"* ]]
+    [[ "$output" == *"llvm-config-activate"* ]]
 }

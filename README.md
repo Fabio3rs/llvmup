@@ -19,7 +19,7 @@ An LLVM version manager inspired by tools like **rustup**, **Python venv**, and 
 - **Default version management** with symlinks
 - **Component selection** for targeted installations
 - **Windows PowerShell support** with equivalent scripts
-- **Subcommand structure** (install, config, default)
+- **Subcommand structure** (install, activate, deactivate, vscode-activate, status, list, config, default)
 - **Custom installation naming** for build variants
 - **Test suite** with 90+ automated tests
 - **LIBC_WNO_ERROR control** for system compatibility
@@ -86,7 +86,7 @@ cd llvmup
 source ~/.bashrc
 ```
 
-After reloading your shell profile, Linux commands such as `llvm-activate`, `llvm-deactivate`, `llvmup config activate`, `llvm-status`, and `llvm-list` are provided by shell functions loaded from `llvm-functions.sh`. Those functions call the helper scripts installed in your `bin` directory when needed.
+After reloading your shell profile, Linux commands such as `llvmup activate`, `llvmup deactivate`, `llvmup config activate`, `llvmup status`, and `llvmup list` are provided by shell functions loaded from `llvm-functions.sh`. Those functions call the helper scripts installed in your `bin` directory when needed, and user installs configure both Bash and Zsh to load that function layer automatically.
 
 ##### Custom Installation Paths
 ```bash
@@ -227,6 +227,12 @@ llvmup install --from-source --verbose 18.1.8               # Show verbose outpu
 
 ### Environment Management
 ```bash
+llvmup activate <version>   # Activate an LLVM version in the current shell
+llvmup deactivate           # Deactivate current version
+llvmup status               # Show detailed current status
+llvmup list                 # List installed versions
+llvmup help                 # Show detailed usage guide
+
 llvm-activate <version>      # Activate an LLVM version
 llvm-deactivate            # Deactivate current version
 llvm-status                # Show detailed current status
