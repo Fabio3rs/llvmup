@@ -20,12 +20,14 @@ Describe "LLVM Disk Usage" {
     }
 
     BeforeEach {
+        Remove-Item -Path (Join-Path $TestDrive "*") -Recurse -Force -ErrorAction SilentlyContinue
         $script:TestToolchainsPath = Join-Path $TestDrive "toolchains"
         New-Item -ItemType Directory -Path $script:TestToolchainsPath -Force | Out-Null
     }
 
     AfterEach {
         $script:TOOLCHAINS_DIR = $null
+        $env:LLVM_TOOLCHAINS_DIR = $null
     }
 
     It "Returns one entry per installation plus a total row" {
@@ -55,7 +57,7 @@ Describe "LLVM Disk Usage" {
 
     It "Respects the session toolchains path when no path parameter is provided" {
         New-TestFileWithSize -Path (Join-Path $script:TestToolchainsPath "llvmorg-22.0.0/bin/clang.exe") -Bytes 512
-        $script:TOOLCHAINS_DIR = $script:TestToolchainsPath
+        $env:LLVM_TOOLCHAINS_DIR = $script:TestToolchainsPath
 
         $results = Get-LlvmDiskUsageData
 
