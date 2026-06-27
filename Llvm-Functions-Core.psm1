@@ -299,8 +299,9 @@ function Get-LlvmVersionsSimple {
     if (Test-Path $modulePath) { Import-Module $modulePath -Force } else { . "$PSScriptRoot\Get-UserHome.ps1" }
     $homeDir = Get-UserHome
 
-    if ($script:TOOLCHAINS_DIR) {
-        $possiblePaths += $script:TOOLCHAINS_DIR
+    $sessionToolchainsPath = Get-LlvmSessionToolchainsPath
+    if ($sessionToolchainsPath) {
+        $possiblePaths += $sessionToolchainsPath
     } else {
         $possiblePaths += Join-Path $homeDir ".llvm\toolchains"
     }
@@ -333,8 +334,9 @@ function Resolve-LlvmToolchainsPath {
     if (Test-Path $modulePath) { Import-Module $modulePath -Force } else { . "$PSScriptRoot\Get-UserHome.ps1" }
     $homeDir = Get-UserHome
 
-    if ($script:TOOLCHAINS_DIR) {
-        $possiblePaths += $script:TOOLCHAINS_DIR
+    $sessionToolchainsPath = Get-LlvmSessionToolchainsPath
+    if ($sessionToolchainsPath) {
+        $possiblePaths += $sessionToolchainsPath
     } else {
         $possiblePaths += Join-Path $homeDir ".llvm\toolchains"
     }
@@ -368,7 +370,33 @@ function Format-LlvmByteSize {
         return '{0} {1}' -f [Int64]$size, $units[$unitIndex]
     }
 
-    return '{0:N1} {1}' -f $size, $units[$unitIndex]
+    return [string]::Format([System.Globalization.CultureInfo]::InvariantCulture, '{0:N1} {1}', $size, $units[$unitIndex])
+}
+
+function Get-LlvmSessionToolchainsPath {
+    [CmdletBinding()]
+    param()
+
+    if ($env:LLVM_TOOLCHAINS_DIR) {
+        return $env:LLVM_TOOLCHAINS_DIR
+    }
+
+    if ($env:LLVM_CUSTOM_TOOLCHAINS_DIR) {
+        return $env:LLVM_CUSTOM_TOOLCHAINS_DIR
+    }
+
+    if ($script:TOOLCHAINS_DIR) {
+        return $script:TOOLCHAINS_DIR
+    }
+
+    foreach ($scope in @('Local', 'Script', 'Global')) {
+        $variable = Get-Variable -Name TOOLCHAINS_DIR -Scope $scope -ValueOnly -ErrorAction SilentlyContinue
+        if ($variable) {
+            return $variable
+        }
+    }
+
+    return $null
 }
 
 function Get-LlvmDiskUsageData {
@@ -883,7 +911,10 @@ function Invoke-LlvmActivate {
     # Determine toolchains path
     if (-not $ToolchainsPath) {
         $homeDir = if ($env:USERPROFILE) { $env:USERPROFILE } elseif ($env:HOME) { $env:HOME } else { [Environment]::GetFolderPath([System.Environment+SpecialFolder]::UserProfile) }
-        $ToolchainsPath = if ($script:TOOLCHAINS_DIR) { $script:TOOLCHAINS_DIR } else { Join-Path $homeDir ".llvm\toolchains" }
+        $ToolchainsPath = Get-LlvmSessionToolchainsPath
+        if (-not $ToolchainsPath) {
+            $ToolchainsPath = Join-Path $homeDir ".llvm\toolchains"
+        }
     }
 
     # Check if version exists
