@@ -8,6 +8,7 @@
 #   llvmup vscode-activate <version>
 #   llvmup status
 #   llvmup list
+#   llvmup disk-usage
 #   llvmup help
 #   llvmup default <set|show> [version]
 #   llvmup config <init|load|activate>
@@ -19,6 +20,7 @@
 #   vscode-activate      Configure VSCode for an installed LLVM version
 #   status               Show current LLVM status
 #   list                 List installed LLVM versions
+#   disk-usage           Show disk usage of installed LLVM versions
 #   default              Manage default LLVM version
 #   config               Manage project configuration
 #   --from-source        Build LLVM from source instead of installing a pre-built release.
@@ -257,7 +259,7 @@ case "${1:-}" in
         COMMAND="install"
         shift
         ;;
-    activate|deactivate|vscode-activate|status|list|help)
+    activate|deactivate|vscode-activate|status|list|disk-usage|help)
         COMMAND="$1"
         shift
         ;;
@@ -306,6 +308,7 @@ Commands:
   vscode-activate  Configure VSCode for an installed LLVM version
   status           Show the current LLVM environment status
   list             List installed LLVM versions
+  disk-usage       Show disk usage of installed LLVM versions
   default          Manage default LLVM version
   config           Manage project configuration
   help             Show this help message
@@ -323,6 +326,9 @@ Install Options:
   -q, --quiet                 Suppress non-essential output
   -h, --help                  Show this help message
 
+Disk Usage Options:
+  -h, --human-readable        Show disk usage using binary units
+
 Examples:
   llvmup install                                    # Install latest pre-built
   llvmup install 18.1.8                           # Install specific version
@@ -338,6 +344,8 @@ Examples:
   llvmup vscode-activate 18.1.8                  # Configure VSCode integration
   llvmup status                                  # Show current LLVM status
   llvmup list                                    # List installed LLVM versions
+  llvmup disk-usage                              # Show disk usage in bytes
+  llvmup disk-usage -h                           # Show disk usage in human-readable units
   llvmup default set 18.1.8                      # Set default version
   llvmup default show                             # Show current default
   llvmup config init                              # Initialize project config
@@ -355,7 +363,7 @@ remaining_args=()
 if [ -z "$COMMAND" ]; then
     if [[ $# -gt 0 ]] && [[ "$1" != -* ]]; then
         case "$1" in
-            install|activate|deactivate|vscode-activate|status|list|default|help)
+            install|activate|deactivate|vscode-activate|status|list|disk-usage|default|help)
                 COMMAND="$1"
                 shift
                 ;;
@@ -404,6 +412,10 @@ case "$COMMAND" in
         ;;
     list)
         run_shell_function_command llvm-list
+        exit $?
+        ;;
+    disk-usage)
+        run_shell_function_command llvm-disk-usage "$@"
         exit $?
         ;;
     default)

@@ -32,6 +32,7 @@ teardown() {
     assert_output --partial "deactivate"
     assert_output --partial "status"
     assert_output --partial "list"
+    assert_output --partial "disk-usage"
     assert_output --partial "--cmake-flags"
     assert_output --partial "--name"
     assert_output --partial "--default"
@@ -58,6 +59,25 @@ teardown() {
     assert_success
     assert_output --partial "Installed LLVM Versions"
     assert_output --partial "test-version"
+}
+
+@test "llvmup disk-usage routes to shell function" {
+    mkdir -p "$TEST_HOME/.llvm/toolchains/test-version/bin"
+    dd if=/dev/zero of="$TEST_HOME/.llvm/toolchains/test-version/bin/clang" bs=1 count=2048 status=none
+
+    run bash -lc "export HOME='$TEST_HOME'; export LLVMUP_DISABLE_AUTOACTIVATE=1; source '$ORIGINAL_DIR/llvm-functions.sh'; llvmup disk-usage"
+    assert_success
+    assert_output --partial $'test-version'
+    assert_output --partial $'total\t'
+}
+
+@test "llvmup disk-usage accepts human-readable flag" {
+    mkdir -p "$TEST_HOME/.llvm/toolchains/test-version/bin"
+    dd if=/dev/zero of="$TEST_HOME/.llvm/toolchains/test-version/bin/clang" bs=1 count=2048 status=none
+
+    run bash -lc "export HOME='$TEST_HOME'; export LLVMUP_DISABLE_AUTOACTIVATE=1; source '$ORIGINAL_DIR/llvm-functions.sh'; llvmup disk-usage -h"
+    assert_success
+    assert_output --partial "KiB"
 }
 
 @test "llvmup activate requires version argument" {

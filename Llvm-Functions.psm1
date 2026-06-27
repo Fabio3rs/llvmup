@@ -84,7 +84,10 @@ function Activate-Llvm {
     }
 
     # Import core implementation from Llvm-Functions-Core.psm1 to avoid duplication
-    $coreModulePath = Join-Path $PSScriptRoot '..\Llvm-Functions-Core.psm1'
+    $coreModulePath = Join-Path $PSScriptRoot 'Llvm-Functions-Core.psm1'
+    if (-not (Test-Path $coreModulePath)) {
+        $coreModulePath = Join-Path $PSScriptRoot '..\Llvm-Functions-Core.psm1'
+    }
     if (Test-Path $coreModulePath) { Import-Module -Force $coreModulePath }
 
     # Delegate activation to core implementation if available
@@ -422,10 +425,51 @@ function Invoke-LlvmAutoActivate {
     }
 }
 
+function Get-LlvmDiskUsage {
+    <#
+    .SYNOPSIS
+    Get disk usage for installed LLVM toolchains
+
+    .PARAMETER HumanReadable
+    Include a formatted human-readable size column
+    #>
+    [CmdletBinding()]
+    param(
+        [switch]$HumanReadable
+    )
+
+    $coreModulePath = Join-Path $PSScriptRoot 'Llvm-Functions-Core.psm1'
+    if (-not (Test-Path $coreModulePath)) {
+        $coreModulePath = Join-Path $PSScriptRoot '..\Llvm-Functions-Core.psm1'
+    }
+    if (Test-Path $coreModulePath) { Import-Module -Force $coreModulePath }
+
+    if (-not (Get-Command -Name Get-LlvmDiskUsageData -ErrorAction SilentlyContinue)) {
+        throw "Core disk usage function not available (Get-LlvmDiskUsageData)"
+    }
+
+    $toolchainsPath = if ($env:LLVM_TOOLCHAINS_DIR) {
+        $env:LLVM_TOOLCHAINS_DIR
+    } elseif ($env:LLVM_CUSTOM_TOOLCHAINS_DIR) {
+        $env:LLVM_CUSTOM_TOOLCHAINS_DIR
+    } else {
+        $script:TOOLCHAINS_DIR
+    }
+
+    $results = Get-LlvmDiskUsageData -ToolchainsPath $toolchainsPath -HumanReadable:$HumanReadable
+    if (-not $results) {
+        Write-LlvmLog "No LLVM toolchains found" -Level Info
+        return @()
+    }
+
+    return $results
+}
+
 # Export functions
 Export-ModuleMember -Function @(
     'Activate-Llvm',
     'Deactivate-Llvm',
+    'Get-LlvmDiskUsage',
     'Get-LlvmStatus',
     'Get-LlvmList',
     'Initialize-LlvmConfig',

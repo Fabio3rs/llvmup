@@ -242,6 +242,49 @@ llvm-get-default-link() {
     echo "$(llvm-get-home-dir)/default"
 }
 
+llvm-format-bytes() {
+    local bytes="$1"
+    local units=("B" "KiB" "MiB" "GiB" "TiB" "PiB")
+    local unit_index=0
+    local whole="$bytes"
+    local remainder=0
+
+    if ! [[ "$bytes" =~ ^[0-9]+$ ]]; then
+        echo "$bytes"
+        return 0
+    fi
+
+    while [ "$whole" -ge 1024 ] && [ "$unit_index" -lt $((${#units[@]} - 1)) ]; do
+        remainder=$((whole % 1024))
+        whole=$((whole / 1024))
+        unit_index=$((unit_index + 1))
+    done
+
+    if [ "$unit_index" -eq 0 ]; then
+        echo "${whole} ${units[$unit_index]}"
+        return 0
+    fi
+
+    local decimal=$(( (remainder * 10 + 512) / 1024 ))
+    if [ "$decimal" -eq 10 ]; then
+        whole=$((whole + 1))
+        decimal=0
+    fi
+
+    echo "${whole}.${decimal} ${units[$unit_index]}"
+}
+
+llvm-get-directory-bytes() {
+    local dir="$1"
+
+    if [ ! -d "$dir" ]; then
+        echo 0
+        return 0
+    fi
+
+    du -sb "$dir" 2>/dev/null | cut -f1
+}
+
 llvm-default-set() {
     local version="$1"
     local toolchains_dir
@@ -292,6 +335,73 @@ llvm-default-show() {
     fi
 
     return 0
+}
+
+llvm-disk-usage() {
+    local human_readable=0
+    local toolchains_dir
+    local total_bytes=0
+    local found=0
+    local arg
+
+    for arg in "$@"; do
+        case "$arg" in
+            -h|--human-readable)
+                human_readable=1
+                ;;
+            --help)
+                cat <<EOF
+Usage: llvm-disk-usage [OPTIONS]
+
+Options:
+  -h, --human-readable   Show sizes using binary units
+      --help             Show this help message
+EOF
+                return 0
+                ;;
+            *)
+                log_error "Unknown option for llvm-disk-usage: $arg"
+                return 1
+                ;;
+        esac
+    done
+
+    toolchains_dir="$(llvm-get-toolchains-dir)"
+    if [ ! -d "$toolchains_dir" ]; then
+        echo "No LLVM toolchains found at $toolchains_dir"
+        return 0
+    fi
+
+    local dir
+    for dir in "$toolchains_dir"/*; do
+        [ -d "$dir" ] || continue
+        found=1
+        local version
+        local bytes
+        local size
+
+        version="$(basename "$dir")"
+        bytes="$(llvm-get-directory-bytes "$dir")"
+        total_bytes=$((total_bytes + bytes))
+
+        if [ "$human_readable" -eq 1 ]; then
+            size="$(llvm-format-bytes "$bytes")"
+            printf '%s\t%s\n' "$size" "$version"
+        else
+            printf '%s\t%s\n' "$bytes" "$version"
+        fi
+    done
+
+    if [ "$found" -eq 0 ]; then
+        echo "No LLVM toolchains found at $toolchains_dir"
+        return 0
+    fi
+
+    if [ "$human_readable" -eq 1 ]; then
+        printf 'total\t%s\t%s\n' "$(llvm-format-bytes "$total_bytes")" "$toolchains_dir"
+    else
+        printf 'total\t%s\t%s\n' "$total_bytes" "$toolchains_dir"
+    fi
 }
 
 llvm-find-config-root() {
@@ -357,6 +467,11 @@ llvmup() {
         list)
             shift
             llvm-list "$@"
+            return $?
+            ;;
+        disk-usage)
+            shift
+            llvm-disk-usage "$@"
             return $?
             ;;
         help)
@@ -712,6 +827,7 @@ llvm-help() {
     echo "│   llvm-deactivate             # Deactivate current version │"
     echo "│   llvm-status                 # Show current status        │"
     echo "│   llvm-list                   # List installed versions    │"
+    echo "│   llvm-disk-usage            # Show disk usage by install │"
     echo "│   llvmup default set <ver>    # Set default version        │"
     echo "│   llvmup default show         # Show current default       │"
     echo "│                                                            │"

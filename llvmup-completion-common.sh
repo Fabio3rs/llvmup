@@ -88,9 +88,18 @@ deactivate	command	Deactivate the current LLVM version in the current shell
 vscode-activate	command	Configure the current workspace for an installed LLVM version
 status	command	Show the current LLVM environment status
 list	command	List installed LLVM versions
+disk-usage	command	Show disk usage of installed LLVM versions
 default	command	Manage the global default LLVM version
 config	command	Manage project configuration
 help	command	Show help
+EOF
+}
+
+_llvmup_get_disk_usage_flag_items() {
+    cat <<'EOF'
+-h	flag	Show human-readable sizes
+--human-readable	flag	Show human-readable sizes
+--help	flag	Show help
 EOF
 }
 

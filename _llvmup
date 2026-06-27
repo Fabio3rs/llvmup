@@ -144,6 +144,13 @@ _llvmup() {
         deactivate|status|list|help)
             return 0
             ;;
+        disk-usage)
+            if [[ "$cur" == -* ]]; then
+                _llvmup_zsh_collect_specs _llvmup_get_disk_usage_flag_items
+                _describe -t llvmup-flags 'Flags' _LLVMUP_ZSH_FLAGS
+            fi
+            return 0
+            ;;
         default)
             if (( CURRENT == 3 )); then
                 compadd -- set show

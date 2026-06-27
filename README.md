@@ -86,7 +86,7 @@ cd llvmup
 source ~/.bashrc
 ```
 
-After reloading your shell profile, Linux commands such as `llvmup activate`, `llvmup deactivate`, `llvmup config activate`, `llvmup status`, and `llvmup list` are provided by shell functions loaded from `llvm-functions.sh`. Those functions call the helper scripts installed in your `bin` directory when needed, and user installs configure both Bash and Zsh to load that function layer automatically.
+After reloading your shell profile, Linux commands such as `llvmup activate`, `llvmup deactivate`, `llvmup config activate`, `llvmup status`, `llvmup list`, and `llvmup disk-usage` are provided by shell functions loaded from `llvm-functions.sh`. Those functions call the helper scripts installed in your `bin` directory when needed, and user installs configure both Bash and Zsh to load that function layer automatically.
 
 ##### Custom Installation Paths
 ```bash
@@ -231,12 +231,15 @@ llvmup activate <version>   # Activate an LLVM version in the current shell
 llvmup deactivate           # Deactivate current version
 llvmup status               # Show detailed current status
 llvmup list                 # List installed versions
+llvmup disk-usage           # Show disk usage per installed version
+llvmup disk-usage -h        # Show disk usage in human-readable units
 llvmup help                 # Show detailed usage guide
 
 llvm-activate <version>      # Activate an LLVM version
 llvm-deactivate            # Deactivate current version
 llvm-status                # Show detailed current status
 llvm-list                  # List installed versions
+llvm-disk-usage            # Show disk usage per installed version
 llvm-help                  # Show detailed usage guide
 ```
 
@@ -604,6 +607,10 @@ Windows support with equivalent PowerShell scripts:
 .\Llvm-Default.ps1 -Command set -Version "18.1.8"
 .\Llvm-Default.ps1 -Command show
 
+# Disk usage
+Get-LlvmDiskUsage
+Get-LlvmDiskUsage -HumanReadable
+
 # Downloads with build options
 .\Download-Llvm.ps1 -CMakeFlags "-DCMAKE_BUILD_TYPE=Debug" -Name "llvm-18-debug" -Profile minimal
 ```
@@ -614,6 +621,22 @@ llvm-activate <TAB><TAB>     # List installed versions
 llvmup --<TAB><TAB>         # List available options
 llvmup install <TAB><TAB>   # Expressions, local installs and remote versions
 llvmup config <TAB><TAB>    # Guided config actions based on .llvmup-config
+llvmup disk-usage --<TAB><TAB>  # Disk usage flags
+```
+
+### Disk Usage Verification
+Use `llvmup disk-usage` to inspect the space consumed by each installation:
+
+```bash
+llvmup disk-usage
+# 8343552	llvmorg-19.1.7
+# 10493952	llvmorg-20.1.0
+# total	18837504	~/.llvm/toolchains
+
+llvmup disk-usage -h
+# 8.0 MiB	llvmorg-19.1.7
+# 10.0 MiB	llvmorg-20.1.0
+# total	18.0 MiB	~/.llvm/toolchains
 ```
 
 ### Detailed Status Verification

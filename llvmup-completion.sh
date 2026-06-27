@@ -108,7 +108,7 @@ _llvmup_completions() {
     local command="install"
     if [ ${#words[@]} -gt 1 ]; then
         case "${words[1]}" in
-            install|activate|deactivate|vscode-activate|status|list|default|config|help)
+            install|activate|deactivate|vscode-activate|status|list|disk-usage|default|config|help)
                 command="${words[1]}"
                 ;;
         esac
@@ -120,6 +120,12 @@ _llvmup_completions() {
             return 0
             ;;
         deactivate|status|list|help)
+            return 0
+            ;;
+        disk-usage)
+            if [[ "$cur" == -* ]]; then
+                _llvmup_collect_values _llvmup_get_disk_usage_flag_items "$cur"
+            fi
             return 0
             ;;
         default)

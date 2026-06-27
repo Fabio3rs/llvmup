@@ -279,6 +279,46 @@ teardown() {
     [[ "$output" == *"$TEST_VERSION2"* ]]
 }
 
+@test "llvm-disk-usage reports bytes and total for installed versions" {
+    dd if=/dev/zero of="$LLVM_CUSTOM_TOOLCHAINS_DIR/$TEST_VERSION/bin/clang-size" bs=1 count=1536 status=none
+    dd if=/dev/zero of="$LLVM_CUSTOM_TOOLCHAINS_DIR/$TEST_VERSION2/bin/clang-size" bs=1 count=2048 status=none
+
+    local expected_one
+    local expected_two
+    local expected_total
+    expected_one="$(du -sb "$LLVM_CUSTOM_TOOLCHAINS_DIR/$TEST_VERSION" | cut -f1)"
+    expected_two="$(du -sb "$LLVM_CUSTOM_TOOLCHAINS_DIR/$TEST_VERSION2" | cut -f1)"
+    expected_total=$((expected_one + expected_two))
+
+    run bash -c "source '$BATS_TEST_DIRNAME/../../llvm-functions.sh'; export LLVM_CUSTOM_TOOLCHAINS_DIR='$LLVM_CUSTOM_TOOLCHAINS_DIR'; llvm-disk-usage"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"$expected_one"$'\t'"$TEST_VERSION"* ]]
+    [[ "$output" == *"$expected_two"$'\t'"$TEST_VERSION2"* ]]
+    [[ "$output" == *"total"$'\t'"$expected_total"$'\t'"$LLVM_CUSTOM_TOOLCHAINS_DIR"* ]]
+}
+
+@test "llvm-disk-usage -h shows human-readable sizes and respects custom toolchains dir" {
+    dd if=/dev/zero of="$LLVM_CUSTOM_TOOLCHAINS_DIR/$TEST_VERSION/bin/clang-size" bs=1 count=2048 status=none
+
+    local expected_bytes
+    local expected_human
+    expected_bytes="$(du -sb "$LLVM_CUSTOM_TOOLCHAINS_DIR/$TEST_VERSION" | cut -f1)"
+    expected_human="$(bash -lc "source '$BATS_TEST_DIRNAME/../../llvm-functions.sh'; llvm-format-bytes '$expected_bytes'")"
+
+    run bash -c "source '$BATS_TEST_DIRNAME/../../llvm-functions.sh'; export LLVM_CUSTOM_TOOLCHAINS_DIR='$LLVM_CUSTOM_TOOLCHAINS_DIR'; llvm-disk-usage -h"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"$expected_human"$'\t'"$TEST_VERSION"* ]]
+    [[ "$output" == *"total"$'\t'*"$LLVM_CUSTOM_TOOLCHAINS_DIR"* ]]
+}
+
+@test "llvm-disk-usage handles missing toolchains directory gracefully" {
+    rm -rf "$LLVM_CUSTOM_TOOLCHAINS_DIR"
+
+    run bash -c "source '$BATS_TEST_DIRNAME/../../llvm-functions.sh'; export LLVM_CUSTOM_TOOLCHAINS_DIR='$LLVM_CUSTOM_TOOLCHAINS_DIR'; llvm-disk-usage"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"No LLVM toolchains found at $LLVM_CUSTOM_TOOLCHAINS_DIR"* ]]
+}
+
 @test "llvm-vscode-activate function shows usage when called without arguments" {
     run llvm-vscode-activate
     [ "$status" -eq 1 ]

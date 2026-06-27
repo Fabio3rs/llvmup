@@ -319,6 +319,115 @@ function Get-LlvmVersionsSimple {
     return @()
 }
 
+function Resolve-LlvmToolchainsPath {
+    [CmdletBinding()]
+    param([string]$ToolchainsPath = $null)
+
+    $possiblePaths = @()
+
+    if ($ToolchainsPath) {
+        $possiblePaths += $ToolchainsPath
+    }
+
+    $modulePath = Join-Path $PSScriptRoot 'Get-UserHome.psm1'
+    if (Test-Path $modulePath) { Import-Module $modulePath -Force } else { . "$PSScriptRoot\Get-UserHome.ps1" }
+    $homeDir = Get-UserHome
+
+    if ($script:TOOLCHAINS_DIR) {
+        $possiblePaths += $script:TOOLCHAINS_DIR
+    } else {
+        $possiblePaths += Join-Path $homeDir ".llvm\toolchains"
+    }
+    $possiblePaths += Join-Path $homeDir ".llvm/toolchains"
+    $possiblePaths += "/tmp/.llvm/toolchains"
+    $possiblePaths += "$(Get-Location)/.llvm/toolchains"
+
+    foreach ($candidate in $possiblePaths) {
+        if ($candidate) {
+            return $candidate
+        }
+    }
+
+    return Join-Path $homeDir ".llvm\toolchains"
+}
+
+function Format-LlvmByteSize {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][Int64]$Bytes)
+
+    $units = @('B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB')
+    $size = [double]$Bytes
+    $unitIndex = 0
+
+    while ($size -ge 1024 -and $unitIndex -lt ($units.Count - 1)) {
+        $size = $size / 1024
+        $unitIndex++
+    }
+
+    if ($unitIndex -eq 0) {
+        return '{0} {1}' -f [Int64]$size, $units[$unitIndex]
+    }
+
+    return '{0:N1} {1}' -f $size, $units[$unitIndex]
+}
+
+function Get-LlvmDiskUsageData {
+    [CmdletBinding()]
+    param(
+        [string]$ToolchainsPath = $null,
+        [switch]$HumanReadable
+    )
+
+    $resolvedPath = Resolve-LlvmToolchainsPath -ToolchainsPath $ToolchainsPath
+    if (-not (Test-Path $resolvedPath)) {
+        Write-Verbose "No toolchains directory found at $resolvedPath"
+        return @()
+    }
+
+    $items = @(Get-ChildItem $resolvedPath -Directory | Sort-Object Name)
+    if (-not $items) {
+        Write-Verbose "No LLVM toolchains found at $resolvedPath"
+        return @()
+    }
+
+    $results = @()
+    $totalBytes = [Int64]0
+
+    foreach ($item in $items) {
+        $bytes = [Int64]0
+        $files = Get-ChildItem $item.FullName -File -Recurse -ErrorAction SilentlyContinue
+        if ($files) {
+            $sum = $files | Measure-Object -Property Length -Sum
+            if ($sum.Sum) {
+                $bytes = [Int64]$sum.Sum
+            }
+        }
+
+        $totalBytes += $bytes
+        $entry = [pscustomobject]@{
+            Version = $item.Name
+            Bytes   = $bytes
+            Path    = $item.FullName
+        }
+        if ($HumanReadable) {
+            Add-Member -InputObject $entry -NotePropertyName Size -NotePropertyValue (Format-LlvmByteSize -Bytes $bytes)
+        }
+        $results += $entry
+    }
+
+    $totalEntry = [pscustomobject]@{
+        Version = 'total'
+        Bytes   = $totalBytes
+        Path    = $resolvedPath
+    }
+    if ($HumanReadable) {
+        Add-Member -InputObject $totalEntry -NotePropertyName Size -NotePropertyValue (Format-LlvmByteSize -Bytes $totalBytes)
+    }
+    $results += $totalEntry
+
+    return $results
+}
+
 function Invoke-LlvmMatchVersions {
     [CmdletBinding()]
     param(
@@ -885,6 +994,9 @@ Export-ModuleMember -Function @(
     'Invoke-LlvmVersionMatchesRange',
     'Get-LlvmAutoActivateConfig',
     'Get-LlvmVersionsSimple',
+    'Resolve-LlvmToolchainsPath',
+    'Format-LlvmByteSize',
+    'Get-LlvmDiskUsageData',
     'Invoke-LlvmMatchVersions',
     'Invoke-LlvmAutoActivate',
     'Get-LlvmActiveVersion',
