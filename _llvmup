@@ -141,6 +141,18 @@ _llvmup() {
             _llvmup_zsh_complete_local_versions
             return 0
             ;;
+        env)
+            if [[ "$prev" == "--format" ]]; then
+                compadd -- shell
+                return 0
+            fi
+            if [[ "$cur" == -* ]]; then
+                compadd -- --config --format
+                return 0
+            fi
+            _llvmup_zsh_complete_local_versions
+            return 0
+            ;;
         deactivate|status|list|help)
             return 0
             ;;

@@ -85,6 +85,7 @@ _llvmup_get_main_command_items() {
 install	command	Install an LLVM version
 activate	command	Activate an installed LLVM version in the current shell
 deactivate	command	Deactivate the current LLVM version in the current shell
+env	command	Print shell exports for CI/non-interactive usage
 vscode-activate	command	Configure the current workspace for an installed LLVM version
 status	command	Show the current LLVM environment status
 list	command	List installed LLVM versions

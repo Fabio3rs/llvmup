@@ -143,10 +143,13 @@ echo 'export PATH="/path/to/llvmup/bin:$PATH"' >> ~/.bashrc
 ### CI/CD Integration
 ```bash
 # Non-interactive installation for CI
-LLVMUP_PREFIX=/opt/llvmup ./install.sh
+LLVMUP_PREFIX=/opt/llvmup ./install.sh --ci
 
 # Add to PATH in CI scripts
 export PATH="/opt/llvmup/bin:$PATH"
+
+# Export LLVM environment into the current job shell
+eval "$(llvmup env llvmorg-18.1.8)"
 ```
 
 ### Container/Docker Usage

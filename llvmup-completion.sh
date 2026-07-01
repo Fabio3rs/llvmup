@@ -108,7 +108,7 @@ _llvmup_completions() {
     local command="install"
     if [ ${#words[@]} -gt 1 ]; then
         case "${words[1]}" in
-            install|activate|deactivate|vscode-activate|status|list|disk-usage|default|config|help)
+            install|activate|deactivate|env|vscode-activate|status|list|disk-usage|default|config|help)
                 command="${words[1]}"
                 ;;
         esac
@@ -116,6 +116,30 @@ _llvmup_completions() {
 
     case "$command" in
         activate|vscode-activate)
+            _llvmup_collect_values _llvmup_get_activation_version_items "$cur"
+            return 0
+            ;;
+        env)
+            case "$prev" in
+                env)
+                    COMPREPLY=( $(compgen -W "--config --format" -- "$cur") )
+                    if [ -n "${COMPREPLY[*]}" ]; then
+                        return 0
+                    fi
+                    _llvmup_collect_values _llvmup_get_activation_version_items "$cur"
+                    return 0
+                    ;;
+                --format)
+                    COMPREPLY=( $(compgen -W "shell" -- "$cur") )
+                    return 0
+                    ;;
+            esac
+
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "--config --format" -- "$cur") )
+                return 0
+            fi
+
             _llvmup_collect_values _llvmup_get_activation_version_items "$cur"
             return 0
             ;;

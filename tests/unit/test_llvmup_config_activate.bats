@@ -17,57 +17,19 @@ teardown() {
     fi
 }
 
-@test "llvmup config activate - calls llvm-config-activate function" {
-    # Create mock llvm-config-activate function
-    cat > "$MOCK_SCRIPT_DIR/llvm-config-activate" <<EOF
-#!/bin/bash
-echo "Mock llvm-config-activate called with args: \$@"
-exit 0
-EOF
-    chmod +x "$MOCK_SCRIPT_DIR/llvm-config-activate"
-
-    # Add mock directory to PATH
-    export PATH="$MOCK_SCRIPT_DIR:$PATH"
-
-    # Run llvmup config activate
+@test "llvmup config activate - shows env guidance for executables" {
     run "$LLVMUP_SCRIPT" config activate
 
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"Mock llvm-config-activate called with args:"* ]]
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"config activate"* ]]
+    [[ "$output" == *"llvmup env --config"* ]]
 }
 
-@test "llvmup config activate - passes arguments to llvm-config-activate" {
-    # Create mock llvm-config-activate function
-    cat > "$MOCK_SCRIPT_DIR/llvm-config-activate" <<EOF
-#!/bin/bash
-echo "llvm-config-activate called with: \$@"
-exit 0
-EOF
-    chmod +x "$MOCK_SCRIPT_DIR/llvm-config-activate"
-
-    # Add mock directory to PATH
-    export PATH="$MOCK_SCRIPT_DIR:$PATH"
-
-    # Run with arguments
+@test "llvmup config activate - ignores extra args and still shows env guidance" {
     run "$LLVMUP_SCRIPT" config activate --verbose --some-arg
 
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"llvm-config-activate called with: --verbose --some-arg"* ]]
-}
-
-@test "llvmup config activate - shows error when function not available" {
-    # Ensure llvm-config-activate is not available
-    export PATH="/usr/bin:/bin"
-    export TEST_ISOLATED_DIR="$TEST_DIR/isolated"
-    mkdir -p "$TEST_ISOLATED_DIR"
-    cp "$LLVMUP_SCRIPT" "$TEST_ISOLATED_DIR/llvmup"
-    chmod +x "$TEST_ISOLATED_DIR/llvmup"
-
-    run "$TEST_ISOLATED_DIR/llvmup" config activate
-
     [ "$status" -eq 1 ]
-    [[ "$output" == *"llvm-config-activate function not available"* ]]
-    [[ "$output" == *"Make sure llvm-functions.sh is installed next to llvmup or loaded in your shell"* ]]
+    [[ "$output" == *"llvmup env --config"* ]]
 }
 
 @test "llvmup config - shows available subcommands including activate" {

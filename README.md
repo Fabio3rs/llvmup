@@ -88,6 +88,13 @@ source ~/.bashrc
 
 After reloading your shell profile, Linux commands such as `llvmup activate`, `llvmup deactivate`, `llvmup config activate`, `llvmup status`, `llvmup list`, and `llvmup disk-usage` are provided by shell functions loaded from `llvm-functions.sh`. Those functions call the helper scripts installed in your `bin` directory when needed, and user installs configure both Bash and Zsh to load that function layer automatically.
 
+For CI or other non-interactive environments, prefer:
+```bash
+LLVMUP_PREFIX="$RUNNER_TEMP/llvmup" ./install.sh --ci
+export PATH="$RUNNER_TEMP/llvmup/bin:$PATH"
+eval "$(llvmup env llvmorg-18.1.8)"
+```
+
 ##### Custom Installation Paths
 ```bash
 # Install to custom location
@@ -229,6 +236,8 @@ llvmup install --from-source --verbose 18.1.8               # Show verbose outpu
 ```bash
 llvmup activate <version>   # Activate an LLVM version in the current shell
 llvmup deactivate           # Deactivate current version
+llvmup env <version>        # Print shell exports for CI/non-interactive use
+llvmup env --config         # Print shell exports from .llvmup-config
 llvmup status               # Show detailed current status
 llvmup list                 # List installed versions
 llvmup disk-usage           # Show disk usage per installed version

@@ -118,6 +118,73 @@ EOF
     grep -Fq "LLVMUP Zsh Completion - Start" "$HOME/.zshrc"
 }
 
+@test "install.sh --ci skips shell profile changes" {
+    export LLVMUP_PREFIX="$BATS_TMPDIR/ci_prefix"
+    cat > "$HOME/.bashrc" <<'EOF'
+# existing bashrc
+EOF
+    cat > "$HOME/.zshrc" <<'EOF'
+# existing zshrc
+EOF
+
+    run timeout 5 ./install.sh --ci
+
+    [ "$status" -eq 0 ]
+    [ -f "$LLVMUP_PREFIX/bin/llvmup" ]
+    [ "$(cat "$HOME/.bashrc")" = "# existing bashrc" ]
+    [ "$(cat "$HOME/.zshrc")" = "# existing zshrc" ]
+    [[ "$output" == *"eval \"\$(llvmup env <version>)\""* ]]
+}
+
+@test "install.sh --files-only installs files without touching profiles" {
+    export LLVMUP_PREFIX="$BATS_TMPDIR/files_only_prefix"
+    cat > "$HOME/.bashrc" <<'EOF'
+# keep me
+EOF
+
+    run timeout 5 ./install.sh --files-only
+
+    [ "$status" -eq 0 ]
+    [ -f "$LLVMUP_PREFIX/bin/llvmup" ]
+    [ "$(cat "$HOME/.bashrc")" = "# keep me" ]
+}
+
+@test "install.sh --no-profile leaves existing profiles unchanged" {
+    export LLVMUP_PREFIX="$BATS_TMPDIR/no_profile_prefix"
+    cat > "$HOME/.bashrc" <<'EOF'
+# no-profile bashrc
+EOF
+
+    run timeout 5 ./install.sh --no-profile
+
+    [ "$status" -eq 0 ]
+    [ -f "$LLVMUP_PREFIX/bin/llvmup" ]
+    [ "$(cat "$HOME/.bashrc")" = "# no-profile bashrc" ]
+}
+
+@test "install.sh --configure-shell adds profile entries for existing installation" {
+    export LLVMUP_PREFIX="$BATS_TMPDIR/configure_shell_prefix"
+    cat > "$HOME/.bashrc" <<'EOF'
+# shell config
+EOF
+
+    run timeout 5 ./install.sh --files-only
+    [ "$status" -eq 0 ]
+
+    run timeout 5 ./install.sh --configure-shell
+    [ "$status" -eq 0 ]
+    grep -Fq "source \"$LLVMUP_PREFIX/bin/llvm-functions.sh\"" "$HOME/.bashrc"
+}
+
+@test "install.sh --configure-shell fails when files are not installed" {
+    export LLVMUP_PREFIX="$BATS_TMPDIR/missing_install_prefix"
+
+    run ./install.sh --configure-shell
+
+    assert_failure
+    assert_output --partial "Cannot configure shell profiles"
+}
+
 @test "uninstall.sh works with same custom directories" {
     # First install to custom location
     export LLVMUP_PREFIX="$BATS_TMPDIR/custom_uninstall_prefix"

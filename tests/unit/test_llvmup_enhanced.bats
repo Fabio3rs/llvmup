@@ -86,7 +86,18 @@ teardown() {
     assert_output --partial "Missing version argument for 'activate'"
 }
 
-@test "llvmup activate works through shell function wrapper" {
+@test "llvmup executable activate explains env usage" {
+    mkdir -p "$TEST_HOME/.llvm/toolchains/test-version/bin"
+    printf '#!/bin/bash\necho "clang version 18.0.0"\n' > "$TEST_HOME/.llvm/toolchains/test-version/bin/clang"
+    chmod +x "$TEST_HOME/.llvm/toolchains/test-version/bin/clang"
+
+    run bash "$ORIGINAL_DIR/llvmup" activate test-version
+    assert_failure
+    assert_output --partial "cannot modify the parent shell"
+    assert_output --partial "llvmup env test-version"
+}
+
+@test "llvmup shell function activate still works" {
     mkdir -p "$TEST_HOME/.llvm/toolchains/test-version/bin"
     printf '#!/bin/bash\necho "clang version 18.0.0"\n' > "$TEST_HOME/.llvm/toolchains/test-version/bin/clang"
     chmod +x "$TEST_HOME/.llvm/toolchains/test-version/bin/clang"
@@ -96,7 +107,14 @@ teardown() {
     [ "$output" = "test-version" ]
 }
 
-@test "llvmup deactivate works through shell function wrapper" {
+@test "llvmup executable deactivate explains env usage" {
+    run bash "$ORIGINAL_DIR/llvmup" deactivate
+    assert_failure
+    assert_output --partial "cannot modify the parent shell"
+    assert_output --partial "llvmup env <version>"
+}
+
+@test "llvmup shell function deactivate still works" {
     mkdir -p "$TEST_HOME/.llvm/toolchains/test-version/bin"
     printf '#!/bin/bash\necho "clang version 18.0.0"\n' > "$TEST_HOME/.llvm/toolchains/test-version/bin/clang"
     chmod +x "$TEST_HOME/.llvm/toolchains/test-version/bin/clang"
@@ -104,6 +122,50 @@ teardown() {
     run bash -lc "export HOME='$TEST_HOME'; export LLVMUP_DISABLE_AUTOACTIVATE=1; source '$ORIGINAL_DIR/llvm-functions.sh'; llvmup activate test-version >/dev/null; llvmup deactivate >/dev/null; printf '%s' \"\${_ACTIVE_LLVM:-inactive}\""
     assert_success
     [ "$output" = "inactive" ]
+}
+
+@test "llvmup env prints shell exports for a version" {
+    mkdir -p "$TEST_HOME/.llvm/toolchains/test-version/bin"
+    for tool in clang clang++; do
+        printf '#!/bin/bash\necho "%s"\n' "$tool" > "$TEST_HOME/.llvm/toolchains/test-version/bin/$tool"
+        chmod +x "$TEST_HOME/.llvm/toolchains/test-version/bin/$tool"
+    done
+
+    run bash "$ORIGINAL_DIR/llvmup" env test-version
+    assert_success
+    assert_output --partial "export PATH="
+    assert_output --partial "export CC="
+    assert_output --partial "export CXX="
+    assert_output --partial "export LLVMUP_ACTIVE_VERSION=test-version"
+}
+
+@test "llvmup env can be eval'd in the current shell" {
+    mkdir -p "$TEST_HOME/.llvm/toolchains/test-version/bin"
+    for tool in clang clang++ lld; do
+        printf '#!/bin/bash\necho "%s"\n' "$tool" > "$TEST_HOME/.llvm/toolchains/test-version/bin/$tool"
+        chmod +x "$TEST_HOME/.llvm/toolchains/test-version/bin/$tool"
+    done
+
+    run bash -lc "export HOME='$TEST_HOME'; eval \"\$('$ORIGINAL_DIR/llvmup' env test-version)\"; printf '%s|%s|%s' \"\$LLVMUP_ACTIVE_VERSION\" \"\$CC\" \"\$LD\""
+    assert_success
+    [ "$output" = "test-version|$TEST_HOME/.llvm/toolchains/test-version/bin/clang|$TEST_HOME/.llvm/toolchains/test-version/bin/lld" ]
+}
+
+@test "llvmup env --config resolves the nearest config" {
+    mkdir -p "$TEST_HOME/.llvm/toolchains/test-version/bin"
+    for tool in clang clang++; do
+        printf '#!/bin/bash\necho "%s"\n' "$tool" > "$TEST_HOME/.llvm/toolchains/test-version/bin/$tool"
+        chmod +x "$TEST_HOME/.llvm/toolchains/test-version/bin/$tool"
+    done
+    mkdir -p "$TEST_HOME/project/subdir"
+    cat > "$TEST_HOME/project/.llvmup-config" <<'EOF'
+[version]
+default = "test-version"
+EOF
+
+    run bash -lc "export HOME='$TEST_HOME'; cd '$TEST_HOME/project/subdir'; '$ORIGINAL_DIR/llvmup' env --config"
+    assert_success
+    assert_output --partial "export LLVMUP_ACTIVE_VERSION=test-version"
 }
 
 @test "llvmup vscode-activate requires version argument" {

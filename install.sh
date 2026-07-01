@@ -23,7 +23,7 @@
 #   LLVMUP_INSTALL_DIR=/opt/llvmup ./install.sh  # Custom installation directory
 #
 # Usage:
-#   ./install.sh
+#   ./install.sh [--ci|--no-profile|--files-only|--configure-shell]
 
 set -e
 
@@ -43,6 +43,58 @@ print_warning() {
 print_error() {
     echo -e "\033[1;31m[ERROR]\033[0m $1"
 }
+
+usage() {
+    cat <<EOF
+Usage: ./install.sh [OPTIONS]
+
+Options:
+  --ci               Install for CI usage without modifying shell profiles
+  --no-profile       Install files but do not modify ~/.bashrc, ~/.profile, or ~/.zshrc
+  --files-only       Install files and completions only
+  --configure-shell  Configure shell profiles only for an existing installation
+  -h, --help         Show this help message
+EOF
+}
+
+CI_MODE=0
+SKIP_PROFILE=0
+FILES_ONLY=0
+CONFIGURE_SHELL_ONLY=0
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --ci)
+            CI_MODE=1
+            SKIP_PROFILE=1
+            ;;
+        --no-profile)
+            SKIP_PROFILE=1
+            ;;
+        --files-only)
+            FILES_ONLY=1
+            SKIP_PROFILE=1
+            ;;
+        --configure-shell)
+            CONFIGURE_SHELL_ONLY=1
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            print_error "Unknown option: $1"
+            usage
+            exit 1
+            ;;
+    esac
+    shift
+done
+
+if [ "$FILES_ONLY" -eq 1 ] && [ "$CONFIGURE_SHELL_ONLY" -eq 1 ]; then
+    print_error "--files-only and --configure-shell cannot be used together"
+    exit 1
+fi
 
 # Determine installation directories based on environment variables
 if [ -n "$LLVMUP_SYSTEM_INSTALL" ] && [ "$LLVMUP_SYSTEM_INSTALL" = "1" ]; then
@@ -72,6 +124,8 @@ print_info "  Completion Directory: $COMPLETION_DIR"
 print_info "  Zsh Completion Directory: $ZSH_COMPLETION_DIR"
 print_info "  Functions File: $FUNCTIONS_FILE"
 print_info "  System Install: $($REQUIRES_SUDO && echo "Yes (requires sudo)" || echo "No")"
+print_info "  CI Mode: $([ "$CI_MODE" -eq 1 ] && echo "Yes" || echo "No")"
+print_info "  Modify Profiles: $([ "$SKIP_PROFILE" -eq 1 ] && echo "No" || echo "Yes")"
 
 # Check for sudo if required
 if [ "$REQUIRES_SUDO" = true ]; then
@@ -85,52 +139,57 @@ else
     SUDO_CMD=""
 fi
 
-print_info "Creating installation directories..."
-$SUDO_CMD mkdir -p "$INSTALL_DIR"
-$SUDO_CMD mkdir -p "$COMPLETION_DIR"
-$SUDO_CMD mkdir -p "$ZSH_COMPLETION_DIR"
+create_install_directories() {
+    print_info "Creating installation directories..."
+    $SUDO_CMD mkdir -p "$INSTALL_DIR"
+    $SUDO_CMD mkdir -p "$COMPLETION_DIR"
+    $SUDO_CMD mkdir -p "$ZSH_COMPLETION_DIR"
+}
 
-# Define an associative array mapping source filenames to target filenames.
-declare -A scripts=(
-    ["llvm-prebuilt"]="llvm-prebuilt"
-    ["llvm-activate"]="llvm-activate"
-    ["llvm-deactivate"]="llvm-deactivate"
-    ["llvm-vscode-activate"]="llvm-vscode-activate"
-    ["llvm-build"]="llvm-build"
-    ["llvmup"]="llvmup"
-    ["llvm-functions.sh"]="llvm-functions.sh"
-    ["llvmup-completion-common.sh"]="llvmup-completion-common.sh"
-)
+install_files() {
+    # Define an associative array mapping source filenames to target filenames.
+    declare -A scripts=(
+        ["llvm-prebuilt"]="llvm-prebuilt"
+        ["llvm-activate"]="llvm-activate"
+        ["llvm-deactivate"]="llvm-deactivate"
+        ["llvm-vscode-activate"]="llvm-vscode-activate"
+        ["llvm-build"]="llvm-build"
+        ["llvmup"]="llvmup"
+        ["llvm-functions.sh"]="llvm-functions.sh"
+        ["llvmup-completion-common.sh"]="llvmup-completion-common.sh"
+    )
 
-print_info "Copying scripts to $INSTALL_DIR..."
-for src in "${!scripts[@]}"; do
-    if [ ! -f "$src" ]; then
-        print_error "Script '$src' not found in the current directory."
-        exit 1
+    create_install_directories
+
+    print_info "Copying scripts to $INSTALL_DIR..."
+    for src in "${!scripts[@]}"; do
+        if [ ! -f "$src" ]; then
+            print_error "Script '$src' not found in the current directory."
+            exit 1
+        fi
+        $SUDO_CMD cp "$src" "$INSTALL_DIR/${scripts[$src]}"
+        print_info "  Installed: ${scripts[$src]}"
+    done
+
+    print_info "Installing bash completion..."
+    if [ -f "llvmup-completion.sh" ]; then
+        $SUDO_CMD cp "llvmup-completion.sh" "$COMPLETION_DIR/llvmup"
+        print_success "Bash completion installed to $COMPLETION_DIR/llvmup"
     fi
-    $SUDO_CMD cp "$src" "$INSTALL_DIR/${scripts[$src]}"
-    print_info "  Installed: ${scripts[$src]}"
-done
 
-print_info "Installing bash completion..."
-if [ -f "llvmup-completion.sh" ]; then
-    $SUDO_CMD cp "llvmup-completion.sh" "$COMPLETION_DIR/llvmup"
-    print_success "Bash completion installed to $COMPLETION_DIR/llvmup"
-fi
+    print_info "Installing zsh completion..."
+    if [ -f "_llvmup" ]; then
+        $SUDO_CMD cp "_llvmup" "$ZSH_COMPLETION_DIR/_llvmup"
+        print_success "Zsh completion installed to $ZSH_COMPLETION_DIR/_llvmup"
+    fi
 
-print_info "Installing zsh completion..."
-if [ -f "_llvmup" ]; then
-    $SUDO_CMD cp "_llvmup" "$ZSH_COMPLETION_DIR/_llvmup"
-    print_success "Zsh completion installed to $ZSH_COMPLETION_DIR/_llvmup"
-fi
+    print_info "Making scripts executable..."
+    $SUDO_CMD chmod +x "$INSTALL_DIR/llvm-prebuilt" "$INSTALL_DIR/llvm-activate" "$INSTALL_DIR/llvm-deactivate" "$INSTALL_DIR/llvm-vscode-activate" "$INSTALL_DIR/llvm-build" "$INSTALL_DIR/llvmup"
 
-print_info "Making scripts executable..."
-$SUDO_CMD chmod +x "$INSTALL_DIR/llvm-prebuilt" "$INSTALL_DIR/llvm-activate" "$INSTALL_DIR/llvm-deactivate" "$INSTALL_DIR/llvm-vscode-activate" "$INSTALL_DIR/llvm-build" "$INSTALL_DIR/llvmup"
-
-# Also make uninstall script executable if it exists
-if [ -f "uninstall.sh" ]; then
-    chmod +x uninstall.sh
-fi
+    if [ -f "uninstall.sh" ]; then
+        chmod +x uninstall.sh
+    fi
+}
 
 # Function to safely add source line to profile with markers for safe removal
 add_to_profile() {
@@ -159,7 +218,12 @@ EOF
     return 1
 }
 
-# Configure shell profile (only for user installations)
+configure_shell_profiles() {
+if [ ! -f "$FUNCTIONS_FILE" ]; then
+    print_error "Cannot configure shell profiles because $FUNCTIONS_FILE is not installed"
+    exit 1
+fi
+
 if [ "$REQUIRES_SUDO" = false ]; then
     print_info "Configuring shell profile..."
     profile_configured=false
@@ -255,7 +319,9 @@ else
     zsh_functions_configured=false
     zsh_completion_configured=false
 fi
+}
 
+print_post_install() {
 print_success "Installation complete!"
 echo ""
 
@@ -313,7 +379,15 @@ print_info "Completion assets:"
 echo "  Bash completion     : $COMPLETION_DIR/llvmup"
 echo "  Zsh completion      : $ZSH_COMPLETION_DIR/_llvmup"
 
-if [ "$REQUIRES_SUDO" = false ]; then
+if [ "$CI_MODE" -eq 1 ]; then
+    print_info "CI usage:"
+    echo "  export PATH=\"$INSTALL_DIR:\$PATH\""
+    echo "  eval \"\$(llvmup env <version>)\""
+elif [ "$SKIP_PROFILE" -eq 1 ]; then
+    print_info "Shell profile configuration was skipped."
+    print_info "To enable LLVM functions manually, source:"
+    echo "  source \"$FUNCTIONS_FILE\""
+elif [ "$REQUIRES_SUDO" = false ]; then
     if [ "$profile_configured" = true ]; then
         print_success "LLVM functions have been added to your shell profile."
         print_info "Start a new terminal session or run 'source ~/.bashrc' (or ~/.profile) to use the functions."
@@ -342,3 +416,21 @@ fi
 echo ""
 print_success "LLVMUP is now installed and ready to use!"
 print_info "Run 'llvmup --help' or 'llvm-help' for more information."
+}
+
+profile_configured=false
+zsh_functions_configured=false
+zsh_completion_configured=false
+
+if [ "$CONFIGURE_SHELL_ONLY" -eq 1 ]; then
+    configure_shell_profiles
+else
+    install_files
+    if [ "$SKIP_PROFILE" -eq 0 ]; then
+        configure_shell_profiles
+    else
+        print_info "Skipping shell profile configuration"
+    fi
+fi
+
+print_post_install

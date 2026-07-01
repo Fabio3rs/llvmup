@@ -5,6 +5,8 @@
 #   llvmup [install] [--from-source] [-v|--verbose] [-q|--quiet] [-h|--help] [args...]
 #   llvmup activate <version>
 #   llvmup deactivate
+#   llvmup env <version>
+#   llvmup env --config
 #   llvmup vscode-activate <version>
 #   llvmup status
 #   llvmup list
@@ -21,6 +23,7 @@
 #   status               Show current LLVM status
 #   list                 List installed LLVM versions
 #   disk-usage           Show disk usage of installed LLVM versions
+#   env                  Print shell exports for CI/non-interactive usage
 #   default              Manage default LLVM version
 #   config               Manage project configuration
 #   --from-source        Build LLVM from source instead of installing a pre-built release.
@@ -82,6 +85,12 @@ log_success() {
     fi
 }
 
+emit_info() {
+    if [ "$QUIET" -eq 0 ]; then
+        echo -e "${BLUE}Info: $*${NC}" >&2
+    fi
+}
+
 source_local_functions() {
     local functions_file="$SCRIPT_DIR/llvm-functions.sh"
 
@@ -92,6 +101,50 @@ source_local_functions() {
     fi
 
     return 1
+}
+
+print_shell_activation_hint() {
+    local command_name="$1"
+    local example="$2"
+
+    log_error "$command_name cannot modify the parent shell when llvmup runs as an executable"
+    emit_info "Use 'eval \"\$(llvmup env $example)\"' in CI/non-interactive scripts"
+    emit_info "Or source llvm-functions.sh and run the shell function version of llvmup"
+}
+
+handle_env_command() {
+    source_local_functions >/dev/null 2>&1 || true
+
+    if ! command -v llvm-print-env-exports >/dev/null 2>&1; then
+        log_error "llvm env support is unavailable"
+        log_info "Make sure llvm-functions.sh is installed next to llvmup or loaded in your shell"
+        exit 1
+    fi
+
+    case "${1:-}" in
+        --config)
+            llvm-print-config-env-exports
+            ;;
+        --format)
+            if [ "${2:-}" != "shell" ]; then
+                log_error "Unsupported env format: ${2:-}"
+                exit 1
+            fi
+            shift 2
+            if [ $# -eq 0 ]; then
+                log_error "Missing version argument for 'env'"
+                exit 1
+            fi
+            llvm-print-env-exports "$1"
+            ;;
+        "")
+            log_error "Missing version argument for 'env'"
+            exit 1
+            ;;
+        *)
+            llvm-print-env-exports "$1"
+            ;;
+    esac
 }
 
 # Command handling functions
@@ -151,14 +204,10 @@ handle_config_command() {
             fi
             ;;
         activate)
-            # Call llvm-config-activate function
-            if command -v llvm-config-activate >/dev/null 2>&1; then
-                llvm-config-activate "$@"
-            else
-                log_error "llvm-config-activate function not available"
-                log_info "Make sure llvm-functions.sh is installed next to llvmup or loaded in your shell"
-                exit 1
-            fi
+            log_error "'config activate' cannot modify the parent shell when llvmup runs as an executable"
+            emit_info "Use 'eval \"\$(llvmup env --config)\"' in CI/non-interactive scripts"
+            emit_info "Or source llvm-functions.sh and run the shell function version of llvmup"
+            exit 1
             ;;
         apply)
             # Call llvm-config-apply function
@@ -259,7 +308,7 @@ case "${1:-}" in
         COMMAND="install"
         shift
         ;;
-    activate|deactivate|vscode-activate|status|list|disk-usage|help)
+    activate|deactivate|env|vscode-activate|status|list|disk-usage|help)
         COMMAND="$1"
         shift
         ;;
@@ -305,6 +354,7 @@ Commands:
   install          Install an LLVM version (default command)
   activate         Activate an installed LLVM version in the current shell
   deactivate       Deactivate the current LLVM version in the current shell
+  env              Print shell exports for CI/non-interactive usage
   vscode-activate  Configure VSCode for an installed LLVM version
   status           Show the current LLVM environment status
   list             List installed LLVM versions
@@ -341,6 +391,8 @@ Examples:
   llvmup install --component clang --component lldb  # Specific components
   llvmup activate 18.1.8                         # Activate in the current shell
   llvmup deactivate                              # Deactivate the current shell
+  eval "$(llvmup env 18.1.8)"                    # Export env vars in current shell
+  eval "$(llvmup env --config)"                  # Export env vars from .llvmup-config
   llvmup vscode-activate 18.1.8                  # Configure VSCode integration
   llvmup status                                  # Show current LLVM status
   llvmup list                                    # List installed LLVM versions
@@ -363,7 +415,7 @@ remaining_args=()
 if [ -z "$COMMAND" ]; then
     if [[ $# -gt 0 ]] && [[ "$1" != -* ]]; then
         case "$1" in
-            install|activate|deactivate|vscode-activate|status|list|disk-usage|default|help)
+            install|activate|deactivate|env|vscode-activate|status|list|disk-usage|default|help)
                 COMMAND="$1"
                 shift
                 ;;
@@ -391,11 +443,15 @@ case "$COMMAND" in
             log_error "Missing version argument for 'activate'"
             exit 1
         fi
-        run_shell_function_command llvm-activate "$1"
-        exit $?
+        print_shell_activation_hint "'activate'" "$1"
+        exit 1
         ;;
     deactivate)
-        run_shell_function_command llvm-deactivate
+        print_shell_activation_hint "'deactivate'" "<version>"
+        exit 1
+        ;;
+    env)
+        handle_env_command "$@"
         exit $?
         ;;
     vscode-activate)

@@ -479,6 +479,34 @@ llvmup() {
             llvm-help "$@"
             return $?
             ;;
+        env)
+            shift
+            case "${1:-}" in
+                --config)
+                    llvm-print-config-env-exports
+                    ;;
+                --format)
+                    if [ "${2:-}" != "shell" ]; then
+                        log_error "Unsupported env format: ${2:-}"
+                        return 1
+                    fi
+                    shift 2
+                    if [ $# -eq 0 ]; then
+                        log_error "Missing version argument for 'env'"
+                        return 1
+                    fi
+                    llvm-print-env-exports "$1"
+                    ;;
+                "")
+                    log_error "Missing version argument for 'env'"
+                    return 1
+                    ;;
+                *)
+                    llvm-print-env-exports "$1"
+                    ;;
+            esac
+            return $?
+            ;;
         config)
             local config_subcommand="${2:-}"
             shift
@@ -1397,6 +1425,66 @@ llvm-get-sources-dir() {
     else
         echo "$HOME/.llvm/sources"
     fi
+}
+
+llvm-get-installation-name() {
+    if [ -n "$LLVM_CONFIG_NAME" ]; then
+        echo "$LLVM_CONFIG_NAME"
+    else
+        echo "$LLVM_CONFIG_VERSION"
+    fi
+}
+
+llvm-get-toolchain-path() {
+    local version="$1"
+
+    if [ -z "$version" ]; then
+        log_error "Version is required"
+        return 1
+    fi
+
+    echo "$(llvm-get-toolchains-dir)/$version"
+}
+
+llvm-print-env-exports() {
+    local version="$1"
+    local llvm_dir
+
+    if [ -z "$version" ]; then
+        log_error "Version is required"
+        return 1
+    fi
+
+    llvm_dir="$(llvm-get-toolchain-path "$version")"
+    if [ ! -d "$llvm_dir" ]; then
+        log_error "Version '$version' is not installed in $(llvm-get-toolchains-dir)."
+        return 1
+    fi
+
+    printf 'export PATH=%q\n' "$llvm_dir/bin:$PATH"
+    printf 'export CC=%q\n' "$llvm_dir/bin/clang"
+    printf 'export CXX=%q\n' "$llvm_dir/bin/clang++"
+    if [ -x "$llvm_dir/bin/lld" ]; then
+        printf 'export LD=%q\n' "$llvm_dir/bin/lld"
+    fi
+    printf 'export LLVMUP_ACTIVE_VERSION=%q\n' "$version"
+    printf 'export LLVMUP_ACTIVE_PATH=%q\n' "$llvm_dir"
+}
+
+llvm-print-config-env-exports() {
+    local config_root
+
+    config_root="$(llvm-find-config-root)" || config_root=""
+    if [ -z "$config_root" ]; then
+        log_error "No .llvmup-config file found"
+        return 1
+    fi
+
+    (
+        cd "$config_root" || exit 1
+        llvm-config-load >/dev/null 2>&1 || exit $?
+        llvm-print-env-exports "$(llvm-get-installation-name)"
+    )
 }
 
 llvm-register-autoactivate-hooks() {
