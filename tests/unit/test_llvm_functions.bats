@@ -420,3 +420,87 @@ EOF
     [[ "$output" == *"No LLVM toolchains found"* ]]
     [[ "$output" == *"llvmup"* ]]
 }
+
+@test "llvm-normalize-version-id accepts short and canonical release versions" {
+    run llvm-normalize-version-id "22.1.8"
+    [ "$status" -eq 0 ]
+    [ "$output" = "llvmorg-22.1.8" ]
+
+    run llvm-normalize-version-id "llvmorg-22.1.8"
+    [ "$status" -eq 0 ]
+    [ "$output" = "llvmorg-22.1.8" ]
+}
+
+@test "llvm-match-version-list reuses expressions for caller-provided versions" {
+    run llvm-match-version-list "latest" \
+        "llvmorg-20.1.8" "llvmorg-22.1.7" "llvmorg-22.1.8"
+    [ "$status" -eq 0 ]
+    [ "$output" = "llvmorg-22.1.8" ]
+
+    run llvm-match-version-list "22.1.8" \
+        "llvmorg-20.1.8" "llvmorg-22.1.8"
+    [ "$status" -eq 0 ]
+    [ "$output" = "llvmorg-22.1.8" ]
+}
+
+@test "llvm-resolve-remote-release filters prereleases and selects the platform asset" {
+    export LLVMUP_RELEASES_FILE="$BATS_TEST_DIRNAME/../../githubreleases.json"
+
+    run llvm-resolve-remote-release "latest" "Linux" "X64"
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.version' <<< "$output")" = "llvmorg-21.1.0" ]
+    [ "$(jq -r '.asset_name' <<< "$output")" = "LLVM-21.1.0-Linux-X64.tar.xz" ]
+    [ -n "$(jq -r '.asset_digest' <<< "$output")" ]
+}
+
+@test "llvm-resolve-remote-release rejects source installation identifiers" {
+    export LLVMUP_RELEASES_FILE="$BATS_TEST_DIRNAME/../../githubreleases.json"
+
+    run llvm-resolve-remote-release "source-llvmorg-20.1.8" "Linux" "X64"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"cannot select a pre-built release"* ]]
+}
+
+@test "llvm-resolve-remote-release lists identified stable versions when matching fails" {
+    export LLVMUP_RELEASES_FILE="$BATS_TEST_DIRNAME/../../githubreleases.json"
+
+    run llvm-resolve-remote-release "~99.1" "Linux" "X64"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"Stable LLVM releases identified by GitHub"* ]]
+    [[ "$output" == *"llvmorg-21.1.0"* ]]
+    [[ "$output" == *"llvmorg-20.1.8"* ]]
+    [[ "$output" != *"llvmorg-21.1.0-rc3"* ]]
+}
+
+@test "llvm-validate-toolchain-path requires usable C and C++ compilers" {
+    run llvm-validate-toolchain-path "$LLVM_CUSTOM_TOOLCHAINS_DIR/$TEST_VERSION"
+    [ "$status" -eq 0 ]
+
+    rm "$LLVM_CUSTOM_TOOLCHAINS_DIR/$TEST_VERSION/bin/clang++"
+    run llvm-validate-toolchain-path "$LLVM_CUSTOM_TOOLCHAINS_DIR/$TEST_VERSION"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"clang++ is missing or not executable"* ]]
+}
+
+@test "llvm-print-env-exports writes GitHub Actions environment files" {
+    export GITHUB_PATH="$TEST_DIR/github-path"
+    export GITHUB_ENV="$TEST_DIR/github-env"
+
+    run llvm-print-env-exports "$TEST_VERSION" github
+    [ "$status" -eq 0 ]
+    grep -Fx "$LLVM_CUSTOM_TOOLCHAINS_DIR/$TEST_VERSION/bin" "$GITHUB_PATH"
+    grep -Fx "CC=$LLVM_CUSTOM_TOOLCHAINS_DIR/$TEST_VERSION/bin/clang" "$GITHUB_ENV"
+    grep -Fx "LLVMUP_ACTIVE_VERSION=$TEST_VERSION" "$GITHUB_ENV"
+}
+
+@test "warn verification reports unverified when neither integrity nor provenance was checked" {
+    local artifact="$TEST_DIR/artifact.tar.xz"
+    local verification_temp="$TEST_DIR/verification"
+    mkdir -p "$verification_temp"
+    printf 'artifact\n' > "$artifact"
+
+    llvm-verify-release-asset "$artifact" "" "" "" "" "$verification_temp" warn
+
+    [ "$LLVMUP_VERIFICATION_METHODS" = "unverified" ]
+    [ "$LLVMUP_VERIFICATION_CHECKSUM" = "not-provided" ]
+}

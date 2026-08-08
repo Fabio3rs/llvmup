@@ -460,13 +460,18 @@ function Invoke-LlvmMatchVersions {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory=$true)] [string]$Expression,
-        [string]$ToolchainsPath = $null
+        [string]$ToolchainsPath = $null,
+        [string[]]$CandidateVersions
     )
 
     $parsed = Invoke-LlvmParseVersionExpression -Expression $Expression
     if (-not $parsed) { return @() }
 
-    $installed = Get-LlvmVersionsSimple -ToolchainsPath $ToolchainsPath
+    $installed = if ($PSBoundParameters.ContainsKey('CandidateVersions')) {
+        @($CandidateVersions)
+    } else {
+        Get-LlvmVersionsSimple -ToolchainsPath $ToolchainsPath
+    }
     if (-not $installed) { return @() }
 
     switch ($parsed.kind) {

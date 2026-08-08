@@ -7,7 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-08
+
 ### Added
+
+#### GitHub Actions and CI
+- Reusable `action.yml` for Linux and Windows runners with optional LLVM toolchain caching
+- Stable remote release resolution through `llvmup resolve`
+- GitHub Actions environment export through `llvmup env --format github`
+- Action outputs for the resolved version, installation path, cache hit state, and recorded verification method
+- Cache keys isolated by operating system, architecture, release asset, and verification policy
+- Verification-marker validation after cache restores, including authenticated-origin enforcement in strict mode
+
+#### CLI release resolution
+- Shared remote resolution for `latest`, specific versions, and version expressions
+- Stable-release filtering that excludes GitHub drafts and prereleases
+- Short version normalization, so documented inputs such as `llvmup 22.1.8` resolve to `llvmorg-22.1.8`
+- Idempotent prebuilt installs that recognize an existing or cache-restored toolchain
+- Failure diagnostics that list stable releases identified by GitHub
+- Complete-toolchain validation for both `clang` and `clang++`
+- `llvmup` and `llvmup --from-source` now follow the documented latest-version behavior when no version is supplied
 
 #### Version Expression System
 - Smart selectors: `latest`, `oldest`, `newest`, `earliest` for automatic version selection
@@ -104,9 +123,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Environment variable management (PATH, CC, CXX, LD, PS1)
 
 #### Security
-- Download verification via SHA256 checksums
-- GPG signature verification support
-- JSONL attestation support
+- SHA256 integrity verification through GitHub `asset.digest` or exact companion checksum files
+- GPG verification of exact `.sig` companions with official LLVM release keys in an isolated keyring
+- GitHub/Sigstore verification of exact `.jsonl` bundles constrained to `llvm/llvm-project`
+- Shared `warn`, `strict`, and `skip` policies for Bash, PowerShell, and the reusable Action
+- Automatic fallback between already-installed GPG and GitHub CLI verifiers without installing tools
+- Explicitly invalid digests, signatures, or attestations remain fatal instead of silently falling back
+- Persistent verification markers for safe cache reuse and debugging
 - `LLVMUP_SKIP_VERIFY=1` to skip verification
 - `LLVMUP_REQUIRE_VERIFY=1` to require verification
 
@@ -128,11 +151,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Development Status
 
-This project is currently in **active development** and has not had an official versioned release yet. All features are in the `Unreleased` section above.
+This project is currently in **active development**. Version `0.5.0` is the first public release line for the CLI and reusable GitHub Action.
 
-When the project reaches a stable state, the first official release will be tagged as `v1.0.0`.
+Because the project remains pre-1.0, interfaces may continue to evolve between minor releases.
 
-### Planned for v1.0.0 Release
+### Roadmap after v0.5.0
 - [ ] Comprehensive documentation review
 - [ ] Full test coverage verification
 - [ ] Performance benchmarking

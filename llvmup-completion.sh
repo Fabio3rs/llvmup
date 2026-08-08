@@ -95,7 +95,7 @@ _llvmup_completions() {
 
     if [ "$cword" -eq 1 ]; then
         if [[ "$cur" == -* ]]; then
-            COMPREPLY=( $(compgen -W "--from-source --verbose --quiet --help" -- "$cur") )
+            COMPREPLY=( $(compgen -W "--from-source --verify --verbose --quiet --help" -- "$cur") )
         else
             _llvmup_collect_combined_values "$cur" \
                 _llvmup_get_main_command_items \
@@ -108,7 +108,7 @@ _llvmup_completions() {
     local command="install"
     if [ ${#words[@]} -gt 1 ]; then
         case "${words[1]}" in
-            install|activate|deactivate|env|vscode-activate|status|list|disk-usage|default|config|help)
+            install|activate|deactivate|env|resolve|vscode-activate|status|list|disk-usage|default|config|help)
                 command="${words[1]}"
                 ;;
         esac
@@ -130,7 +130,7 @@ _llvmup_completions() {
                     return 0
                     ;;
                 --format)
-                    COMPREPLY=( $(compgen -W "shell" -- "$cur") )
+                    COMPREPLY=( $(compgen -W "shell github" -- "$cur") )
                     return 0
                     ;;
             esac
@@ -141,6 +141,31 @@ _llvmup_completions() {
             fi
 
             _llvmup_collect_values _llvmup_get_activation_version_items "$cur"
+            return 0
+            ;;
+        resolve)
+            case "$prev" in
+                --format)
+                    COMPREPLY=( $(compgen -W "tag json" -- "$cur") )
+                    return 0
+                    ;;
+                --platform)
+                    COMPREPLY=( $(compgen -W "Linux macOS" -- "$cur") )
+                    return 0
+                    ;;
+                --arch)
+                    COMPREPLY=( $(compgen -W "X64 ARM64" -- "$cur") )
+                    return 0
+                    ;;
+            esac
+            if [[ "$cur" == -* ]]; then
+                _llvmup_collect_values _llvmup_get_resolve_flag_items "$cur"
+            else
+                _llvmup_collect_combined_values "$cur" \
+                    _llvmup_get_expression_items \
+                    _llvmup_get_range_template_items \
+                    _llvmup_get_remote_version_items
+            fi
             return 0
             ;;
         deactivate|status|list|help)
@@ -175,6 +200,10 @@ _llvmup_completions() {
             ;;
         install)
             case "$prev" in
+                --verify)
+                    COMPREPLY=( $(compgen -W "warn strict skip" -- "$cur") )
+                    return 0
+                    ;;
                 -c|--cmake-flags)
                     _llvmup_collect_values _llvmup_get_cmake_flag_items "$cur"
                     return 0
@@ -198,7 +227,7 @@ _llvmup_completions() {
                 case "${words[i]}" in
                     ""|--from-source|--verbose|--quiet|--help|--default|--reconfigure|--disable-libc-wno-error)
                         ;;
-                    -c|--cmake-flags|-n|--name|-p|--profile|--component)
+                    -c|--cmake-flags|-n|--name|-p|--profile|--component|--verify)
                         ((i++))
                         ;;
                     -*)

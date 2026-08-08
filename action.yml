@@ -1,0 +1,209 @@
+name: Setup LLVM with llvmup
+description: Install and configure a stable LLVM toolchain with authenticated release verification and optional caching
+author: Fabio3rs
+
+branding:
+  icon: tool
+  color: blue
+
+inputs:
+  version:
+    description: LLVM version expression, such as latest, 22.1.8, llvmorg-22.1.8, or ~22.1
+    required: false
+    default: latest
+  cache:
+    description: Restore and save the resolved LLVM toolchain with actions/cache
+    required: false
+    default: "true"
+  verify:
+    description: Release verification policy (warn, strict, or skip)
+    required: false
+    default: warn
+  github-token:
+    description: Optional token used for GitHub API and attestation verification
+    required: false
+    default: ""
+
+outputs:
+  version:
+    description: Canonical LLVM release tag selected by llvmup
+    value: ${{ steps.resolve-linux.outputs.version || steps.resolve-windows.outputs.version }}
+  llvm-path:
+    description: Absolute path to the installed LLVM toolchain
+    value: ${{ steps.activate-linux.outputs.llvm-path || steps.activate-windows.outputs.llvm-path }}
+  cache-hit:
+    description: Whether the exact LLVM toolchain was restored from cache
+    value: ${{ inputs.cache == 'true' && steps.cache.outputs.cache-hit || 'false' }}
+  verification:
+    description: Authentication methods recorded for the installed or cached toolchain
+    value: ${{ steps.activate-linux.outputs.verification || steps.activate-windows.outputs.verification }}
+
+runs:
+  using: composite
+  steps:
+    - name: Reject unsupported runner
+      if: runner.os != 'Linux' && runner.os != 'Windows'
+      shell: bash
+      run: |
+        echo "llvmup's composite action supports Linux and Windows runners." >&2
+        exit 1
+
+    - name: Validate Linux inputs
+      if: runner.os == 'Linux'
+      shell: bash
+      env:
+        INPUT_CACHE: ${{ inputs.cache }}
+        INPUT_VERIFY: ${{ inputs.verify }}
+      run: |
+        set -euo pipefail
+        case "$INPUT_CACHE" in true|false) ;; *) echo "cache must be 'true' or 'false'." >&2; exit 1 ;; esac
+        case "$INPUT_VERIFY" in warn|strict|skip) ;; *) echo "verify must be 'warn', 'strict', or 'skip'." >&2; exit 1 ;; esac
+
+    - name: Validate Windows inputs
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        INPUT_CACHE: ${{ inputs.cache }}
+        INPUT_VERIFY: ${{ inputs.verify }}
+      run: |
+        if ($env:INPUT_CACHE -notin @('true', 'false')) { throw "cache must be 'true' or 'false'." }
+        if ($env:INPUT_VERIFY -notin @('warn', 'strict', 'skip')) { throw "verify must be 'warn', 'strict', or 'skip'." }
+
+    - name: Install llvmup CLI
+      if: runner.os == 'Linux'
+      shell: bash
+      env:
+        LLVMUP_CLI_PREFIX: ${{ runner.temp }}/llvmup-cli
+        LLVMUP_DATA_HOME: ${{ runner.temp }}/llvmup-data
+      run: |
+        set -euo pipefail
+        (
+          cd "$GITHUB_ACTION_PATH"
+          LLVMUP_PREFIX="$LLVMUP_CLI_PREFIX" ./install.sh --ci
+        )
+        printf '%s\n' "$LLVMUP_CLI_PREFIX/bin" >> "$GITHUB_PATH"
+        {
+          printf 'LLVMUP_PREFIX=%s\n' "$LLVMUP_CLI_PREFIX"
+          printf 'LLVMUP_INSTALL_DIR=%s\n' "$LLVMUP_CLI_PREFIX/bin"
+          printf 'LLVM_HOME=%s\n' "$LLVMUP_DATA_HOME"
+          printf 'LLVM_TOOLCHAINS_DIR=%s\n' "$LLVMUP_DATA_HOME/toolchains"
+          printf 'LLVM_SOURCES_DIR=%s\n' "$LLVMUP_DATA_HOME/sources"
+          printf 'LLVMUP_DISABLE_AUTOACTIVATE=1\n'
+        } >> "$GITHUB_ENV"
+
+    - name: Configure Windows data paths
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $dataHome = Join-Path $env:RUNNER_TEMP 'llvmup-data'
+        "LLVM_HOME=$dataHome" | Add-Content -Path $env:GITHUB_ENV
+        "LLVM_TOOLCHAINS_DIR=$(Join-Path $dataHome 'toolchains')" | Add-Content -Path $env:GITHUB_ENV
+        "LLVMUP_DISABLE_AUTOACTIVATE=1" | Add-Content -Path $env:GITHUB_ENV
+
+    - name: Resolve stable LLVM release on Linux
+      if: runner.os == 'Linux'
+      id: resolve-linux
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        GITHUB_TOKEN: ${{ inputs.github-token || github.token }}
+      run: |
+        set -euo pipefail
+        metadata="$(llvmup resolve --format json "$INPUT_VERSION")"
+        version="$(jq -r '.version' <<< "$metadata")"
+        asset_key="$(jq -r 'if .asset_digest != "" then .asset_digest else "asset-" + .asset_id end' <<< "$metadata")"
+        printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+        printf 'asset-key=%s\n' "$asset_key" >> "$GITHUB_OUTPUT"
+
+    - name: Resolve stable LLVM release on Windows
+      if: runner.os == 'Windows'
+      id: resolve-windows
+      shell: pwsh
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        GITHUB_TOKEN: ${{ inputs.github-token || github.token }}
+      run: |
+        $arch = switch ($env:RUNNER_ARCH) { 'ARM64' { 'arm64' } default { 'x64' } }
+        $metadataText = & (Join-Path $env:GITHUB_ACTION_PATH 'Download-Llvm.ps1') -Version $env:INPUT_VERSION -Platform Windows -Arch $arch -ArchiveOnly -ResolveOnly -OutputFormat Json -Quiet
+        $metadata = $metadataText | ConvertFrom-Json
+        $assetKey = if ($metadata.asset_digest) { $metadata.asset_digest } else { "asset-$($metadata.asset_id)" }
+        "version=$($metadata.version)" | Add-Content -Path $env:GITHUB_OUTPUT
+        "asset-key=$assetKey" | Add-Content -Path $env:GITHUB_OUTPUT
+
+    - name: Restore LLVM toolchain cache
+      if: inputs.cache == 'true'
+      id: cache
+      uses: actions/cache@v6
+      with:
+        path: ${{ runner.temp }}/llvmup-data/toolchains/${{ steps.resolve-linux.outputs.version || steps.resolve-windows.outputs.version }}
+        key: llvmup-v0.5.0-auth-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.verify }}-${{ steps.resolve-linux.outputs.version || steps.resolve-windows.outputs.version }}-${{ steps.resolve-linux.outputs.asset-key || steps.resolve-windows.outputs.asset-key }}
+
+    - name: Install or validate LLVM toolchain on Linux
+      if: runner.os == 'Linux'
+      shell: bash
+      env:
+        RESOLVED_VERSION: ${{ steps.resolve-linux.outputs.version }}
+        VERIFY_POLICY: ${{ inputs.verify }}
+        GITHUB_TOKEN: ${{ inputs.github-token || github.token }}
+        GH_TOKEN: ${{ inputs.github-token || github.token }}
+      run: |
+        set -euo pipefail
+        llvmup install --quiet --verify "$VERIFY_POLICY" "$RESOLVED_VERSION"
+
+    - name: Install or validate LLVM toolchain on Windows
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        RESOLVED_VERSION: ${{ steps.resolve-windows.outputs.version }}
+        VERIFY_POLICY: ${{ inputs.verify }}
+        GITHUB_TOKEN: ${{ inputs.github-token || github.token }}
+        GH_TOKEN: ${{ inputs.github-token || github.token }}
+      run: |
+        $arch = switch ($env:RUNNER_ARCH) { 'ARM64' { 'arm64' } default { 'x64' } }
+        & (Join-Path $env:GITHUB_ACTION_PATH 'Download-Llvm.ps1') -Version $env:RESOLVED_VERSION -Platform Windows -Arch $arch -ArchiveOnly -VerifyPolicy $env:VERIFY_POLICY -Quiet
+
+    - name: Validate and activate LLVM toolchain on Linux
+      if: runner.os == 'Linux'
+      id: activate-linux
+      shell: bash
+      env:
+        RESOLVED_VERSION: ${{ steps.resolve-linux.outputs.version }}
+      run: |
+        set -euo pipefail
+        llvm_path="$LLVM_TOOLCHAINS_DIR/$RESOLVED_VERSION"
+        llvmup env --format github "$RESOLVED_VERSION"
+        verification="$(jq -r '.methods // "unverified"' "$llvm_path/.llvmup-verification.json" 2>/dev/null || printf unverified)"
+        printf 'llvm-path=%s\n' "$llvm_path" >> "$GITHUB_OUTPUT"
+        printf 'verification=%s\n' "$verification" >> "$GITHUB_OUTPUT"
+
+    - name: Validate and activate LLVM toolchain on Windows
+      if: runner.os == 'Windows'
+      id: activate-windows
+      shell: pwsh
+      env:
+        RESOLVED_VERSION: ${{ steps.resolve-windows.outputs.version }}
+      run: |
+        $llvmPath = Join-Path $env:LLVM_TOOLCHAINS_DIR $env:RESOLVED_VERSION
+        $binPath = Join-Path $llvmPath 'bin'
+        $clang = Join-Path $binPath 'clang.exe'
+        $clangxx = Join-Path $binPath 'clang++.exe'
+        if (-not (Test-Path $clang)) { $clang = Join-Path $binPath 'clang.cmd' }
+        if (-not (Test-Path $clangxx)) { $clangxx = Join-Path $binPath 'clang++.cmd' }
+        if (-not (Test-Path $clang) -or -not (Test-Path $clangxx)) { throw 'Cached or installed LLVM toolchain is incomplete.' }
+        $ld = Join-Path $binPath 'lld-link.exe'
+        if (-not (Test-Path $ld)) { $ld = Join-Path $binPath 'lld-link.cmd' }
+        if (-not (Test-Path $ld)) { $ld = Join-Path $binPath 'lld.exe' }
+        if (-not (Test-Path $ld)) { $ld = Join-Path $binPath 'lld.cmd' }
+        $binPath | Add-Content -Path $env:GITHUB_PATH
+        $environment = @(
+          "CC=$clang"
+          "CXX=$clangxx"
+          "LLVMUP_ACTIVE_VERSION=$env:RESOLVED_VERSION"
+          "LLVMUP_ACTIVE_PATH=$llvmPath"
+        )
+        if (Test-Path $ld) { $environment += "LD=$ld" }
+        $environment | Add-Content -Path $env:GITHUB_ENV
+        $markerPath = Join-Path $llvmPath '.llvmup-verification.json'
+        $verification = if (Test-Path $markerPath) { (Get-Content $markerPath -Raw | ConvertFrom-Json).methods } else { 'unverified' }
+        "llvm-path=$llvmPath" | Add-Content -Path $env:GITHUB_OUTPUT
+        "verification=$verification" | Add-Content -Path $env:GITHUB_OUTPUT

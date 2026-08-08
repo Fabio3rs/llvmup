@@ -4,7 +4,7 @@
 
 BeforeAll {
     # Import functions under test
-    $scriptPath = Join-Path $PSScriptRoot "../../Download-Llvm-Enhanced.ps1"
+    $scriptPath = Join-Path $PSScriptRoot "../../Download-Llvm.ps1"
     . $scriptPath -Help | Out-Null
 
     # Load test data
@@ -113,10 +113,10 @@ Describe "Asset Selection Functions" {
         }
 
         It "Should select Windows x64 archive when PreferInstaller is false" {
-            $result = Select-LlvmAssetForPlatform -Assets $script:TestAssets -Platform "Windows" -Architecture "x64"
+            $result = Select-LlvmAssetForPlatform -Assets $script:TestAssets -Platform "Windows" -Architecture "x64" -ArchiveOnly
 
             $result | Should -Not -BeNullOrEmpty
-            # Should prefer archive over installer when PreferInstaller is not set
+            $result.Name | Should -Match "clang\+llvm-.*-windows-msvc\.tar\.xz"
         }
 
         It "Should select Linux x64 archive" {
@@ -202,6 +202,82 @@ Describe "Asset Selection Functions" {
             $result.Digest | Should -Not -BeNullOrEmpty
             $result.Digest | Should -Be $found.digest
         }
+    }
+}
+
+Describe "Authenticated Release Verification" {
+    BeforeEach {
+        New-Item -ItemType Directory -Path $script:TestTempDir -Force | Out-Null
+        $env:LLVMUP_VERIFY_POLICY = $null
+        $env:LLVMUP_SKIP_VERIFY = $null
+        $env:LLVMUP_REQUIRE_VERIFY = $null
+    }
+
+    AfterEach {
+        $env:LLVMUP_VERIFY_POLICY = $null
+        $env:LLVMUP_SKIP_VERIFY = $null
+        $env:LLVMUP_REQUIRE_VERIFY = $null
+        if (Test-Path $script:TestTempDir) {
+            Remove-Item -Path $script:TestTempDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It "defaults to warn and accepts an explicit strict policy" {
+        Resolve-LlvmVerificationPolicy | Should -Be 'warn'
+        Resolve-LlvmVerificationPolicy -RequestedPolicy Strict | Should -Be 'strict'
+    }
+
+    It "reuses the shared version parser for stable remote resolution" {
+        $releases = @(
+            [pscustomobject]@{ tag_name = 'llvmorg-22.1.7'; draft = $false; prerelease = $false },
+            [pscustomobject]@{ tag_name = 'llvmorg-22.1.8-rc1'; draft = $false; prerelease = $true },
+            [pscustomobject]@{ tag_name = 'llvmorg-22.1.8'; draft = $false; prerelease = $false }
+        )
+        (Resolve-LlvmRemoteRelease -Releases $releases -Expression '~22.1').tag_name | Should -Be 'llvmorg-22.1.8'
+    }
+
+    It "requires an authenticated marker for strict cache reuse" {
+        $toolchain = Join-Path $script:TestTempDir 'llvmorg-22.1.8'
+        New-Item -ItemType Directory -Path $toolchain -Force | Out-Null
+        { Test-LlvmVerificationMarker -TargetPath $toolchain -Version 'llvmorg-22.1.8' -Digest 'sha256:test' -Policy strict } |
+            Should -Throw '*verification marker is missing*'
+    }
+
+    It "accepts a strict marker with a valid Sigstore identity" {
+        $toolchain = Join-Path $script:TestTempDir 'llvmorg-22.1.8'
+        New-Item -ItemType Directory -Path $toolchain -Force | Out-Null
+        @{
+            schema = 1; version = 'llvmorg-22.1.8'; asset_digest = 'sha256:test'
+            gpg = 'not-provided'; attestation = 'valid'; methods = 'sigstore'
+        } | ConvertTo-Json | Set-Content -Path (Join-Path $toolchain '.llvmup-verification.json')
+
+        Test-LlvmVerificationMarker -TargetPath $toolchain -Version 'llvmorg-22.1.8' -Digest 'sha256:test' -Policy strict |
+            Should -Be $true
+    }
+
+    It "records warn downloads without integrity or provenance as unverified" {
+        $artifact = Join-Path $script:TestTempDir 'artifact.tar.xz'
+        Set-Content -LiteralPath $artifact -Value 'artifact'
+        $asset = [pscustomobject]@{
+            Name = 'artifact.tar.xz'; Digest = ''; SigFile = $null
+            JsonlFile = $null; ChecksumFile = $null
+        }
+
+        Invoke-LlvmReleaseVerification -ArtifactPath $artifact -SelectedAsset $asset -TempPath $script:TestTempDir -Policy warn
+
+        $script:VerificationMethods | Should -Be 'unverified'
+    }
+
+    It "treats a digest mismatch as fatal even in warn mode" {
+        $artifact = Join-Path $script:TestTempDir 'artifact.tar.xz'
+        Set-Content -LiteralPath $artifact -Value 'artifact'
+        $asset = [pscustomobject]@{
+            Name = 'artifact.tar.xz'; Digest = ('sha256:' + ('f' * 64)); SigFile = $null
+            JsonlFile = $null; ChecksumFile = $null
+        }
+
+        { Invoke-LlvmReleaseVerification -ArtifactPath $artifact -SelectedAsset $asset -TempPath $script:TestTempDir -Policy warn } |
+            Should -Throw '*SHA256 digest mismatch*'
     }
 }
 

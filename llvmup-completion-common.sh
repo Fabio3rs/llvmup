@@ -45,6 +45,7 @@ _llvmup_get_remote_versions() {
     fi
 
     cat <<'EOF'
+llvmorg-22.1.8
 llvmorg-21.1.0
 llvmorg-20.1.8
 llvmorg-19.1.0
@@ -86,6 +87,7 @@ install	command	Install an LLVM version
 activate	command	Activate an installed LLVM version in the current shell
 deactivate	command	Deactivate the current LLVM version in the current shell
 env	command	Print shell exports for CI/non-interactive usage
+resolve	command	Resolve a stable remote LLVM release without installing it
 vscode-activate	command	Configure the current workspace for an installed LLVM version
 status	command	Show the current LLVM environment status
 list	command	List installed LLVM versions
@@ -100,6 +102,16 @@ _llvmup_get_disk_usage_flag_items() {
     cat <<'EOF'
 -h	flag	Show human-readable sizes
 --human-readable	flag	Show human-readable sizes
+--help	flag	Show help
+EOF
+}
+
+_llvmup_get_resolve_flag_items() {
+    cat <<'EOF'
+--format	flag	Choose tag or JSON output
+--platform	flag	Override platform detection
+--arch	flag	Override architecture detection
+--config	flag	Resolve the expression from .llvmup-config
 --help	flag	Show help
 EOF
 }
@@ -135,6 +147,7 @@ _llvmup_get_install_flag_items() {
 --component	flag	Select build components
 --disable-libc-wno-error	flag	Disable LIBC_WNO_ERROR
 --reconfigure	flag	Force CMake reconfiguration
+--verify	flag	Choose warn, strict, or skip release verification
 EOF
 }
 

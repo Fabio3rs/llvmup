@@ -2,7 +2,7 @@
 
 An LLVM version manager inspired by tools like **rustup**, **Python venv**, and **Node Version Manager (nvm)**. LLVMUP allows you to download, install, compile from source, and switch between different LLVM versions.
 
-**Development Status:** This project is in active development and has not reached v1.0 yet. While functional, features and APIs may change. Contributions and bug reports are welcome!
+**Development Status:** The current release line is `v0.5.0`. The project is functional but remains pre-1.0, so features and APIs may still change. Contributions and bug reports are welcome!
 
 ## Key Features
 
@@ -88,11 +88,24 @@ source ~/.bashrc
 
 After reloading your shell profile, Linux commands such as `llvmup activate`, `llvmup deactivate`, `llvmup config activate`, `llvmup status`, `llvmup list`, and `llvmup disk-usage` are provided by shell functions loaded from `llvm-functions.sh`. Those functions call the helper scripts installed in your `bin` directory when needed, and user installs configure both Bash and Zsh to load that function layer automatically.
 
-For CI or other non-interactive environments, prefer:
+For GitHub Actions on Linux or Windows, prefer the reusable action:
+```yaml
+- name: Set up LLVM
+  id: llvm
+  uses: Fabio3rs/llvmup@v0.5.0
+  with:
+    version: latest
+    cache: true
+
+- run: clang --version
+```
+
+For other CI systems or a manual GitHub Actions setup, use the same CLI entrypoint:
 ```bash
 LLVMUP_PREFIX="$RUNNER_TEMP/llvmup" ./install.sh --ci
 export PATH="$RUNNER_TEMP/llvmup/bin:$PATH"
-eval "$(llvmup env llvmorg-18.1.8)"
+llvmup install 22.1.8
+eval "$(llvmup env llvmorg-22.1.8)"
 ```
 
 ##### Custom Installation Paths
@@ -125,6 +138,9 @@ llvmup --from-source
 
 # Installation with verbose output
 llvmup --verbose 19.1.0
+
+# Resolve a stable remote version without installing it
+llvmup resolve latest
 ```
 
 #### 3. Activating and using a version
@@ -189,6 +205,8 @@ llvm-vscode-activate 18.1.8
 - `curl`: For file downloads
 - `jq`: For JSON response parsing
 - `tar`: For file extraction
+- `gpg`: For LLVM `.sig` verification when a signature is published (optional in `warn` mode)
+- GitHub CLI `gh` with attestation support: For `.jsonl`/Sigstore verification (optional in `warn` mode)
 - `git`: For building from source (optional)
 - `ninja`: For building from source (optional)
 - `cmake`: For building from source (optional)
@@ -197,20 +215,50 @@ llvm-vscode-activate 18.1.8
 ### Windows
 - PowerShell 5.0 or higher
 - Pester module (for tests)
+- `gpg` or GitHub CLI `gh` when authenticated release verification is required
 - Internet connection for downloads
 - Administrator privileges for installation
 - Execution policy set to RemoteSigned (at least for CurrentUser)
 
 ## Download Verification
 
-The download scripts attempt to verify downloaded prebuilt assets using a checksum file, a GPG `.sig` signature, or a JSONL attestation when available. By default, if no verification is available the scripts will warn and continue. You can control this behavior with environment variables:
+Prebuilt downloads first validate SHA256 integrity from GitHub's `asset.digest`
+or an exact companion checksum file. Integrity alone does not authenticate who
+published the archive, so the scripts also try every exact authentication
+companion published for that asset:
+
+- `<archive>.sig` is verified with `gpg` against LLVM's official release keys in
+  an isolated temporary keyring. The user's personal GPG keyring is never used.
+- `<archive>.jsonl` is verified with `gh attestation verify`, constrained to the
+  `llvm/llvm-project` repository and the downloaded bundle.
+
+Use `--verify warn|strict|skip` with `llvmup install`; the default is `warn`:
+
+- `warn`: try all available verifiers, but continue with a security warning when
+  no installed verifier can authenticate the asset.
+- `strict`: require at least one valid GPG signature or Sigstore attestation.
+- `skip`: explicitly bypass integrity and origin verification.
+
+A missing tool, unsupported `gh` version, unavailable key file, or companion
+download failure is treated as an unavailable method, allowing automatic
+fallback to the other already-installed verifier. No verifier is installed
+automatically. A digest mismatch or an explicit invalid GPG/Sigstore result is
+always fatal in `warn` and `strict`; it is not downgraded to a fallback warning.
+
+Legacy environment controls remain supported:
 
 - `LLVMUP_SKIP_VERIFY=1` — skip verification explicitly
 - `LLVMUP_REQUIRE_VERIFY=1` — require verification and abort if verification fails or is unavailable
+- `LLVMUP_VERIFY_POLICY=warn|strict|skip` — set the policy without a CLI option
+- `LLVMUP_RELEASE_KEYS_FILE=/path/release-keys.asc` — use a local trusted key file
 
-Set these before running `llvm-prebuilt` or the PowerShell download scripts to change the verification policy.
+On Windows, use `-VerifyPolicy Warn|Strict|Skip` and optionally
+`-ReleaseKeysPath`. Successful installs record their result in
+`.llvmup-verification.json`; strict cache restores reject missing, incompatible,
+or unauthenticated markers.
 
-**Note:** The tooling will prefer an `asset.digest` field in the release metadata (when present) as a canonical SHA256 fingerprint and compare it directly to the downloaded file before trying companion checksum files.
+Verification currently applies to prebuilt release assets. Source builds reject
+`--verify` rather than implying that release-asset authentication was performed.
 
 ## Available Commands
 
@@ -221,6 +269,9 @@ llvmup 18.1.8              # Install specific version
 llvmup --from-source        # Build from source
 llvmup --verbose            # Show detailed output
 llvmup --quiet             # Suppress non-essential output
+llvmup install --verify strict 22.1.8 # Require authenticated release origin
+llvmup resolve latest      # Print latest stable remote release tag
+llvmup resolve '~22.1'     # Resolve the newest stable matching release
 
 # Build options (from source)
 llvmup install --from-source --cmake-flags "-DCMAKE_BUILD_TYPE=Debug" 18.1.8
@@ -232,12 +283,17 @@ llvmup install --from-source --default 18.1.8               # Set as default aft
 llvmup install --from-source --verbose 18.1.8               # Show verbose output
 ```
 
+When remote resolution fails, `llvmup` prints up to ten stable release tags
+identified by GitHub to stderr, which keeps Action logs useful without changing
+the command's tag or JSON output format.
+
 ### Environment Management
 ```bash
 llvmup activate <version>   # Activate an LLVM version in the current shell
 llvmup deactivate           # Deactivate current version
 llvmup env <version>        # Print shell exports for CI/non-interactive use
 llvmup env --config         # Print shell exports from .llvmup-config
+llvmup env --format github <version> # Persist variables for subsequent Actions steps
 llvmup status               # Show detailed current status
 llvmup list                 # List installed versions
 llvmup disk-usage           # Show disk usage per installed version
@@ -387,6 +443,49 @@ When you activate an LLVM version, the following tools become available:
 - And many other LLVM tools!
 
 ## Example Workflows
+
+### GitHub Actions
+
+The composite action resolves only stable LLVM releases. `latest` excludes
+drafts and prereleases and is converted to a concrete tag before cache lookup.
+Caching is enabled by default and can be disabled per workflow:
+
+```yaml
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: Fabio3rs/llvmup@v0.5.0
+        id: llvm
+        with:
+          version: 22.1.8
+          cache: false
+          verify: strict
+      - run: |
+          clang --version
+          cmake -S . -B build -G Ninja
+          cmake --build build
+```
+
+Inputs:
+
+- `version`: `latest`, a specific version/tag, or an expression such as `~22.1`.
+- `cache`: `true` or `false`; defaults to `true`.
+- `verify`: `warn`, `strict`, or `skip`; defaults to `warn`.
+- `github-token`: optional API token; the workflow token is used by default.
+
+Outputs are `version`, `llvm-path`, `cache-hit`, and `verification`. Linux and
+Windows runners are supported; the resolved toolchain is added to `PATH`, and
+`CC`, `CXX`, `LD` (when available), `LLVMUP_ACTIVE_VERSION`, and
+`LLVMUP_ACTIVE_PATH` are exported to subsequent steps. The `verification` output
+reports values such as `gpg`, `sigstore`, `gpg+sigstore`, `checksum-only`, or
+`unverified`.
+
+Cache entries are separated by operating system, architecture, release asset,
+and verification policy. Every restored toolchain is revalidated before use, so
+a `strict` run never trusts a cache entry without a compatible authenticated
+verification marker.
 
 ### Basic Workflow
 ```bash
@@ -620,8 +719,9 @@ Windows support with equivalent PowerShell scripts:
 Get-LlvmDiskUsage
 Get-LlvmDiskUsage -HumanReadable
 
-# Downloads with build options
-.\Download-Llvm.ps1 -CMakeFlags "-DCMAKE_BUILD_TYPE=Debug" -Name "llvm-18-debug" -Profile minimal
+# Resolve or install a stable prebuilt release
+.\Download-Llvm.ps1 -Version latest -ResolveOnly
+.\Download-Llvm.ps1 -Version 22.1.8 -VerifyPolicy Strict -ArchiveOnly
 ```
 
 ### TAB Auto-completion
@@ -671,10 +771,12 @@ llvm-status
 ## How It Works
 
 ### Download & Install (Pre-built Versions)
-- Fetches available LLVM versions through GitHub API
-- **Linux**: Downloads Linux X64 tarball for selected version, extracts and installs to `~/.llvm/toolchains/<version>`
-- **Windows**: Downloads LLVM NSIS installer and installs to `%USERPROFILE%\.llvm\toolchains\<version>`
-- Shows which versions are already installed when listing available releases
+- **Entrypoint**: `llvmup install [VERSION_EXPRESSION]`
+- Resolves stable LLVM releases through the GitHub API using the shared version parser
+- **Linux**: Downloads the matching X64 or ARM64 archive, extracts and installs to `~/.llvm/toolchains/<version>`
+- **Windows**: Downloads a matching LLVM installer or archive and installs to `%USERPROFILE%\.llvm\toolchains\<version>`; the reusable Action uses archives for cacheable, non-administrative installs
+- Treats an existing valid toolchain as already installed, including cache restores
+- Validates exact `.sig` and `.jsonl` companions without treating a checksum as proof of release origin
 
 ### Build From Source
 - **Subcommand**: `llvmup install --from-source`
@@ -931,7 +1033,7 @@ llvmup/
 - Comprehensive documentation in `docs/` folder
 
 **In Development:**
-- Working towards v1.0.0 stable release
+- Preparing the v0.5.0 release
 - See [CHANGELOG.md](CHANGELOG.md) for complete feature list and development status
 
 **Note**: This is experimental software in active development. Features and APIs may change.

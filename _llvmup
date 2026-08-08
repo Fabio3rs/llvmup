@@ -143,7 +143,7 @@ _llvmup() {
             ;;
         env)
             if [[ "$prev" == "--format" ]]; then
-                compadd -- shell
+                compadd -- shell github
                 return 0
             fi
             if [[ "$cur" == -* ]]; then
@@ -151,6 +151,28 @@ _llvmup() {
                 return 0
             fi
             _llvmup_zsh_complete_local_versions
+            return 0
+            ;;
+        resolve)
+            case "$prev" in
+                --format)
+                    compadd -- tag json
+                    return 0
+                    ;;
+                --platform)
+                    compadd -- Linux macOS
+                    return 0
+                    ;;
+                --arch)
+                    compadd -- X64 ARM64
+                    return 0
+                    ;;
+            esac
+            if [[ "$cur" == -* ]]; then
+                compadd -- --format --platform --arch --config --help
+            else
+                _llvmup_zsh_complete_install_targets
+            fi
             return 0
             ;;
         deactivate|status|list|help)
@@ -182,6 +204,10 @@ _llvmup() {
             ;;
         install)
             case "$prev" in
+                --verify)
+                    compadd -- warn strict skip
+                    return 0
+                    ;;
                 -p|--profile)
                     _llvmup_zsh_complete_profiles
                     return 0
@@ -208,7 +234,7 @@ _llvmup() {
                 case "$arg" in
                     ""|--from-source|--verbose|--quiet|--default|--reconfigure|--disable-libc-wno-error|help)
                         ;;
-                    -c|--cmake-flags|-n|--name|-p|--profile|--component)
+                    -c|--cmake-flags|-n|--name|-p|--profile|--component|--verify)
                         ;;
                     -*)
                         ;;

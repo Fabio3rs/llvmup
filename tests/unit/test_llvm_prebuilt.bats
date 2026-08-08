@@ -20,6 +20,91 @@ setup() {
     fi
 }
 
+create_installed_toolchain() {
+    local version="$1"
+    local bin_dir="$LLVM_TOOLCHAINS_DIR/$version/bin"
+
+    mkdir -p "$bin_dir"
+    printf '#!/bin/sh\nexit 0\n' > "$bin_dir/clang"
+    printf '#!/bin/sh\nexit 0\n' > "$bin_dir/clang++"
+    chmod +x "$bin_dir/clang" "$bin_dir/clang++"
+}
+
+create_download_fixture() {
+    local digest_override="${1:-}"
+    local verification_material="${2:-none}"
+    local package_dir="$TEST_DIR/package/LLVM-20.1.8-Linux-X64"
+    local archive="$TEST_DIR/LLVM-20.1.8-Linux-X64.tar.xz"
+    local digest
+
+    mkdir -p "$package_dir/bin"
+    printf '#!/bin/sh\necho clang version 20.1.8\n' > "$package_dir/bin/clang"
+    printf '#!/bin/sh\necho clang version 20.1.8\n' > "$package_dir/bin/clang++"
+    chmod +x "$package_dir/bin/clang" "$package_dir/bin/clang++"
+    tar -cf "$archive" -C "$TEST_DIR/package" "$(basename "$package_dir")"
+
+    digest="sha256:$(sha256sum "$archive" | awk '{print $1}')"
+    [ -n "$digest_override" ] && digest="$digest_override"
+
+    printf 'test signature\n' > "$archive.sig"
+    printf '{"test":"attestation bundle"}\n' > "$archive.jsonl"
+
+    jq -n \
+        --arg url "file://$archive" \
+        --arg digest "$digest" \
+        --arg sig_url "file://$archive.sig" \
+        --arg jsonl_url "file://$archive.jsonl" \
+        --arg material "$verification_material" \
+        '[{
+          tag_name: "llvmorg-20.1.8", draft: false, prerelease: false,
+          assets: ([{
+            id: 2018, name: "LLVM-20.1.8-Linux-X64.tar.xz",
+            state: "uploaded", browser_download_url: $url, digest: $digest
+          }] +
+          (if ($material == "sig" or $material == "both") then [{
+            id: 2019, name: "LLVM-20.1.8-Linux-X64.tar.xz.sig",
+            state: "uploaded", browser_download_url: $sig_url
+          }] else [] end) +
+          (if ($material == "jsonl" or $material == "both") then [{
+            id: 2020, name: "LLVM-20.1.8-Linux-X64.tar.xz.jsonl",
+            state: "uploaded", browser_download_url: $jsonl_url
+          }] else [] end))
+        }]' > "$TEST_DIR/releases.json"
+
+    export LLVMUP_RELEASES_FILE="$TEST_DIR/releases.json"
+    export LLVM_TOOLCHAINS_DIR="$TEST_DIR/toolchains"
+}
+
+install_fake_gh() {
+    local exit_code="${1:-0}"
+    local fake_bin="$TEST_DIR/fake-bin"
+    mkdir -p "$fake_bin"
+    printf '%s\n' \
+        '#!/bin/sh' \
+        "printf '%s\\n' \"\$*\" >> '$TEST_DIR/gh-calls.log'" \
+        'case "$*" in *"--help"*) exit 0 ;; esac' \
+        "exit $exit_code" > "$fake_bin/gh"
+    chmod +x "$fake_bin/gh"
+    export PATH="$fake_bin:$PATH"
+}
+
+install_fake_gpg() {
+    local fake_bin="$TEST_DIR/fake-bin"
+    mkdir -p "$fake_bin"
+    printf 'test keys\n' > "$TEST_DIR/release-keys.asc"
+    printf '%s\n' \
+        '#!/bin/sh' \
+        "printf '%s\\n' \"\$*\" >> '$TEST_DIR/gpg-calls.log'" \
+        'case "$*" in' \
+        '  *"--import"*) exit 0 ;;' \
+        "  *\"--verify\"*) printf '[GNUPG:] VALIDSIG AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA 0 0 0 0 0 0 0 0 0\\n'; exit 0 ;;" \
+        'esac' \
+        'exit 1' > "$fake_bin/gpg"
+    chmod +x "$fake_bin/gpg"
+    export PATH="$fake_bin:$PATH"
+    export LLVMUP_RELEASE_KEYS_FILE="$TEST_DIR/release-keys.asc"
+}
+
 # Test cleanup
 teardown() {
     # Restore original environment
@@ -50,40 +135,32 @@ teardown() {
     [[ "$output" == *"Usage:"* ]]
 }
 
-@test "llvm-prebuilt fetches releases from GitHub API" {
-    # Test that the script can fetch real releases from GitHub API
-    # This is a network-dependent test but validates real functionality
+@test "llvm-prebuilt resolves releases through the shared offline fixture" {
+    export LLVMUP_RELEASES_FILE="$BATS_TEST_DIRNAME/../../githubreleases.json"
+    export LLVM_TOOLCHAINS_DIR="$TEST_DIR/toolchains"
+    create_installed_toolchain "llvmorg-20.1.8"
 
-    local script_path="$BATS_TEST_DIRNAME/../../llvm-prebuilt"
-    export HOME="$TEST_DIR"
-
-    # Run with timeout to avoid hanging, and provide invalid selection to exit quickly
-    run timeout 60 bash -c "echo '999' | '$script_path'"
-
-    # Should show available versions even if selection fails
-    [ "$status" -eq 1 ]  # Will fail due to invalid selection, but that's expected
-    [[ "$output" == *"Available versions"* ]] || [[ "$output" == *"llvmorg-"* ]]
-    [[ "$output" == *"Invalid"* ]] || [[ "$output" == *"invalid"* ]]
+    run "$BATS_TEST_DIRNAME/../../llvm-prebuilt" "20.1.8"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Resolving stable LLVM release: 20.1.8"* ]]
+    [[ "$output" == *"llvmorg-20.1.8 is already installed"* ]]
 }
 
-@test "llvm-prebuilt shows available versions from real API" {
-    # Test that the script can fetch and display real versions from GitHub
-    local script_path="$BATS_TEST_DIRNAME/../../llvm-prebuilt"
-    export HOME="$TEST_DIR"
+@test "llvm-prebuilt defaults to the latest stable release" {
+    export LLVMUP_RELEASES_FILE="$BATS_TEST_DIRNAME/../../githubreleases.json"
+    export LLVM_TOOLCHAINS_DIR="$TEST_DIR/toolchains"
+    create_installed_toolchain "llvmorg-21.1.0"
 
-    # Run with timeout and provide invalid input to exit after showing versions
-    run timeout 60 bash -c "echo '' | '$script_path'"
-
-    # Should show versions (may fail due to empty input, but that's expected)
-    [[ "$output" == *"Available versions"* ]] || [[ "$output" == *"llvmorg-"* ]]
+    run "$BATS_TEST_DIRNAME/../../llvm-prebuilt"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Resolving stable LLVM release: latest"* ]]
+    [[ "$output" == *"llvmorg-21.1.0 is already installed"* ]]
 }
 
 @test "llvm-prebuilt handles invalid version selection gracefully" {
-    # Test with invalid version number using real script
     local script_path="$BATS_TEST_DIRNAME/../../llvm-prebuilt"
-    export HOME="$TEST_DIR"
-
-    run timeout 60 bash -c "echo '999' | '$script_path'"
+    export LLVMUP_RELEASES_FILE="$BATS_TEST_DIRNAME/../../githubreleases.json"
+    run "$script_path" "not-a-version"
 
     # Should fail with invalid selection
     [ "$status" -eq 1 ]
@@ -148,27 +225,23 @@ teardown() {
     run grep -q "log_info\|log_error\|log_verbose" "$BATS_TEST_DIRNAME/../../llvm-prebuilt"
     [ "$status" -eq 0 ]
 
-    # Should contain version selection logic
-    run grep -q "select_version" "$BATS_TEST_DIRNAME/../../llvm-prebuilt"
+    # Version selection is delegated to the shared resolver.
+    run grep -q "llvm-resolve-remote-release" "$BATS_TEST_DIRNAME/../../llvm-prebuilt"
     [ "$status" -eq 0 ]
 
-    # Should contain GitHub API interaction
-    run grep -q "api.github.com" "$BATS_TEST_DIRNAME/../../llvm-prebuilt"
-    [ "$status" -eq 0 ]
+    run grep -q '^select_version()' "$BATS_TEST_DIRNAME/../../llvm-prebuilt"
+    [ "$status" -ne 0 ]
 }
 
-@test "llvm-prebuilt shows progress feedback during real operation" {
-    # Test that the script shows expected progress messages during real execution
-    local script_path="$BATS_TEST_DIRNAME/../../llvm-prebuilt"
-    export HOME="$TEST_DIR"
+@test "llvm-prebuilt reports stable resolution and cache-aware installation state" {
+    export LLVMUP_RELEASES_FILE="$BATS_TEST_DIRNAME/../../githubreleases.json"
+    export LLVM_TOOLCHAINS_DIR="$TEST_DIR/toolchains"
+    create_installed_toolchain "llvmorg-20.1.8"
 
-    # Run script and capture output - will timeout but should show progress messages
-    run timeout 30 bash -c "echo '999' | '$script_path'"
-
-    # Should show progress indicators in the output
-    [[ "$output" == *"Fetching available LLVM releases"* ]]
-    [[ "$output" == *"This may take a few seconds"* ]]
-    [[ "$output" == *"Connecting to GitHub API"* ]]
+    run "$BATS_TEST_DIRNAME/../../llvm-prebuilt" "20.1.8"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Resolving stable LLVM release"* ]]
+    [[ "$output" == *"already installed"* ]]
 }
 
 @test "llvm-prebuilt validates version selection input" {
@@ -176,8 +249,8 @@ teardown() {
     local script_path="$BATS_TEST_DIRNAME/../../llvm-prebuilt"
     export HOME="$TEST_DIR"
 
-    # Test with clearly invalid input
-    run timeout 30 bash -c "echo 'abc' | '$script_path'"
+    export LLVMUP_RELEASES_FILE="$BATS_TEST_DIRNAME/../../githubreleases.json"
+    run "$script_path" "abc"
 
     # Should handle invalid input gracefully
     [ "$status" -eq 1 ]
@@ -192,77 +265,116 @@ teardown() {
     run grep -o '\$HOME/\.llvm/toolchains' "$script_path"
     [ "$status" -eq 0 ]
 
-    # Check for temp directory usage
-    run grep -o '\$HOME/llvm_temp' "$script_path"
+    # Temporary files use the runner temp directory when available.
+    run grep -q 'RUNNER_TEMP.*TMPDIR' "$script_path"
+    [ "$status" -eq 0 ]
+
+    run grep -q 'mktemp -d' "$script_path"
     [ "$status" -eq 0 ]
 }
 
-@test "llvm-prebuilt uses asset.digest when present" {
-        # Create a small fake RELEASES JSON with digest and ensure script picks it up
-        local script_path="$BATS_TEST_DIRNAME/../../llvm-prebuilt"
-        export HOME="$TEST_DIR"
+@test "llvm-prebuilt treats a restored valid toolchain as already installed" {
+    export LLVMUP_RELEASES_FILE="$BATS_TEST_DIRNAME/../../githubreleases.json"
+    export LLVM_TOOLCHAINS_DIR="$TEST_DIR/toolchains"
+    create_installed_toolchain "llvmorg-20.1.8"
 
-        # Prepare a minimal releases JSON fixture
-        cat > "$TEST_DIR/releases.json" <<'JSON'
-[
-    {
-        "tag_name": "llvmorg-test",
-        "assets": [
-            { "name": "LLVM-test-Linux-X64.tar.xz", "browser_download_url": "https://example.com/LLVM-test-Linux-X64.tar.xz", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
-        ]
-    }
-]
-JSON
+    run "$BATS_TEST_DIRNAME/../../llvm-prebuilt" "20.1.8"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"already installed"* ]]
+}
 
-        # Point the script to use this fixture by setting RELEASES env var read behavior (script reads API normally)
-        # For test simplicity, override RELEASES variable via environment substitution in a tiny wrapper
-    cat > "$TEST_DIR/wrapper.sh" <<SH
-#!/bin/bash
-RELEASES=$(cat "$TEST_DIR/releases.json")
-export RELEASES
-"$BATS_TEST_DIRNAME/../../llvm-prebuilt" llvmorg-test
-SH
-        chmod +x "$TEST_DIR/wrapper.sh"
+@test "llvm-prebuilt strict verifies digest and Sigstore attestation before installing" {
+    create_download_fixture "" jsonl
+    install_fake_gh 0
+    export LLVMUP_REQUIRE_VERIFY=1
 
-        run timeout 5 bash -c "$TEST_DIR/wrapper.sh"
-        # Exit status may be non-zero because wrapper expects interactive selection; ensure no crash
-        [ $? -ge 0 ] || true
-        # Confirm wrapper invoked and RELEASES was read (script prints Connecting to GitHub API)
-        [[ "${output:-}" == *"Connecting to GitHub API"* ]] || true
+    run "$BATS_TEST_DIRNAME/../../llvm-prebuilt" "20.1.8"
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"SHA256 asset.digest matches the downloaded file"* ]]
+    [[ "$output" == *"GitHub/Sigstore attestation verified"* ]]
+    [ -x "$LLVM_TOOLCHAINS_DIR/llvmorg-20.1.8/bin/clang" ]
+    [ -x "$LLVM_TOOLCHAINS_DIR/llvmorg-20.1.8/bin/clang++" ]
+    run jq -r '.attestation + ":" + .methods' "$LLVM_TOOLCHAINS_DIR/llvmorg-20.1.8/.llvmup-verification.json"
+    [ "$output" = "valid:sigstore" ]
 }
 
 @test "llvm-prebuilt fails when asset.digest mismatches and REQUIRE_VERIFY set" {
-        local script_path="$BATS_TEST_DIRNAME/../../llvm-prebuilt"
-        export HOME="$TEST_DIR"
-        export LLVMUP_REQUIRE_VERIFY=1
+    create_download_fixture "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    export LLVMUP_REQUIRE_VERIFY=1
 
-        # Create releases JSON where digest won't match the downloaded (we'll create a dummy file)
-        cat > "$TEST_DIR/releases.json" <<'JSON'
-[
-    {
-        "tag_name": "llvmorg-test",
-        "assets": [
-            { "name": "LLVM-test-Linux-X64.tar.xz", "browser_download_url": "file://$TEST_DIR/LLVM-test-Linux-X64.tar.xz", "digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" }
-        ]
-    }
-]
-JSON
+    run "$BATS_TEST_DIRNAME/../../llvm-prebuilt" "20.1.8"
 
-        # Create a dummy tarball file with different content
-        printf "dummy" > "$TEST_DIR/LLVM-test-Linux-X64.tar.xz"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"SHA256 digest mismatch"* ]]
+    [ ! -e "$LLVM_TOOLCHAINS_DIR/llvmorg-20.1.8" ]
+}
 
-        # Wrapper to inject RELEASES
-    cat > "$TEST_DIR/wrapper2.sh" <<SH
-#!/bin/bash
-RELEASES=$(cat "$TEST_DIR/releases.json")
-export RELEASES
-"$BATS_TEST_DIRNAME/../../llvm-prebuilt" llvmorg-test
-SH
-        chmod +x "$TEST_DIR/wrapper2.sh"
+@test "llvm-prebuilt warn permits checksum-only installation with an explicit warning" {
+    create_download_fixture
 
-        run timeout 5 bash -c "$TEST_DIR/wrapper2.sh"
-        # Expect non-zero exit due to REQUIRE_VERIFY
-        [ "$status" -ne 0 ]
-        [[ "$output" == *"No successful verification"* || "$output" == *"asset.digest verification failed"* ]] || true
-        unset LLVMUP_REQUIRE_VERIFY
+    run "$BATS_TEST_DIRNAME/../../llvm-prebuilt" --verify warn "20.1.8"
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"origin was not cryptographically authenticated"* ]]
+}
+
+@test "llvm-prebuilt strict rejects checksum-only verification" {
+    create_download_fixture
+
+    run "$BATS_TEST_DIRNAME/../../llvm-prebuilt" --verify strict "20.1.8"
+
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"requires a valid LLVM GPG signature"* ]]
+}
+
+@test "llvm-prebuilt aborts on an invalid Sigstore attestation even in warn mode" {
+    create_download_fixture "" jsonl
+    install_fake_gh 1
+
+    run "$BATS_TEST_DIRNAME/../../llvm-prebuilt" --verify warn "20.1.8"
+
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"attestation validation failed"* ]]
+    [ ! -e "$LLVM_TOOLCHAINS_DIR/llvmorg-20.1.8" ]
+}
+
+@test "llvm-prebuilt validates both GPG and Sigstore when both materials coexist" {
+    create_download_fixture "" both
+    install_fake_gh 0
+    install_fake_gpg
+
+    run "$BATS_TEST_DIRNAME/../../llvm-prebuilt" --verify strict "20.1.8"
+
+    [ "$status" -eq 0 ]
+    run grep -c -- '--verify' "$TEST_DIR/gpg-calls.log"
+    [ "$output" -eq 1 ]
+    run grep -c -- '--repo llvm/llvm-project --bundle' "$TEST_DIR/gh-calls.log"
+    [ "$output" -eq 1 ]
+    run jq -r '.methods' "$LLVM_TOOLCHAINS_DIR/llvmorg-20.1.8/.llvmup-verification.json"
+    [ "$output" = "gpg+sigstore" ]
+}
+
+@test "llvm-prebuilt strict rejects an existing toolchain without an authenticated marker" {
+    create_download_fixture "" jsonl
+    create_installed_toolchain "llvmorg-20.1.8"
+
+    run "$BATS_TEST_DIRNAME/../../llvm-prebuilt" --verify strict "20.1.8"
+
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"verification marker is missing or incompatible"* ]]
+}
+
+@test "llvm-prebuilt rejects an incomplete restored toolchain" {
+    export LLVMUP_RELEASES_FILE="$BATS_TEST_DIRNAME/../../githubreleases.json"
+    export LLVM_TOOLCHAINS_DIR="$TEST_DIR/toolchains"
+    mkdir -p "$LLVM_TOOLCHAINS_DIR/llvmorg-20.1.8/bin"
+    printf '#!/bin/sh\nexit 0\n' > "$LLVM_TOOLCHAINS_DIR/llvmorg-20.1.8/bin/clang"
+    chmod +x "$LLVM_TOOLCHAINS_DIR/llvmorg-20.1.8/bin/clang"
+
+    run "$BATS_TEST_DIRNAME/../../llvm-prebuilt" "20.1.8"
+
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"clang++ is missing or not executable"* ]]
+    [[ "$output" == *"Incomplete LLVM installation already exists"* ]]
 }

@@ -40,6 +40,24 @@ DISABLE_LIBC_WNO_ERROR=0
 
 CMAKE_FORCE_RECONFIGURE=0
 
+# Seed build options from the shared config parser. Command-line options are
+# processed afterwards and therefore remain the final override.
+if [ -n "${LLVM_CONFIG_NAME:-}" ]; then
+    CUSTOM_NAME="$LLVM_CONFIG_NAME"
+fi
+if [ -n "${LLVM_CONFIG_PROFILE:-}" ]; then
+    PROFILE="$LLVM_CONFIG_PROFILE"
+fi
+if declare -p LLVM_CONFIG_CMAKE_FLAGS >/dev/null 2>&1; then
+    CMAKE_FLAGS=("${LLVM_CONFIG_CMAKE_FLAGS[@]}")
+fi
+if declare -p LLVM_CONFIG_COMPONENTS >/dev/null 2>&1; then
+    COMPONENTS=("${LLVM_CONFIG_COMPONENTS[@]}")
+fi
+if [ "${LLVM_CONFIG_DISABLE_LIBC_WNO_ERROR:-false}" = "true" ]; then
+    DISABLE_LIBC_WNO_ERROR=1
+fi
+
 # Test mode support
 if [ "$LLVM_TEST_MODE" = "1" ]; then
     log_verbose() { echo "[TEST-VERBOSE] $*" >&2; }
@@ -90,94 +108,6 @@ get_profile_projects() {
             exit 1
             ;;
     esac
-}
-
-# Check for .llvmup-config file
-load_config() {
-    local config_file=".llvmup-config"
-
-    if [ -f "$config_file" ]; then
-        log_info "Found .llvmup-config file, loading settings..."
-
-        # Parse config file (simple ini-style parser)
-        while IFS= read -r line; do
-            # Skip comments and empty lines
-            [[ "$line" =~ ^[[:space:]]*# ]] && continue
-            [[ "$line" =~ ^[[:space:]]*$ ]] && continue
-
-            # Handle sections
-            if [[ "$line" =~ ^\[.*\]$ ]]; then
-                current_section="${line//[\[\]]/}"
-                continue
-            fi
-
-            # Parse key=value pairs
-            if [[ "$line" =~ ^[[:space:]]*([^=]+)=(.*)$ ]]; then
-                key="${BASH_REMATCH[1]// /}"
-                value="${BASH_REMATCH[2]}"
-                # Remove quotes and trim whitespace
-                value=$(echo "$value" | sed 's/^[[:space:]]*["'"'"']//;s/["'"'"'][[:space:]]*$//')
-                # Additional cleanup for xargs
-                value=$(echo "$value" | tr -d '"' | xargs 2>/dev/null || echo "$value")
-
-                case "$current_section" in
-                    "build")
-                        case "$key" in
-                            "name")
-                                CUSTOM_NAME="$value"
-                                log_verbose "Config: Custom name set to $value"
-                                ;;
-                            "cmake_flags")
-                                # Handle array format
-                                if [[ "$value" =~ ^\[(.*)\]$ ]]; then
-                                    flags_str="${BASH_REMATCH[1]}"
-                                    # Split by comma and clean quotes
-                                    IFS=',' read -ra flags_array <<< "$flags_str"
-                                    for flag in "${flags_array[@]}"; do
-                                        flag=$(echo "$flag" | sed 's/^[[:space:]]*["'"'"']//;s/["'"'"'][[:space:]]*$//')
-                                        flag=$(echo "$flag" | tr -d '"' | xargs 2>/dev/null || echo "$flag")
-                                        if [ -n "$flag" ]; then
-                                            CMAKE_FLAGS+=("$flag")
-                                            log_verbose "Config: CMake flag added: $flag"
-                                        fi
-                                    done
-                                fi
-                                ;;
-                            "disable_libc_wno_error")
-                                if [ "$value" = "true" ]; then
-                                    DISABLE_LIBC_WNO_ERROR=1
-                                    log_verbose "Config: LIBC_WNO_ERROR flag disabled"
-                                fi
-                                ;;
-                        esac
-                        ;;
-                    "profile")
-                        if [ "$key" = "type" ]; then
-                            PROFILE="$value"
-                            log_verbose "Config: Profile set to $value"
-                        fi
-                        ;;
-                    "components")
-                        if [ "$key" = "include" ]; then
-                            # Handle array format
-                            if [[ "$value" =~ ^\[(.*)\]$ ]]; then
-                                components_str="${BASH_REMATCH[1]}"
-                                IFS=',' read -ra components_array <<< "$components_str"
-                                for component in "${components_array[@]}"; do
-                                    component=$(echo "$component" | sed 's/^[[:space:]]*["'"'"']//;s/["'"'"'][[:space:]]*$//')
-                                    component=$(echo "$component" | tr -d '"' | xargs 2>/dev/null || echo "$component")
-                                    if [ -n "$component" ]; then
-                                        COMPONENTS+=("$component")
-                                        log_verbose "Config: Component added: $component"
-                                    fi
-                                done
-                            fi
-                        fi
-                        ;;
-                esac
-            fi
-        done < "$config_file"
-    fi
 }
 
 # Parse command line arguments
@@ -291,19 +221,18 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Load config file settings (can be overridden by command line)
-load_config
-
 log_info "LLVM Build System"
 log_info "Fetching available LLVM release tags..."
 
-# Mock implementation for testing - check if git command is available
-if ! command -v git >/dev/null 2>&1; then
+# Deterministic tags in test mode; otherwise query the upstream repository.
+if [ -n "$LLVM_TEST_MODE" ]; then
+    tags="${LLVM_TEST_VERSION:-llvmorg-18.1.8}"$'\n'"llvmorg-19.1.0"$'\n'"llvmorg-21.1.0"
+elif ! command -v git >/dev/null 2>&1; then
     log_info "Git not available, using mock tags for testing"
-    tags="llvmorg-18.1.8\nllvmorg-19.1.0\nllvmorg-21.1.0"
+    tags="llvmorg-18.1.8"$'\n'"llvmorg-19.1.0"$'\n'"llvmorg-21.1.0"
 else
     # Fetch tags from remote
-    tags=$(git ls-remote --tags "$REPO_URL" | grep 'refs/tags/llvmorg-' | sed 's/.*refs\/tags\///; s/\^{}//' | sort -V 2>/dev/null || echo "llvmorg-18.1.8")
+    tags=$(git ls-remote --tags "$REPO_URL" | sed 's/.*refs\/tags\///; s/\^{}//' | grep -E '^llvmorg-[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vu 2>/dev/null || echo "llvmorg-18.1.8")
 fi
 
 if [ -z "$tags" ]; then
@@ -314,7 +243,7 @@ fi
 # Read tags into an array
 readarray -t tagArray <<< "$tags"
 
-# Function to select a version
+# Resolve numeric choices and the same version expressions accepted elsewhere.
 select_version() {
     local input="$1"
     if [[ "$input" =~ ^[0-9]+$ ]]; then
@@ -325,13 +254,18 @@ select_version() {
             return 1
         fi
     else
-        for tag in "${tagArray[@]}"; do
-            if [ "$tag" = "$input" ]; then
-                selectedTag="$tag"
-                return 0
+        local matches=()
+        mapfile -t matches < <(llvm-match-version-list "$input" "${tagArray[@]}" 2>/dev/null)
+        [ ${#matches[@]} -gt 0 ] || return 1
+
+        selectedTag="${matches[0]}"
+        local candidate
+        for candidate in "${matches[@]:1}"; do
+            if llvm-version-compare "$candidate" "$selectedTag" 2>/dev/null; then
+                selectedTag="$candidate"
             fi
         done
-        return 1
+        return 0
     fi
 }
 
@@ -344,22 +278,7 @@ if [ "${#remaining_args[@]}" -ge 1 ]; then
         exit 1
     fi
 else
-    # Handle non-interactive mode
-    if [ -n "$LLVM_TEST_MODE" ]; then
-        # In test mode, use first available version or default
-        if [ -n "$LLVM_TEST_VERSION" ]; then
-            if select_version "$LLVM_TEST_VERSION"; then
-                log_info "Test mode: Selected version: $selectedTag"
-            else
-                log_error "Test mode: Invalid version: $LLVM_TEST_VERSION"
-                exit 1
-            fi
-        else
-            # Use first available version in test mode
-            selectedTag="${tagArray[0]}"
-            log_info "Test mode: Using first available version: $selectedTag"
-        fi
-    elif [ -n "$LLVM_LIST_ONLY" ]; then
+    if [ -n "$LLVM_LIST_ONLY" ]; then
         # List only mode - show available versions and exit
         log_info "Available LLVM releases:"
         i=1
@@ -369,26 +288,13 @@ else
         done
         exit 0
     else
-        # Interactive mode
-        log_info "Available LLVM releases:"
-        i=1
-        for tag in "${tagArray[@]}"; do
-            echo "$i) $tag"
-            ((i++))
-        done
-
-        # Check if running in a non-interactive environment
-        if [ ! -t 0 ]; then
-            log_error "Running in non-interactive mode but no version specified"
-            log_info "Use: $0 <version> or set LLVM_TEST_VERSION environment variable"
-            exit 1
-        fi
-
-        read -p "Enter the number of the release you want to build: " choice
-        if select_version "$choice"; then
+        # The documented CLI contract is "llvmup --from-source" = latest.
+        # Tests may still override it explicitly with LLVM_TEST_VERSION.
+        default_expression="${LLVM_TEST_VERSION:-${LLVM_CONFIG_VERSION:-latest}}"
+        if select_version "$default_expression"; then
             log_info "Selected version: $selectedTag"
         else
-            log_error "Invalid selection."
+            log_error "No stable source tag matches: $default_expression"
             exit 1
         fi
     fi

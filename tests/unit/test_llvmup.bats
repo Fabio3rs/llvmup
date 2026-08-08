@@ -122,3 +122,49 @@ teardown() {
     run grep -n "from-source" "$BATS_TEST_DIRNAME/../../llvmup"
     [ "$status" -eq 0 ]
 }
+
+@test "original llvmup resolves a short stable release version" {
+    run env \
+        LLVMUP_DISABLE_AUTOACTIVATE=1 \
+        LLVMUP_RELEASES_FILE="$BATS_TEST_DIRNAME/../../githubreleases.json" \
+        "$BATS_TEST_DIRNAME/../../llvmup" resolve "20.1.8"
+    [ "$status" -eq 0 ]
+    [ "$output" = "llvmorg-20.1.8" ]
+}
+
+@test "original llvmup resolve supports JSON output for CI consumers" {
+    run env \
+        LLVMUP_DISABLE_AUTOACTIVATE=1 \
+        LLVMUP_RELEASES_FILE="$BATS_TEST_DIRNAME/../../githubreleases.json" \
+        "$BATS_TEST_DIRNAME/../../llvmup" resolve --format json "~20.1"
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.version' <<< "$output")" = "llvmorg-20.1.8" ]
+}
+
+@test "reusable action isolates caches by verification policy" {
+    run grep -F '${{ inputs.verify }}' "$BATS_TEST_DIRNAME/../../action.yml"
+    [ "$status" -eq 0 ]
+    run grep -F 'auth-v1' "$BATS_TEST_DIRNAME/../../action.yml"
+    [ "$status" -eq 0 ]
+}
+
+@test "original llvmup exposes and forwards the prebuilt verification policy" {
+    run grep -F -- '--verify <POLICY>' "$BATS_TEST_DIRNAME/../../llvmup"
+    [ "$status" -eq 0 ]
+    run grep -F 'script_args+=("--verify" "$VERIFY_POLICY")' "$BATS_TEST_DIRNAME/../../llvmup"
+    [ "$status" -eq 0 ]
+}
+
+@test "reusable action has native Linux and Windows execution paths" {
+    run grep -F "runner.os == 'Windows'" "$BATS_TEST_DIRNAME/../../action.yml"
+    [ "$status" -eq 0 ]
+    run grep -F 'Download-Llvm.ps1' "$BATS_TEST_DIRNAME/../../action.yml"
+    [ "$status" -eq 0 ]
+    run grep -F 'verification:' "$BATS_TEST_DIRNAME/../../action.yml"
+    [ "$status" -eq 0 ]
+}
+
+@test "action smoke test never saves the fake compiler fixture" {
+    run bash -c "sed -n '/Smoke test reusable action/,/Verify action outputs/p' '$BATS_TEST_DIRNAME/../../.github/workflows/tests.yml' | grep -F 'cache: false'"
+    [ "$status" -eq 0 ]
+}

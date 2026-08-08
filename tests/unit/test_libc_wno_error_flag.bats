@@ -42,7 +42,6 @@ EOF
     rm -f .llvmup-config
 
     assert_success
-    assert_output --partial "Config: LIBC_WNO_ERROR flag disabled"
     assert_output --partial "Skipped LIBC_WNO_ERROR=ON flag (disabled)"
 }
 
@@ -97,7 +96,6 @@ EOF
     rm -f .llvmup-config
 
     assert_success
-    assert_output --partial "Config: Custom name set to test-build"
-    assert_output --partial "Config: LIBC_WNO_ERROR flag disabled"
     assert_output --partial "Name: test-build"
+    assert_output --partial "Skipped LIBC_WNO_ERROR=ON flag (disabled)"
 }

@@ -63,6 +63,35 @@ jobs:
         ./tests/run_tests.sh
       continue-on-error: false
 
+    - name: Prepare lightweight LLVM fixture for action smoke test
+      run: |
+        fixture="$RUNNER_TEMP/llvmup-data/toolchains/llvmorg-20.1.8/bin"
+        mkdir -p "$fixture"
+        printf '#!/bin/sh\necho clang version 20.1.8\n' > "$fixture/clang"
+        printf '#!/bin/sh\necho clang version 20.1.8\n' > "$fixture/clang++"
+        printf '#!/bin/sh\nexit 0\n' > "$fixture/lld"
+        chmod +x "$fixture/clang" "$fixture/clang++" "$fixture/lld"
+
+    - name: Smoke test reusable action
+      id: setup-llvm
+      uses: ./
+      env:
+        LLVMUP_RELEASES_FILE: ${{ github.workspace }}/githubreleases.json
+      with:
+        version: 20.1.8
+        # Never persist the lightweight fake compiler under a production cache key.
+        cache: false
+
+    - name: Verify action outputs and environment
+      env:
+        RESOLVED_VERSION: ${{ steps.setup-llvm.outputs.version }}
+        LLVM_PATH: ${{ steps.setup-llvm.outputs.llvm-path }}
+      run: |
+        test "$RESOLVED_VERSION" = "llvmorg-20.1.8"
+        test -x "$LLVM_PATH/bin/clang"
+        test "$CC" = "$LLVM_PATH/bin/clang"
+        clang --version
+
     - name: Upload test results
       if: always()
       uses: actions/upload-artifact@v4
@@ -92,3 +121,32 @@ jobs:
           exit 1
         }
         Write-Host "All tests passed successfully!"
+
+    - name: Prepare lightweight LLVM fixture for Windows action smoke test
+      shell: pwsh
+      run: |
+        $bin = Join-Path $env:RUNNER_TEMP 'llvmup-data\toolchains\llvmorg-20.1.8\bin'
+        New-Item -ItemType Directory -Path $bin -Force | Out-Null
+        '@echo off', 'echo clang version 20.1.8' | Set-Content -Path (Join-Path $bin 'clang.cmd') -Encoding Ascii
+        '@echo off', 'echo clang version 20.1.8' | Set-Content -Path (Join-Path $bin 'clang++.cmd') -Encoding Ascii
+        '@echo off', 'exit /b 0' | Set-Content -Path (Join-Path $bin 'lld-link.cmd') -Encoding Ascii
+
+    - name: Smoke test reusable action on Windows
+      id: setup-llvm-windows
+      uses: ./
+      env:
+        LLVMUP_RELEASES_FILE: ${{ github.workspace }}\githubreleases.json
+      with:
+        version: 20.1.8
+        cache: false
+
+    - name: Verify Windows action outputs and environment
+      shell: pwsh
+      env:
+        RESOLVED_VERSION: ${{ steps.setup-llvm-windows.outputs.version }}
+        LLVM_PATH: ${{ steps.setup-llvm-windows.outputs.llvm-path }}
+      run: |
+        if ($env:RESOLVED_VERSION -ne 'llvmorg-20.1.8') { throw "Unexpected version: $env:RESOLVED_VERSION" }
+        if (-not (Test-Path (Join-Path $env:LLVM_PATH 'bin\clang.cmd'))) { throw 'clang fixture is missing' }
+        if ($env:CC -notmatch 'clang\.cmd$') { throw "Unexpected CC: $env:CC" }
+        clang --version

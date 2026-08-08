@@ -3,7 +3,10 @@
 # Requirements: curl, jq, tar
 
 # Source LLVM functions for directory configuration support
-SCRIPT_DIR="$(dirname "$0")"
+case "${BASH_SOURCE[0]}" in
+    */*) SCRIPT_DIR="${BASH_SOURCE[0]%/*}" ;;
+    *) SCRIPT_DIR="." ;;
+esac
 if [ -f "$SCRIPT_DIR/llvm-functions.sh" ]; then
     source "$SCRIPT_DIR/llvm-functions.sh"
 
@@ -11,11 +14,15 @@ if [ -f "$SCRIPT_DIR/llvm-functions.sh" ]; then
     if [ -f ".llvmup-config" ]; then
         llvm-config-load >/dev/null 2>&1 || true
     fi
+else
+    echo "Error: llvm-functions.sh must be installed next to llvm-prebuilt." >&2
+    exit 1
 fi
 
 # Parse command line arguments
 VERBOSE=0
 QUIET=0
+VERIFY_REQUEST=""
 ARGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -28,22 +35,32 @@ while [[ $# -gt 0 ]]; do
             QUIET=1
             shift
             ;;
+        --verify)
+            if [ $# -lt 2 ]; then
+                echo "Option --verify requires warn, strict, or skip" >&2
+                exit 1
+            fi
+            VERIFY_REQUEST="$2"
+            shift 2
+            ;;
         -h|--help)
             echo "Usage: $0 [OPTIONS] [VERSION]"
             echo ""
             echo "Options:"
             echo "  -v, --verbose    Enable verbose output"
             echo "  -q, --quiet      Suppress non-essential output"
+            echo "  --verify POLICY  Verification policy: warn, strict, or skip"
             echo "  -h, --help       Show this help message"
             echo ""
             echo "Arguments:"
-            echo "  VERSION          Version number (1-N) or version tag (e.g., llvmorg-19.1.7)"
+            echo "  VERSION          Version expression, number, or tag (default: latest)"
             echo ""
             echo "Examples:"
-            echo "  $0               # Interactive mode"
-            echo "  $0 1             # Install first version in list"
+            echo "  $0               # Install latest stable release"
+            echo "  $0 latest        # Install latest stable release"
+            echo "  $0 '~22.1'       # Install latest stable 22.1.x release"
             echo "  $0 llvmorg-19.1.7  # Install specific version"
-            echo "  $0 -v 1          # Install with verbose output"
+            echo "  $0 -v 22.1.8     # Install with verbose output"
             exit 0
             ;;
         -*)
@@ -78,9 +95,7 @@ log_error() {
 }
 
 log_warning() {
-    if [ "$QUIET" -eq 0 ]; then
-        echo "Warning: $*" >&2
-    fi
+    echo "Warning: $*" >&2
 }
 
 # Check if required commands are installed
@@ -102,195 +117,64 @@ command -v jq >/dev/null 2>&1 || {
     exit 1
 }
 
-HAS_TIMEOUT=1
-if ! command -v timeout >/dev/null 2>&1; then
-    HAS_TIMEOUT=0
-    echo "Warning: The 'timeout' command is not available; continuing without it." >&2
-    log_verbose "Falling back to a plain curl request without an external timeout wrapper."
-    if [ "$QUIET" -eq 0 ]; then
-        log_info "Install GNU coreutils (e.g., 'brew install coreutils') to restore timeout support."
+VERIFY_POLICY="$(llvm-resolve-verification-policy "$VERIFY_REQUEST")" || exit 1
+
+VERSION_EXPRESSION="${1:-${LLVM_CONFIG_VERSION:-latest}}"
+
+# Retain numeric selection for direct llvm-prebuilt users while the documented
+# llvmup entrypoint defaults to the latest stable release.
+if [[ "$VERSION_EXPRESSION" =~ ^[0-9]+$ ]]; then
+    RELEASES_JSON="$(llvm-get-remote-stable-releases)" || exit 1
+    mapfile -t VERSION_LIST < <(jq -r '.[].tag_name' <<< "$RELEASES_JSON")
+    if [ "$VERSION_EXPRESSION" -lt 1 ] || [ "$VERSION_EXPRESSION" -gt "${#VERSION_LIST[@]}" ]; then
+        log_error "Invalid release number: $VERSION_EXPRESSION"
+        exit 1
     fi
+    VERSION_EXPRESSION="${VERSION_LIST[$((VERSION_EXPRESSION-1))]}"
 fi
 
-# GitHub API URL for llvm-project releases
-API_URL="https://api.github.com/repos/llvm/llvm-project/releases"
+log_info "Resolving stable LLVM release: $VERSION_EXPRESSION"
+RELEASE_METADATA="$(llvm-resolve-remote-release "$VERSION_EXPRESSION")" || exit 1
+SELECTED_VERSION="$(jq -r '.version' <<< "$RELEASE_METADATA")"
+ASSET_NAME="$(jq -r '.asset_name' <<< "$RELEASE_METADATA")"
+ASSET_URL="$(jq -r '.asset_url' <<< "$RELEASE_METADATA")"
+ASSET_DIGEST="$(jq -r '.asset_digest // ""' <<< "$RELEASE_METADATA")"
+SIG_URL="$(jq -r '.signature_url // ""' <<< "$RELEASE_METADATA")"
+SHA_URL="$(jq -r '.checksum_url // ""' <<< "$RELEASE_METADATA")"
+JSONL_URL="$(jq -r '.attestation_url // ""' <<< "$RELEASE_METADATA")"
 
-log_info "Fetching available LLVM releases from GitHub..."
-log_info "This may take a few seconds..."
-log_verbose "API URL: $API_URL"
+LLVM_TOOLCHAINS_DIR="$(llvm-get-toolchains-dir 2>/dev/null || echo "$HOME/.llvm/toolchains")"
+TARGET_DIR="$LLVM_TOOLCHAINS_DIR/$SELECTED_VERSION"
 
-# Show progress for API call with timeout support when available
-echo -n "Connecting to GitHub API... "
-CURL_ARGS=(
-    -f
-    --connect-timeout 30
-    --max-time 60
-    --retry 2
-    --retry-delay 3
-    --silent
-    --show-error
-    "$API_URL"
-)
+if [ -e "$TARGET_DIR" ]; then
+    if llvm-validate-toolchain-path "$TARGET_DIR"; then
+        llvm-validate-verification-marker "$TARGET_DIR" "$SELECTED_VERSION" \
+            "$ASSET_DIGEST" "$VERIFY_POLICY" || exit 1
+        log_success "LLVM $SELECTED_VERSION is already installed in $TARGET_DIR"
+        exit 0
+    fi
 
-if [ "$HAS_TIMEOUT" -eq 1 ]; then
-    CURL_CMD=(timeout 60 curl "${CURL_ARGS[@]}")
-else
-    CURL_CMD=(curl "${CURL_ARGS[@]}")
-fi
-
-if ! RELEASES=$("${CURL_CMD[@]}" 2>&1); then
-    echo "FAILED"
-    log_error "Failed to fetch releases from GitHub."
-    log_info "This might be due to:"
-    log_info "  - Internet connection issues"
-    log_info "  - GitHub API rate limiting (try again in an hour)"
-    log_info "  - Temporary GitHub service disruption"
-    log_info "  - Firewall or proxy blocking the request"
-    log_info "Please check your connection and try again."
+    log_error "Incomplete LLVM installation already exists at $TARGET_DIR"
+    log_info "Remove or repair that directory before retrying."
     exit 1
 fi
 
-echo "SUCCESS"
-log_success "Successfully retrieved release information from GitHub"
-log_verbose "API response received ($(echo "$RELEASES" | wc -c) characters)"
+log_info "Selected stable release: $SELECTED_VERSION"
+log_verbose "Download URL: $ASSET_URL"
 
-# Validate JSON response
-if ! echo "$RELEASES" | jq . >/dev/null 2>&1; then
-    log_error "Invalid JSON response from GitHub API."
-    log_info "This might indicate a temporary API issue."
-    if [ "$VERBOSE" -eq 1 ]; then
-        log_verbose "Response received:"
-        echo "$RELEASES" | head -5
-    fi
-    log_info "Please try again in a few minutes."
+TEMP_BASE="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+mkdir -p "$TEMP_BASE" || {
+    log_error "Failed to create temporary base directory: $TEMP_BASE"
     exit 1
-fi
-
-# Extract available tags (versions)
-log_verbose "Extracting version tags from API response..."
-VERSIONS=$(echo "$RELEASES" | jq -r '.[].tag_name')
-IFS=$'\n' read -rd '' -a versionList <<<"$VERSIONS"
-
-if [ ${#versionList[@]} -eq 0 ]; then
-    log_error "No LLVM versions found."
-    log_info "This might be due to:"
-    log_info "  - GitHub API rate limiting"
-    log_info "  - Changes in the LLVM release structure"
-    log_info "  - Temporary GitHub service disruption"
-    log_info "Please try again in a few minutes."
-    exit 1
-fi
-
-log_verbose "Found ${#versionList[@]} available versions"
-log_info "Available versions:"
-LLVM_TOOLCHAINS_DIR_EFFECTIVE="$(llvm-get-toolchains-dir 2>/dev/null || echo "$HOME/.llvm/toolchains")"
-for i in "${!versionList[@]}"; do
-    version="${versionList[$i]}"
-    INSTALLED_FLAG=""
-    if [ -d "$LLVM_TOOLCHAINS_DIR_EFFECTIVE/$version" ]; then
-        INSTALLED_FLAG=" [installed]"
-    fi
-    log_info "$((i+1))) $version$INSTALLED_FLAG"
-done
-
-# Function to validate and select version based on input
-select_version() {
-    local input="$1"
-    log_verbose "Validating version input: '$input'"
-
-    # If input is a number, use it as an index (1-based)
-    if [[ "$input" =~ ^[0-9]+$ ]]; then
-        log_verbose "Input is numeric: $input"
-        if [ "$input" -ge 1 ] && [ "$input" -le ${#versionList[@]} ]; then
-            SELECTED_VERSION="${versionList[$((input-1))]}"
-            log_verbose "Selected version by index: $SELECTED_VERSION"
-            return 0
-        else
-            log_error "Invalid version number '$input'"
-            log_info "Please select a number between 1 and ${#versionList[@]}"
-            return 1
-        fi
-    else
-        log_verbose "Input is version tag: $input"
-        # Otherwise, assume it's a version tag. Check if it exists in the array.
-        for tag in "${versionList[@]}"; do
-            if [ "$tag" = "$input" ]; then
-                SELECTED_VERSION="$tag"
-                log_verbose "Found matching version tag: $SELECTED_VERSION"
-                return 0
-            fi
-        done
-        log_error "Invalid version tag '$input'"
-        log_info "Please provide either a valid version number or a valid version tag from the list above."
-        return 1
-    fi
 }
-
-# Check if an argument is passed
-if [ "$#" -ge 1 ]; then
-    input="$1"
-    log_verbose "Using command line argument: $input"
-    if select_version "$input"; then
-        log_info "You selected: $SELECTED_VERSION"
-    else
-        exit 1
-    fi
-else
-    # No argument provided: prompt the user
-    read -p "Select a version by number: " choice
-    if select_version "$choice"; then
-        log_info "You selected: $SELECTED_VERSION"
-    else
-        exit 1
-    fi
-fi
-
-log_verbose "Starting asset search for version: $SELECTED_VERSION"
-
-# Find the asset containing "Linux-X64.tar.xz" for the selected version
-ASSET_URL=$(echo "$RELEASES" | jq -r --arg version "$SELECTED_VERSION" '
-    .[] | select(.tag_name == $version) |
-    .assets[] | select(.name | test("Linux-X64.tar.xz$")) |
-    .browser_download_url
-')
-
-# Try to extract asset digest (if available in the release metadata) to avoid needing a separate checksum file
-ASSET_DIGEST=$(echo "$RELEASES" | jq -r --arg version "$SELECTED_VERSION" --arg name "$(basename "$ASSET_URL")" '
-    .[] | select(.tag_name == $version) |
-    .assets[] | select(.browser_download_url == ($name | sub("^"; "https://github.com/" ) )? // .browser_download_url | test("")) |
-    .digest // empty
-')
-
-# Fallback: try to find asset by matching name and read digest
-if [ -z "$ASSET_DIGEST" ]; then
-        ASSET_DIGEST=$(echo "$RELEASES" | jq -r --arg version "$SELECTED_VERSION" --arg asset "$(basename \"$ASSET_URL\")" '
-            .[] | select(.tag_name == $version) | .assets[] | select(.name == $asset) | .digest // empty
-        ')
-fi
-
-if [ -z "$ASSET_URL" ]; then
-    log_error "No Linux X64 tarball found for version $SELECTED_VERSION."
-    log_info "This might be because:"
-    log_info "  - The release doesn't include a Linux X64 build"
-    log_info "  - The asset naming convention has changed"
-    log_info "Please try a different version or check the LLVM releases page manually."
+TEMP_DIR="$(mktemp -d "$TEMP_BASE/llvmup-${SELECTED_VERSION}.XXXXXX")" || {
+    log_error "Failed to create a temporary directory in $TEMP_BASE"
     exit 1
-fi
+}
+log_verbose "Temporary directory: $TEMP_DIR"
+trap 'rm -rf "$TEMP_DIR"' EXIT
 
-log_info "Download URL found: $ASSET_URL"
-log_verbose "Full asset URL: $ASSET_URL"
-
-# Define directories: temporary area and final installation directory
-TEMP_DIR="$HOME/llvm_temp/$SELECTED_VERSION"
-log_verbose "Creating temporary directory: $TEMP_DIR"
-
-if ! mkdir -p "$TEMP_DIR"; then
-    log_error "Failed to create temporary directory: $TEMP_DIR"
-    log_info "Please check if you have write permissions in your home directory."
-    exit 1
-fi
-
-DEST_FILE="$TEMP_DIR/$(basename "$ASSET_URL")"
+DEST_FILE="$TEMP_DIR/$ASSET_NAME"
 
 # Get file size for progress indication
 log_info "Getting file information..."
@@ -332,150 +216,11 @@ fi
 echo # Add newline after progress bar
 log_success "Download completed successfully!"
 log_verbose "Downloaded file: $DEST_FILE ($(du -h "$DEST_FILE" | cut -f1))"
-log_info "Download finished, performing optional integrity verification..."
-
-# Determine asset base name
-ASSET_NAME="$(basename "$ASSET_URL")"
-
-# Honor explicit skip via environment variable (1/true)
-if [ -n "$LLVMUP_SKIP_VERIFY" ] && { [ "$LLVMUP_SKIP_VERIFY" = "1" ] || [ "$LLVMUP_SKIP_VERIFY" = "true" ]; }; then
-    log_info "Skipping verification because LLVMUP_SKIP_VERIFY is set"
-    VERIFIED=1
-else
-    VERIFIED=0
-
-    # If the release metadata contains an asset.digest field, prefer it as the canonical
-    # expected sha256 fingerprint. Use it first before attempting companion checksum files
-    # or signatures. If it fails and LLVMUP_REQUIRE_VERIFY is set, abort immediately.
-    if [ -n "$ASSET_DIGEST" ]; then
-        log_info "Found asset.digest in release metadata; attempting direct sha256 comparison..."
-        # normalize expected digest (remove sha256: prefix if present)
-        EXPECTED_CHKSUM=$(echo "$ASSET_DIGEST" | sed 's/^sha256://I')
-
-        # compute actual checksum
-        if command -v sha256sum >/dev/null 2>&1; then
-            ACTUAL_CHKSUM=$(sha256sum "$DEST_FILE" | awk '{print $1}')
-        elif command -v shasum >/dev/null 2>&1; then
-            ACTUAL_CHKSUM=$(shasum -a 256 "$DEST_FILE" | awk '{print $1}')
-        else
-            log_warning "No SHA256 tool available (sha256sum/shasum); cannot verify asset.digest"
-            ACTUAL_CHKSUM=""
-        fi
-
-        if [ -n "$ACTUAL_CHKSUM" ] && [ "$ACTUAL_CHKSUM" = "$EXPECTED_CHKSUM" ]; then
-            VERIFIED=1
-            log_info "asset.digest matches the downloaded file."
-        else
-            log_warning "asset.digest did not match the downloaded file. Expected: ${EXPECTED_CHKSUM:-<empty>}, Actual: ${ACTUAL_CHKSUM:-<empty>}"
-            if [ -n "$LLVMUP_REQUIRE_VERIFY" ] && { [ "$LLVMUP_REQUIRE_VERIFY" = "1" ] || [ "$LLVMUP_REQUIRE_VERIFY" = "true" ]; }; then
-                log_error "asset.digest verification failed and LLVMUP_REQUIRE_VERIFY is set; aborting."
-                log_verbose "Cleaning up temporary directory: $TEMP_DIR"
-                rm -rf "$TEMP_DIR"
-                exit 1
-            fi
-        fi
-    fi
-
-    # Look for companion assets (.sha256, .sig, .jsonl) in the release metadata
-    SIG_URL=$(echo "$RELEASES" | jq -r --arg version "$SELECTED_VERSION" --arg name "$ASSET_NAME" '.[] | select(.tag_name==$version) | .assets[] | select(.name == ($name + ".sig")) | .browser_download_url')
-    SHA_URL=$(echo "$RELEASES" | jq -r --arg version "$SELECTED_VERSION" --arg name "$ASSET_NAME" '.[] | select(.tag_name==$version) | .assets[] | select(.name == ($name + ".sha256") or .name == ($name + ".sha256sum") or .name == ($name + ".sha256.txt") or .name == ($name + ".sha256sum.txt")) | .browser_download_url')
-    JSONL_URL=$(echo "$RELEASES" | jq -r --arg version "$SELECTED_VERSION" --arg name "$ASSET_NAME" '.[] | select(.tag_name==$version) | .assets[] | select(.name == ($name + ".jsonl")) | .browser_download_url')
-
-    # Try checksum files first (explicit checksum file)
-    if [ -n "$SHA_URL" ]; then
-        log_info "Found checksum asset; attempting sha256 verification..."
-        if curl -sL "$SHA_URL" -o "$TEMP_DIR/$ASSET_NAME.sha256"; then
-            CHKSUM_FILE="$TEMP_DIR/$ASSET_NAME.sha256"
-            # Try to extract a 64-hex sha256
-            EXPECTED_CHKSUM=$(awk '{print $1}' "$CHKSUM_FILE" | grep -Eo '^[0-9a-f]{64}$' | head -1 || true)
-            if [ -z "$EXPECTED_CHKSUM" ]; then
-                # Try to find any 64-hex inside the file
-                EXPECTED_CHKSUM=$(grep -Eo '[0-9a-f]{64}' "$CHKSUM_FILE" | head -1 || true)
-            fi
-            if [ -n "$EXPECTED_CHKSUM" ]; then
-                if command -v sha256sum >/dev/null 2>&1; then
-                    ACTUAL_CHKSUM=$(sha256sum "$DEST_FILE" | awk '{print $1}')
-                elif command -v shasum >/dev/null 2>&1; then
-                    ACTUAL_CHKSUM=$(shasum -a 256 "$DEST_FILE" | awk '{print $1}')
-                else
-                    log_warning "No SHA256 tool available (sha256sum/shasum); cannot verify checksum file"
-                    ACTUAL_CHKSUM=""
-                fi
-
-                if [ -n "$ACTUAL_CHKSUM" ] && [ "$ACTUAL_CHKSUM" = "$EXPECTED_CHKSUM" ]; then
-                    VERIFIED=1
-                    log_info "SHA256 checksum matches."
-                else
-                    log_warning "SHA256 checksum did not match the downloaded file."
-                fi
-            else
-                log_warning "Checksum file did not contain a recognisable sha256 value."
-            fi
-        else
-            log_warning "Failed to download checksum asset: $SHA_URL"
-        fi
-    fi
-
-    # If not verified yet, try GPG signature verification
-    if [ "$VERIFIED" -ne 1 ] && [ -n "$SIG_URL" ]; then
-        if command -v gpg >/dev/null 2>&1; then
-            log_info "Found signature asset; attempting GPG verification..."
-            if curl -sL "$SIG_URL" -o "$TEMP_DIR/$ASSET_NAME.sig"; then
-                if gpg --verify "$TEMP_DIR/$ASSET_NAME.sig" "$DEST_FILE" >/dev/null 2>&1; then
-                    VERIFIED=1
-                    log_info "GPG signature verified successfully."
-                else
-                    log_warning "GPG verification failed for signature: $SIG_URL"
-                fi
-            else
-                log_warning "Failed to download signature asset: $SIG_URL"
-            fi
-        else
-            log_warning "gpg not available in PATH; cannot verify signature asset."
-        fi
-    fi
-
-    # If still not verified, try JSONL attestation (search for sha256 inside)
-    if [ "$VERIFIED" -ne 1 ] && [ -n "$JSONL_URL" ]; then
-        log_info "Found JSONL attestation asset; attempting to extract and compare sha256..."
-        if curl -sL "$JSONL_URL" -o "$TEMP_DIR/$ASSET_NAME.jsonl"; then
-            EXPECTED_CHKSUM=$(grep -Eo '[0-9a-f]{64}' "$TEMP_DIR/$ASSET_NAME.jsonl" | head -1 || true)
-            if [ -n "$EXPECTED_CHKSUM" ]; then
-                if command -v sha256sum >/dev/null 2>&1; then
-                    ACTUAL_CHKSUM=$(sha256sum "$DEST_FILE" | awk '{print $1}')
-                elif command -v shasum >/dev/null 2>&1; then
-                    ACTUAL_CHKSUM=$(shasum -a 256 "$DEST_FILE" | awk '{print $1}')
-                else
-                    log_warning "No SHA256 tool available; cannot verify JSONL attestation"
-                    ACTUAL_CHKSUM=""
-                fi
-
-                if [ -n "$ACTUAL_CHKSUM" ] && [ "$ACTUAL_CHKSUM" = "$EXPECTED_CHKSUM" ]; then
-                    VERIFIED=1
-                    log_info "JSONL attestation sha256 matches the downloaded file."
-                else
-                    log_warning "JSONL attestation did not match the downloaded file."
-                fi
-            else
-                log_warning "No sha256 fingerprint found in JSONL attestation."
-            fi
-        else
-            log_warning "Failed to download JSONL attestation: $JSONL_URL"
-        fi
-    fi
-
-    # Final policy enforcement: warn by default, fail only if user requests strict verification
-    if [ "$VERIFIED" -ne 1 ]; then
-        if [ -n "$LLVMUP_REQUIRE_VERIFY" ] && { [ "$LLVMUP_REQUIRE_VERIFY" = "1" ] || [ "$LLVMUP_REQUIRE_VERIFY" = "true" ]; }; then
-            log_error "No successful verification found for downloaded asset and LLVMUP_REQUIRE_VERIFY is set; aborting."
-            log_verbose "Cleaning up temporary directory: $TEMP_DIR"
-            rm -rf "$TEMP_DIR"
-            exit 1
-        else
-            log_warning "No verification available/succeeded for downloaded asset; proceeding (default policy: warn)."
-            log_info "To require verification, set LLVMUP_REQUIRE_VERIFY=1 in your environment. To skip verification, set LLVMUP_SKIP_VERIFY=1."
-        fi
-    fi
+log_info "Download finished; verifying integrity and release provenance..."
+if ! llvm-verify-release-asset "$DEST_FILE" "$ASSET_DIGEST" "$SHA_URL" \
+    "$SIG_URL" "$JSONL_URL" "$TEMP_DIR" "$VERIFY_POLICY"; then
+    log_error "Release verification failed; the archive will not be installed."
+    exit 1
 fi
 
 log_info "Extracting the archive... (this may take a few moments)"
@@ -516,10 +261,6 @@ if [ -z "$EXTRACTED_DIR" ]; then
 fi
 log_verbose "Extracted directory: $EXTRACTED_DIR"
 
-# Define the final installation directory (used by the activation script)
-LLVM_TOOLCHAINS_DIR="$(llvm-get-toolchains-dir 2>/dev/null || echo "$HOME/.llvm/toolchains")"
-TARGET_DIR="$LLVM_TOOLCHAINS_DIR/$SELECTED_VERSION"
-
 log_info "Preparing final installation directory..."
 log_verbose "Target directory: $TARGET_DIR"
 
@@ -553,25 +294,31 @@ if ! rm -rf "$TEMP_DIR"; then
     log_warning "Failed to clean up temporary files in $TEMP_DIR"
     log_info "You can safely delete this directory manually."
 fi
+trap - EXIT
+
+# Verify installation
+if ! llvm-validate-toolchain-path "$TARGET_DIR"; then
+    log_error "Installation verification failed for $TARGET_DIR"
+    if [ "$VERBOSE" -eq 1 ]; then
+        log_verbose "Contents of installation directory:"
+        ls -la "$TARGET_DIR" 2>/dev/null || log_verbose "Directory listing failed"
+    fi
+    exit 1
+fi
+
+if ! llvm-write-verification-marker "$TARGET_DIR" "$SELECTED_VERSION" \
+    "$ASSET_NAME" "$ASSET_DIGEST" "$VERIFY_POLICY"; then
+    log_error "Failed to write the toolchain verification marker."
+    exit 1
+fi
+
+log_info "Installation verification: clang and clang++ are usable ✓"
+if [ "$VERBOSE" -eq 1 ]; then
+    log_verbose "clang version info:"
+    "$TARGET_DIR/bin/clang" --version 2>/dev/null | head -3
+fi
 
 log_info ""
 log_success "Installation completed successfully!"
 log_info "Run 'llvm-activate $SELECTED_VERSION' to activate the installed version."
 log_info ""
-
-# Verify installation
-if [ -f "$TARGET_DIR/bin/clang" ]; then
-    log_info "Installation verification: clang binary found ✓"
-    if [ "$VERBOSE" -eq 1 ]; then
-        log_verbose "clang version info:"
-        "$TARGET_DIR/bin/clang" --version 2>/dev/null | head -3
-    fi
-else
-    log_warning "Installation verification: clang binary not found in expected location"
-    log_info "LLVM might have been installed with a different structure."
-    log_info "Check $TARGET_DIR for the actual binaries."
-    if [ "$VERBOSE" -eq 1 ]; then
-        log_verbose "Contents of installation directory:"
-        ls -la "$TARGET_DIR" 2>/dev/null || log_verbose "Directory listing failed"
-    fi
-fi

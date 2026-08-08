@@ -7,6 +7,7 @@
 #   llvmup deactivate
 #   llvmup env <version>
 #   llvmup env --config
+#   llvmup resolve [--format tag|json] [VERSION_EXPRESSION]
 #   llvmup vscode-activate <version>
 #   llvmup status
 #   llvmup list
@@ -24,6 +25,7 @@
 #   list                 List installed LLVM versions
 #   disk-usage           Show disk usage of installed LLVM versions
 #   env                  Print shell exports for CI/non-interactive usage
+#   resolve              Resolve a stable remote LLVM release without installing it
 #   default              Manage default LLVM version
 #   config               Manage project configuration
 #   --from-source        Build LLVM from source instead of installing a pre-built release.
@@ -55,6 +57,7 @@ PROFILE=""
 COMPONENTS=()
 DISABLE_LIBC_WNO_ERROR=0
 RECONFIGURE=0
+VERIFY_POLICY=""
 
 # Logging functions
 log_verbose() {
@@ -123,11 +126,12 @@ handle_env_command() {
 
     case "${1:-}" in
         --config)
-            llvm-print-config-env-exports
+            llvm-print-config-env-exports shell
             ;;
         --format)
-            if [ "${2:-}" != "shell" ]; then
-                log_error "Unsupported env format: ${2:-}"
+            local env_format="${2:-}"
+            if [ "$env_format" != "shell" ] && [ "$env_format" != "github" ]; then
+                log_error "Unsupported env format: $env_format"
                 exit 1
             fi
             shift 2
@@ -135,7 +139,11 @@ handle_env_command() {
                 log_error "Missing version argument for 'env'"
                 exit 1
             fi
-            llvm-print-env-exports "$1"
+            if [ "$1" = "--config" ]; then
+                llvm-print-config-env-exports "$env_format"
+            else
+                llvm-print-env-exports "$1" "$env_format"
+            fi
             ;;
         "")
             log_error "Missing version argument for 'env'"
@@ -143,6 +151,98 @@ handle_env_command() {
             ;;
         *)
             llvm-print-env-exports "$1"
+            ;;
+    esac
+}
+
+handle_resolve_command() {
+    source_local_functions >/dev/null 2>&1 || true
+
+    if ! command -v llvm-resolve-remote-release >/dev/null 2>&1; then
+        log_error "LLVM release resolution support is unavailable"
+        log_info "Make sure llvm-functions.sh is installed next to llvmup"
+        exit 1
+    fi
+
+    local format="tag"
+    local platform=""
+    local architecture=""
+    local expression=""
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --format)
+                if [ $# -lt 2 ]; then
+                    log_error "Option --format requires tag or json"
+                    exit 1
+                fi
+                format="$2"
+                shift 2
+                ;;
+            --platform)
+                if [ $# -lt 2 ]; then
+                    log_error "Option --platform requires a value"
+                    exit 1
+                fi
+                platform="$2"
+                shift 2
+                ;;
+            --arch|--architecture)
+                if [ $# -lt 2 ]; then
+                    log_error "Option $1 requires a value"
+                    exit 1
+                fi
+                architecture="$2"
+                shift 2
+                ;;
+            --config)
+                local config_root
+                config_root="$(llvm-find-config-root)" || config_root=""
+                if [ -z "$config_root" ]; then
+                    log_error "No .llvmup-config file found"
+                    exit 1
+                fi
+                llvm-load-config-from-root "$config_root" >/dev/null 2>&1 || exit $?
+                expression="$LLVM_CONFIG_VERSION"
+                shift
+                ;;
+            -h|--help)
+                cat <<EOF
+Usage: llvmup resolve [OPTIONS] [VERSION_EXPRESSION]
+
+Options:
+  --format <tag|json>       Output only the canonical tag or full release metadata
+  --platform <platform>     Override platform detection
+  --arch <architecture>     Override architecture detection
+  --config                  Read the expression from .llvmup-config
+EOF
+                exit 0
+                ;;
+            -*)
+                log_error "Unknown resolve option: $1"
+                exit 1
+                ;;
+            *)
+                if [ -n "$expression" ]; then
+                    log_error "Only one version expression can be resolved"
+                    exit 1
+                fi
+                expression="$1"
+                shift
+                ;;
+        esac
+    done
+
+    expression="${expression:-latest}"
+    local metadata
+    metadata="$(llvm-resolve-remote-release "$expression" "$platform" "$architecture")" || exit $?
+
+    case "$format" in
+        tag) jq -r '.version' <<< "$metadata" ;;
+        json) printf '%s\n' "$metadata" ;;
+        *)
+            log_error "Unsupported resolve format: $format"
+            exit 1
             ;;
     esac
 }
@@ -308,7 +408,7 @@ case "${1:-}" in
         COMMAND="install"
         shift
         ;;
-    activate|deactivate|env|vscode-activate|status|list|disk-usage|help)
+    activate|deactivate|env|resolve|vscode-activate|status|list|disk-usage|help)
         COMMAND="$1"
         shift
         ;;
@@ -355,6 +455,7 @@ Commands:
   activate         Activate an installed LLVM version in the current shell
   deactivate       Deactivate the current LLVM version in the current shell
   env              Print shell exports for CI/non-interactive usage
+  resolve          Resolve a stable remote LLVM release without installing it
   vscode-activate  Configure VSCode for an installed LLVM version
   status           Show the current LLVM environment status
   list             List installed LLVM versions
@@ -372,6 +473,7 @@ Install Options:
   --component <COMPONENT>     Install specific components (can be repeated)
   --disable-libc-wno-error    Disable LIBC_WNO_ERROR=ON flag
   --reconfigure               Force CMake to reconfigure the build (removes CMakeCache.txt)
+  --verify <POLICY>           Prebuilt verification policy: warn, strict, or skip
   -v, --verbose               Enable verbose output for debugging
   -q, --quiet                 Suppress non-essential output
   -h, --help                  Show this help message
@@ -393,6 +495,8 @@ Examples:
   llvmup deactivate                              # Deactivate the current shell
   eval "$(llvmup env 18.1.8)"                    # Export env vars in current shell
   eval "$(llvmup env --config)"                  # Export env vars from .llvmup-config
+  llvmup resolve latest                          # Print the latest stable release tag
+  llvmup resolve --format json '~22.1'           # Print resolved release metadata
   llvmup vscode-activate 18.1.8                  # Configure VSCode integration
   llvmup status                                  # Show current LLVM status
   llvmup list                                    # List installed LLVM versions
@@ -415,7 +519,7 @@ remaining_args=()
 if [ -z "$COMMAND" ]; then
     if [[ $# -gt 0 ]] && [[ "$1" != -* ]]; then
         case "$1" in
-            install|activate|deactivate|env|vscode-activate|status|list|disk-usage|default|help)
+            install|activate|deactivate|env|resolve|vscode-activate|status|list|disk-usage|default|help)
                 COMMAND="$1"
                 shift
                 ;;
@@ -452,6 +556,10 @@ case "$COMMAND" in
         ;;
     env)
         handle_env_command "$@"
+        exit $?
+        ;;
+    resolve)
+        handle_resolve_command "$@"
         exit $?
         ;;
     vscode-activate)
@@ -551,6 +659,20 @@ while [[ $# -gt 0 ]]; do
             log_verbose "Option: Force CMake reconfiguration enabled"
             shift
             ;;
+        --verify)
+            if [ $# -lt 2 ]; then
+                log_error "Option --verify requires warn, strict, or skip"
+                exit 1
+            fi
+            case "$2" in
+                warn|strict|skip) VERIFY_POLICY="$2" ;;
+                *)
+                    log_error "Invalid verification policy: $2 (must be warn, strict, or skip)"
+                    exit 1
+                    ;;
+            esac
+            shift 2
+            ;;
         -v|--verbose)
             VERBOSE=1
             log_verbose "Option: Verbose output enabled"
@@ -627,6 +749,14 @@ fi
 # Add reconfigure flag
 if [ "$RECONFIGURE" -eq 1 ]; then
     script_args+=("--reconfigure")
+fi
+
+if [ -n "$VERIFY_POLICY" ]; then
+    if [ "$FROM_SOURCE" -eq 1 ]; then
+        log_error "--verify currently applies only to prebuilt release assets"
+        exit 1
+    fi
+    script_args+=("--verify" "$VERIFY_POLICY")
 fi
 
 # Add remaining arguments (version, etc.)
