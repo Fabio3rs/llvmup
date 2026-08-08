@@ -21,8 +21,8 @@ jobs:
       run: |
         # Create local bin directory
         mkdir -p ~/.local/bin
-        # Clone and install BATS to user directory
-        git clone https://github.com/bats-core/bats-core.git
+        # Pin BATS so upstream changes do not alter CI behavior unexpectedly
+        git clone --branch v1.14.0 --depth 1 https://github.com/bats-core/bats-core.git
         cd bats-core
         # Create necessary directories with proper permissions
         mkdir -p ~/.local/lib/bats-core
