@@ -120,7 +120,7 @@ LLVMUP_SYSTEM_INSTALL=1 ./install.sh
 LLVMUP_INSTALL_DIR=$HOME/bin ./install.sh
 
 # Interactive installation helper
-./install-examples.sh
+./examples/install-examples.sh
 ```
 
 For detailed installation instructions, see [INSTALL.md](docs/INSTALL.md).
@@ -440,7 +440,7 @@ LLVMUP_INSTALL_DIR=/usr/local/bin ./install.sh
 ### Interactive Helper
 Use the interactive installation helper for guided setup:
 ```bash
-./install-examples.sh
+./examples/install-examples.sh
 ```
 
 ## Available Tools After Activation

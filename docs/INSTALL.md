@@ -87,7 +87,7 @@ LLVMUP_SYSTEM_INSTALL=1 ./uninstall.sh
 
 For guided installation, use:
 ```bash
-./install-examples.sh
+./examples/install-examples.sh
 ```
 
 This script provides an interactive menu to choose installation options.

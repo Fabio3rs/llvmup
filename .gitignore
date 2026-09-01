@@ -1,0 +1,31 @@
+# Local cleanup quarantine
+/.cleanup-archive/
+
+# Aider local state
+/.aider.chat.history.md
+/.aider.input.history
+/.aider.tags.cache*/
+
+# PowerShell startup profiling artifacts
+/StartupProfileData-*
+
+# Local LLVMUP configuration used by manual tests
+/.llvmup-config
+/.llvmup-config-*
+/.llvmup-config.enhanced
+/.llvmup-config.ps-backup
+
+# Generated test and demo directories
+/$TestDir/
+/7.4.2/
+/docker-llvm/
+/test-llvm/
+/test-project/
+/tests/unit/ps-auto/.llvm/
+
+# Common editor and backup files
+*.bak
+*.backup
+*~
+.DS_Store
+Thumbs.db
