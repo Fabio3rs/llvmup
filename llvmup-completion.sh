@@ -108,7 +108,7 @@ _llvmup_completions() {
     local command="install"
     if [ ${#words[@]} -gt 1 ]; then
         case "${words[1]}" in
-            install|activate|deactivate|env|resolve|vscode-activate|status|list|disk-usage|default|config|help)
+            install|activate|deactivate|env|resolve|vscode-activate|status|list|remove|disk-usage|default|config|help)
                 command="${words[1]}"
                 ;;
         esac
@@ -168,7 +168,21 @@ _llvmup_completions() {
             fi
             return 0
             ;;
-        deactivate|status|list|help)
+        deactivate|status|help)
+            return 0
+            ;;
+        list)
+            if [[ "$cur" == -* ]]; then
+                _llvmup_collect_values _llvmup_get_list_flag_items "$cur"
+            fi
+            return 0
+            ;;
+        remove)
+            if [[ "$cur" == -* ]]; then
+                _llvmup_collect_values _llvmup_get_remove_flag_items "$cur"
+            else
+                _llvmup_collect_values _llvmup_get_activation_version_items "$cur"
+            fi
             return 0
             ;;
         disk-usage)
@@ -180,7 +194,7 @@ _llvmup_completions() {
         default)
             case "$prev" in
                 default)
-                    COMPREPLY=( $(compgen -W "set show" -- "$cur") )
+                    COMPREPLY=( $(compgen -W "set show unset" -- "$cur") )
                     return 0
                     ;;
                 set)
@@ -225,7 +239,7 @@ _llvmup_completions() {
             local i
             for (( i=2; i<cword; i++ )); do
                 case "${words[i]}" in
-                    ""|--from-source|--verbose|--quiet|--help|--default|--reconfigure|--disable-libc-wno-error)
+                    ""|--from-source|--verbose|--quiet|--help|--default|--reconfigure|--disable-libc-wno-error|--list-only)
                         ;;
                     -c|--cmake-flags|-n|--name|-p|--profile|--component|--verify)
                         ((i++))

@@ -48,6 +48,9 @@ param (
     [switch]$ResolveOnly,
 
     [Parameter(Mandatory = $false)]
+    [switch]$ListOnly,
+
+    [Parameter(Mandatory = $false)]
     [ValidateSet("Text", "Json")]
     [string]$OutputFormat = "Text",
 
@@ -948,7 +951,8 @@ Options:
   -ReleaseKeysPath     Local LLVM release-keys.asc for GPG/offline use
   -ArchiveOnly         Prefer archive over installer (Windows)
   -ResolveOnly         Resolve the stable release and asset without installing
-  -OutputFormat        Text or Json output for -ResolveOnly
+  -ListOnly            List all stable remote release tags without installing
+  -OutputFormat        Text or Json output for -ResolveOnly or -ListOnly
   -TimeoutSec <sec>    Download timeout in seconds (default: 60)
   -MaxRetries <num>    Maximum download retries (default: 3)
   -Help                Show this help message
@@ -974,6 +978,7 @@ if (-not $Arch) {
 }
 
 try {
+    if ($ListOnly) { $Quiet = $true }
     $resolvedPolicy = Resolve-LlvmVerificationPolicy -RequestedPolicy $VerifyPolicy
     if ($resolvedPolicy -notin @('warn', 'strict', 'skip')) {
         throw "Invalid verification policy: $resolvedPolicy"
@@ -985,6 +990,20 @@ try {
 
     if (-not $releases -or $releases.Count -eq 0) {
         throw "No releases found"
+    }
+
+    if ($ListOnly) {
+        $stableTags = @(Get-StableLlvmReleases -Releases $releases | ForEach-Object { $_.tag_name })
+        $stableTags = @($stableTags | Sort-Object {
+            $value = $_ -replace '^llvmorg-', ''
+            try { [version]$value } catch { [version]'0.0.0' }
+        } -Descending)
+        if ($OutputFormat -eq 'Json') {
+            Write-Output (@{ remote_versions = $stableTags } | ConvertTo-Json -Depth 3)
+        } else {
+            $stableTags | ForEach-Object { Write-Output $_ }
+        }
+        return
     }
 
     # Select version if not provided

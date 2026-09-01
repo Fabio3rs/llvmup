@@ -91,10 +91,26 @@ resolve	command	Resolve a stable remote LLVM release without installing it
 vscode-activate	command	Configure the current workspace for an installed LLVM version
 status	command	Show the current LLVM environment status
 list	command	List installed LLVM versions
+remove	command	Remove one installed LLVM version
 disk-usage	command	Show disk usage of installed LLVM versions
 default	command	Manage the global default LLVM version
 config	command	Manage project configuration
 help	command	Show help
+EOF
+}
+
+_llvmup_get_list_flag_items() {
+    cat <<'EOF'
+--remote	flag	List stable remote releases
+--json	flag	Emit machine-readable JSON
+--help	flag	Show help
+EOF
+}
+
+_llvmup_get_remove_flag_items() {
+    cat <<'EOF'
+--force	flag	Allow removal of the active or default version
+--help	flag	Show help
 EOF
 }
 
@@ -147,6 +163,7 @@ _llvmup_get_install_flag_items() {
 --component	flag	Select build components
 --disable-libc-wno-error	flag	Disable LIBC_WNO_ERROR
 --reconfigure	flag	Force CMake reconfiguration
+--list-only	flag	List source releases without building
 --verify	flag	Choose warn, strict, or skip release verification
 EOF
 }

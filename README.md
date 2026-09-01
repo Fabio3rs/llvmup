@@ -183,6 +183,12 @@ llvm-vscode-activate 18.1.8
 
 3. Install an LLVM version:
    ```powershell
+   Import-Module .\Llvm-Functions.psm1 -Force
+
+   # Canonical cross-platform facade
+   llvmup install 21.1.0
+   llvmup list --remote
+
    # Pre-built installation
    .\Download-Llvm.ps1
 
@@ -196,6 +202,9 @@ llvm-vscode-activate 18.1.8
 
 4. Activate the version (must be "sourced" to modify environment variables):
    ```powershell
+   llvmup activate llvmorg-21.1.0
+
+   # Legacy script form
    . .\Activate-Llvm.ps1 <version>
    ```
 
@@ -296,6 +305,10 @@ llvmup env --config         # Print shell exports from .llvmup-config
 llvmup env --format github <version> # Persist variables for subsequent Actions steps
 llvmup status               # Show detailed current status
 llvmup list                 # List installed versions
+llvmup list --remote        # List stable remote releases
+llvmup list --json          # Emit installed versions as JSON
+llvmup remove <version>     # Remove one installed toolchain
+llvmup remove <version> --force # Remove an active/default toolchain safely
 llvmup disk-usage           # Show disk usage per installed version
 llvmup disk-usage -h        # Show disk usage in human-readable units
 llvmup help                 # Show detailed usage guide
@@ -324,6 +337,7 @@ llvm-config-activate       # Activate config (function)
 ```bash
 llvmup default set <version>  # Set default LLVM version
 llvmup default show           # Show current default version
+llvmup default unset          # Clear current default version
 ```
 
 ### Development Integration
@@ -846,6 +860,8 @@ llvm-status
   - Build options (`-DisableLibcWnoError`, `-Reconfigure`, `-Verbose`)
   - Default version management (`default set`, `default show`)
 - **Parameter validation**: PowerShell parameter sets and validation
+- **Canonical facade**: Import `Llvm-Functions.psm1` to use the same `llvmup`
+  subcommands as Bash, including activation in the current PowerShell session
 - **Junction links**: Windows-specific default version management
 - **Version detection**: Detects existing installations during config init
 

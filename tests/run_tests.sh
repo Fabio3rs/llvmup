@@ -93,6 +93,7 @@ test_files=(
     "tests/unit/test_llvm_config.bats"
     "tests/unit/test_llvmup_config_activate.bats"
     "tests/unit/test_llvmup_enhanced.bats"
+    "tests/unit/test_llvmup_lifecycle.bats"
     "tests/unit/test_llvmup_libc_wno_error.bats"
     "tests/unit/test_project_config.bats"
     "tests/unit/test_safe_profile_removal.bats"

@@ -11,10 +11,11 @@
 #   llvmup vscode-activate <version>
 #   llvmup status
 #   llvmup list
+#   llvmup remove <version> [--force]
 #   llvmup disk-usage
 #   llvmup help
-#   llvmup default <set|show> [version]
-#   llvmup config <init|load|activate>
+#   llvmup default <set|show|unset> [version]
+#   llvmup config <init|load|apply|activate>
 #
 # Options:
 #   install              Install LLVM version (default command if version specified)
@@ -23,6 +24,7 @@
 #   vscode-activate      Configure VSCode for an installed LLVM version
 #   status               Show current LLVM status
 #   list                 List installed LLVM versions
+#   remove               Remove one installed LLVM version
 #   disk-usage           Show disk usage of installed LLVM versions
 #   env                  Print shell exports for CI/non-interactive usage
 #   resolve              Resolve a stable remote LLVM release without installing it
@@ -58,6 +60,7 @@ COMPONENTS=()
 DISABLE_LIBC_WNO_ERROR=0
 RECONFIGURE=0
 VERIFY_POLICY=""
+LIST_ONLY=0
 
 # Logging functions
 log_verbose() {
@@ -312,7 +315,9 @@ handle_config_command() {
         apply)
             # Call llvm-config-apply function
             if command -v llvm-config-apply >/dev/null 2>&1; then
-                llvm-config-apply "$@"
+                local config_root
+                config_root="$(llvm-find-config-root)" || config_root=""
+                llvm-load-config-from-root "$config_root" >/dev/null && llvm-config-apply "$@"
             else
                 log_error "llvm-config-apply function not available"
                 log_info "Make sure llvm-functions.sh is installed next to llvmup or loaded in your shell"
@@ -342,9 +347,18 @@ handle_default_command() {
         show)
             show_default_version
             ;;
+        unset)
+            source_local_functions >/dev/null 2>&1 || true
+            if command -v llvm-default-unset >/dev/null 2>&1; then
+                llvm-default-unset
+            else
+                log_error "llvm-default-unset function not available"
+                exit 1
+            fi
+            ;;
         *)
             log_error "Unknown default subcommand: $sub_command"
-            log_info "Available subcommands: set, show"
+            log_info "Available subcommands: set, show, unset"
             exit 1
             ;;
     esac
@@ -408,7 +422,7 @@ case "${1:-}" in
         COMMAND="install"
         shift
         ;;
-    activate|deactivate|env|resolve|vscode-activate|status|list|disk-usage|help)
+    activate|deactivate|env|resolve|vscode-activate|status|list|remove|disk-usage|help)
         COMMAND="$1"
         shift
         ;;
@@ -459,6 +473,7 @@ Commands:
   vscode-activate  Configure VSCode for an installed LLVM version
   status           Show the current LLVM environment status
   list             List installed LLVM versions
+  remove           Remove one installed LLVM version
   disk-usage       Show disk usage of installed LLVM versions
   default          Manage default LLVM version
   config           Manage project configuration
@@ -473,6 +488,7 @@ Install Options:
   --component <COMPONENT>     Install specific components (can be repeated)
   --disable-libc-wno-error    Disable LIBC_WNO_ERROR=ON flag
   --reconfigure               Force CMake to reconfigure the build (removes CMakeCache.txt)
+  --list-only                 List available source releases and exit
   --verify <POLICY>           Prebuilt verification policy: warn, strict, or skip
   -v, --verbose               Enable verbose output for debugging
   -q, --quiet                 Suppress non-essential output
@@ -500,10 +516,14 @@ Examples:
   llvmup vscode-activate 18.1.8                  # Configure VSCode integration
   llvmup status                                  # Show current LLVM status
   llvmup list                                    # List installed LLVM versions
+  llvmup list --remote                           # List stable remote releases
+  llvmup list --json                             # List installed versions as JSON
+  llvmup remove 18.1.8                           # Remove an installed version
   llvmup disk-usage                              # Show disk usage in bytes
   llvmup disk-usage -h                           # Show disk usage in human-readable units
   llvmup default set 18.1.8                      # Set default version
   llvmup default show                             # Show current default
+  llvmup default unset                            # Clear current default
   llvmup config init                              # Initialize project config
   llvmup config load                              # Load and display config
   llvmup config apply                             # Install using config settings
@@ -519,7 +539,7 @@ remaining_args=()
 if [ -z "$COMMAND" ]; then
     if [[ $# -gt 0 ]] && [[ "$1" != -* ]]; then
         case "$1" in
-            install|activate|deactivate|env|resolve|vscode-activate|status|list|disk-usage|default|help)
+            install|activate|deactivate|env|resolve|vscode-activate|status|list|remove|disk-usage|default|help)
                 COMMAND="$1"
                 shift
                 ;;
@@ -575,7 +595,11 @@ case "$COMMAND" in
         exit $?
         ;;
     list)
-        run_shell_function_command llvm-list
+        run_shell_function_command llvm-list "$@"
+        exit $?
+        ;;
+    remove)
+        LLVMUP_EXECUTABLE_MODE=1 run_shell_function_command llvm-remove "$@"
         exit $?
         ;;
     disk-usage)
@@ -657,6 +681,11 @@ while [[ $# -gt 0 ]]; do
         --reconfigure)
             RECONFIGURE=1
             log_verbose "Option: Force CMake reconfiguration enabled"
+            shift
+            ;;
+        --list-only)
+            LIST_ONLY=1
+            log_verbose "Option: List source releases without building"
             shift
             ;;
         --verify)
@@ -749,6 +778,14 @@ fi
 # Add reconfigure flag
 if [ "$RECONFIGURE" -eq 1 ]; then
     script_args+=("--reconfigure")
+fi
+
+if [ "$LIST_ONLY" -eq 1 ]; then
+    if [ "$FROM_SOURCE" -ne 1 ]; then
+        log_error "--list-only currently applies only to source releases"
+        exit 1
+    fi
+    script_args+=("--list-only")
 fi
 
 if [ -n "$VERIFY_POLICY" ]; then

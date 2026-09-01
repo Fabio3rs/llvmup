@@ -5,7 +5,7 @@
 
 param (
     [Parameter(Mandatory = $true)]
-    [ValidateSet("set", "show")]
+    [ValidateSet("set", "show", "unset")]
     [string]$Command,
 
     [Parameter(Mandatory = $false)]
@@ -20,11 +20,12 @@ if ($Help) {
     Write-Output "LLVM Default Version Manager for Windows"
     Write-Output ""
     Write-Output "Usage:"
-    Write-Output "  Llvm-Default.ps1 -Command <set|show> [-Version <version>]"
+    Write-Output "  Llvm-Default.ps1 -Command <set|show|unset> [-Version <version>]"
     Write-Output ""
     Write-Output "Commands:"
     Write-Output "  set     Set default LLVM version (requires -Version)"
     Write-Output "  show    Show current default LLVM version"
+    Write-Output "  unset   Clear the current default LLVM version"
     Write-Output ""
     Write-Output "Options:"
     Write-Output "  -Version <version>  LLVM version to set as default"
@@ -33,6 +34,7 @@ if ($Help) {
     Write-Output "Examples:"
     Write-Output "  Llvm-Default.ps1 -Command set -Version llvmorg-18.1.8"
     Write-Output "  Llvm-Default.ps1 -Command show"
+    Write-Output "  Llvm-Default.ps1 -Command unset"
     exit 0
 }
 
@@ -135,6 +137,23 @@ function Show-DefaultVersion {
     }
 }
 
+function Clear-DefaultVersion {
+    $homeDir = if ($env:LLVM_HOME) { $env:LLVM_HOME } elseif ($env:USERPROFILE) { Join-Path $env:USERPROFILE '.llvm' } elseif ($env:HOME) { Join-Path $env:HOME '.llvm' } else { Join-Path ([Environment]::GetFolderPath([System.Environment+SpecialFolder]::UserProfile)) '.llvm' }
+    $defaultPath = if ($env:LLVM_HOME) { Join-Path $env:LLVM_HOME 'default' } else { Join-Path $homeDir 'default' }
+    $item = Get-Item -LiteralPath $defaultPath -Force -ErrorAction SilentlyContinue
+    if (-not $item) {
+        Write-LogInfo "No default LLVM version is set"
+        return 0
+    }
+    $isLink = $item.LinkType -in @('Junction', 'SymbolicLink') -or (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)
+    if (-not $isLink) {
+        Write-LogError "Refusing to remove non-link default path: $defaultPath"
+        return 1
+    }
+    Remove-Item -LiteralPath $defaultPath -Force
+    Write-LogSuccess "Default LLVM version cleared"
+}
+
 # Execute command
 switch ($Command) {
     "set" {
@@ -142,5 +161,8 @@ switch ($Command) {
     }
     "show" {
         Show-DefaultVersion
+    }
+    "unset" {
+        Clear-DefaultVersion
     }
 }

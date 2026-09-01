@@ -44,6 +44,18 @@ Describe 'Llvm Completion Module' {
         $res | Should -Not -BeNullOrEmpty
     }
 
+    It 'llvmup completer exposes consolidated lifecycle commands' {
+        $comps = Get-ArgumentCompleter -CommandName 'llvmup' -ErrorAction SilentlyContinue
+        $comps | Should -Not -BeNullOrEmpty
+        $tokens = $null
+        $errors = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseInput('llvmup ', [ref]$tokens, [ref]$errors)
+        $commandAst = $ast.EndBlock.Statements[0].PipelineElements[0]
+        $res = & $comps[0].ScriptBlock 'llvmup' 'First' '' $commandAst @{}
+        @($res | ForEach-Object CompletionText) | Should -Contain 'remove'
+        @($res | ForEach-Object CompletionText) | Should -Contain 'list'
+    }
+
     AfterAll {
         # cleanup
         Remove-Item -Path $script:testDir -Recurse -Force -ErrorAction SilentlyContinue

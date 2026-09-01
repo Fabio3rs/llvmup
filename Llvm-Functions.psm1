@@ -11,9 +11,11 @@
 
 $modulePath = Join-Path $PSScriptRoot 'Get-UserHome.psm1'
 if (Test-Path $modulePath) { Import-Module $modulePath -Force } else { . "$PSScriptRoot\Get-UserHome.ps1" }
+$coreModulePath = Join-Path $PSScriptRoot 'Llvm-Functions-Core.psm1'
+if (Test-Path $coreModulePath) { Import-Module $coreModulePath -Force -DisableNameChecking }
 $homeDir = Get-UserHome
-$script:LLVM_HOME = Join-Path $homeDir ".llvm"
-$script:TOOLCHAINS_DIR = Join-Path $script:LLVM_HOME "toolchains"
+$script:LLVM_HOME = if ($env:LLVM_HOME) { $env:LLVM_HOME } elseif ($env:LLVM_CUSTOM_HOME) { $env:LLVM_CUSTOM_HOME } else { Join-Path $homeDir ".llvm" }
+$script:TOOLCHAINS_DIR = if ($env:LLVM_TOOLCHAINS_DIR) { $env:LLVM_TOOLCHAINS_DIR } elseif ($env:LLVM_CUSTOM_TOOLCHAINS_DIR) { $env:LLVM_CUSTOM_TOOLCHAINS_DIR } else { Join-Path $script:LLVM_HOME "toolchains" }
 
 # Auto-import completion module when running interactively
 try {
@@ -88,7 +90,7 @@ function Activate-Llvm {
     if (-not (Test-Path $coreModulePath)) {
         $coreModulePath = Join-Path $PSScriptRoot '..\Llvm-Functions-Core.psm1'
     }
-    if (Test-Path $coreModulePath) { Import-Module -Force $coreModulePath }
+    if (Test-Path $coreModulePath) { Import-Module -Force -DisableNameChecking $coreModulePath }
 
     # Delegate activation to core implementation if available
     if (Get-Command -Name Invoke-LlvmActivate -ErrorAction SilentlyContinue) {
@@ -138,10 +140,8 @@ function Get-LlvmActiveVersion {
 
     if ($env:_ACTIVE_LLVM) {
         return $env:_ACTIVE_LLVM
-    } else {
-        Write-LlvmLog "No LLVM version is currently active" -Level Error
-        return $null
     }
+    return $null
 }
 
 function Compare-LlvmVersion {
@@ -442,7 +442,7 @@ function Get-LlvmDiskUsage {
     if (-not (Test-Path $coreModulePath)) {
         $coreModulePath = Join-Path $PSScriptRoot '..\Llvm-Functions-Core.psm1'
     }
-    if (Test-Path $coreModulePath) { Import-Module -Force $coreModulePath }
+    if (Test-Path $coreModulePath) { Import-Module -Force -DisableNameChecking $coreModulePath }
 
     if (-not (Get-Command -Name Get-LlvmDiskUsageData -ErrorAction SilentlyContinue)) {
         throw "Core disk usage function not available (Get-LlvmDiskUsageData)"
@@ -465,8 +465,393 @@ function Get-LlvmDiskUsage {
     return $results
 }
 
+function Deactivate-Llvm {
+    [CmdletBinding()]
+    param()
+    return Invoke-LlvmDeactivate
+}
+
+function Get-LlvmStatus {
+    [CmdletBinding()]
+    param()
+
+    $active = Get-LlvmActiveVersion
+    if (-not $active) {
+        return [pscustomobject]@{ Status = 'INACTIVE'; Version = $null; Path = $null }
+    }
+    $toolchainsPath = Get-LlvmSessionToolchainsPath
+    return [pscustomobject]@{
+        Status = 'ACTIVE'
+        Version = $active
+        Path = Join-Path $toolchainsPath $active
+    }
+}
+
+function Get-LlvmList {
+    [CmdletBinding()]
+    param([switch]$Remote, [switch]$Json)
+
+    if ($Remote) {
+        $downloadScript = Join-Path $PSScriptRoot 'Download-Llvm.ps1'
+        if (-not (Test-Path -LiteralPath $downloadScript)) { throw 'Download-Llvm.ps1 was not found' }
+        $format = if ($Json) { 'Json' } else { 'Text' }
+        return & $downloadScript -ListOnly -OutputFormat $format -Quiet
+    }
+
+    $toolchainsPath = Get-LlvmSessionToolchainsPath
+    $active = Get-LlvmActiveVersion
+    $default = Get-LlvmDefaultVersion
+    $versions = @()
+    if (Test-Path -LiteralPath $toolchainsPath) {
+        $versions = @(Get-ChildItem -LiteralPath $toolchainsPath -Directory -ErrorAction SilentlyContinue |
+            Sort-Object Name | ForEach-Object {
+                [pscustomobject]@{
+                    name = $_.Name
+                    version = $_.Name -replace '^(source-)?llvmorg-', ''
+                    type = if ($_.Name -like 'source-*') { 'source' } else { 'prebuilt' }
+                    active = $_.Name -eq $active
+                    default = $_.Name -eq $default
+                    path = $_.FullName
+                }
+            })
+    }
+
+    if ($Json) {
+        return [pscustomobject]@{
+            installed_versions = $versions
+            active_version = $active
+            default_version = $default
+        } | ConvertTo-Json -Depth 5
+    }
+    return $versions
+}
+
+function Find-LlvmConfigRoot {
+    [CmdletBinding()]
+    param([string]$StartDirectory = (Get-Location).Path)
+
+    $current = [IO.Path]::GetFullPath($StartDirectory)
+    while ($current) {
+        if (Test-Path -LiteralPath (Join-Path $current '.llvmup-config') -PathType Leaf) { return $current }
+        $parent = Split-Path $current -Parent
+        if (-not $parent -or $parent -eq $current) { break }
+        $current = $parent
+    }
+    return $null
+}
+
+function Import-LlvmConfig {
+    [CmdletBinding()]
+    param([string]$StartDirectory = (Get-Location).Path)
+
+    $root = Find-LlvmConfigRoot -StartDirectory $StartDirectory
+    if (-not $root) { throw 'No .llvmup-config file found' }
+    $path = Join-Path $root '.llvmup-config'
+    $section = ''
+    $version = $null
+    $name = $null
+    $autoActivate = $true
+    foreach ($rawLine in Get-Content -LiteralPath $path) {
+        $line = $rawLine.Trim()
+        if (-not $line -or $line -match '^[#;]') { continue }
+        if ($line -match '^\[(.+)\]$') { $section = $matches[1].ToLowerInvariant(); continue }
+        if ($line -notmatch '=') { continue }
+        $parts = $line -split '=', 2
+        $key = $parts[0].Trim().ToLowerInvariant()
+        $value = $parts[1].Trim().Trim('"').Trim("'")
+        if ($section -eq 'version' -and $key -eq 'default') { $version = $value }
+        if ($section -eq 'build' -and $key -eq 'name') { $name = $value }
+        if ($section -eq 'project' -and $key -eq 'auto_activate') { $autoActivate = $value.ToLowerInvariant() -ne 'false' }
+    }
+    if (-not $version) { throw "No version.default value was found in $path" }
+    return [pscustomobject]@{ Root = $root; Path = $path; Version = $version; Name = $name; AutoActivate = $autoActivate }
+}
+
+function Initialize-LlvmConfig {
+    [CmdletBinding()]
+    param()
+    $installScript = Join-Path $PSScriptRoot 'Install-Llvm.ps1'
+    return & $installScript config init
+}
+
+function Show-LlvmHelp {
+    @'
+LLVMUP for PowerShell
+
+Usage: llvmup [COMMAND] [OPTIONS] [VERSION]
+
+Commands:
+  install, activate, deactivate, env, resolve, vscode-activate
+  status, list, remove, disk-usage, default, config, help
+
+Examples:
+  llvmup install 21.1.0
+  llvmup activate llvmorg-21.1.0
+  llvmup list --remote
+  llvmup remove llvmorg-20.1.8
+  llvmup default unset
+'@
+}
+
+function Get-LlvmVersions { param([string]$Format = 'list') switch ($Format.ToLowerInvariant()) { 'json' { Get-LlvmList -Json } 'simple' { Get-LlvmVersionsSimple } default { Get-LlvmList } } }
+function Get-LlvmVersionsSimple { @(Get-LlvmList | ForEach-Object { $_.name }) }
+function Get-LlvmVersionsList { Get-LlvmList }
+function Get-LlvmVersionsJson { Get-LlvmList -Json }
+
+function Invoke-LlvmUpInstall {
+    param([string[]]$Tokens)
+
+    $fromSource = $false
+    $listOnly = $false
+    $setDefault = $false
+    $quiet = $false
+    $verboseMode = $false
+    $name = $null
+    $profile = $null
+    $verify = $null
+    $version = $null
+    $cmakeFlags = @()
+    $components = @()
+    $disableLibcWnoError = $false
+    $reconfigure = $false
+
+    for ($i = 0; $i -lt $Tokens.Count; $i++) {
+        $token = $Tokens[$i]
+        switch ($token) {
+            '--from-source' { $fromSource = $true }
+            '--list-only' { $listOnly = $true }
+            '--default' { $setDefault = $true }
+            '--quiet' { $quiet = $true }
+            '-q' { $quiet = $true }
+            '--verbose' { $verboseMode = $true }
+            '-v' { $verboseMode = $true }
+            '--disable-libc-wno-error' { $disableLibcWnoError = $true }
+            '--reconfigure' { $reconfigure = $true }
+            '--name' { if (++$i -ge $Tokens.Count) { throw '--name requires a value' }; $name = $Tokens[$i] }
+            '-n' { if (++$i -ge $Tokens.Count) { throw '-n requires a value' }; $name = $Tokens[$i] }
+            '--profile' { if (++$i -ge $Tokens.Count) { throw '--profile requires a value' }; $profile = $Tokens[$i] }
+            '-p' { if (++$i -ge $Tokens.Count) { throw '-p requires a value' }; $profile = $Tokens[$i] }
+            '--verify' { if (++$i -ge $Tokens.Count) { throw '--verify requires a value' }; $verify = $Tokens[$i] }
+            '--cmake-flags' { if (++$i -ge $Tokens.Count) { throw '--cmake-flags requires a value' }; $cmakeFlags += $Tokens[$i] }
+            '-c' { if (++$i -ge $Tokens.Count) { throw '-c requires a value' }; $cmakeFlags += $Tokens[$i] }
+            '--component' { if (++$i -ge $Tokens.Count) { throw '--component requires a value' }; $components += $Tokens[$i] }
+            '-h' { Show-LlvmHelp; return }
+            '--help' { Show-LlvmHelp; return }
+            default {
+                if ($token.StartsWith('-')) { throw "Unknown install option: $token" }
+                if ($version) { throw 'Only one LLVM version can be installed at a time' }
+                $version = $token
+            }
+        }
+    }
+
+    if (-not $version) { $version = 'latest' }
+    $downloadScript = Join-Path $PSScriptRoot 'Download-Llvm.ps1'
+    if ($listOnly) { return & $downloadScript -ListOnly -OutputFormat Text -Quiet }
+
+    if ($fromSource) {
+        if ($verify) { throw '--verify applies only to prebuilt releases' }
+        $installScript = Join-Path $PSScriptRoot 'Install-Llvm.ps1'
+        $parameters = @{ FromSource = $true }
+        if ($name) { $parameters.Name = $name }
+        if ($profile) { $parameters.Profile = $profile }
+        if ($cmakeFlags.Count) { $parameters.CmakeFlags = $cmakeFlags }
+        if ($components.Count) { $parameters.Component = $components }
+        if ($setDefault) { $parameters.Default = $true }
+        if ($disableLibcWnoError) { $parameters.DisableLibcWnoError = $true }
+        if ($reconfigure) { $parameters.Reconfigure = $true }
+        if ($verboseMode) { $parameters.VerboseMode = $true }
+        if ($quiet) { $parameters.Quiet = $true }
+        return & $installScript install $version @parameters
+    }
+
+    if ($profile -or $cmakeFlags.Count -or $components.Count -or $disableLibcWnoError -or $reconfigure) {
+        throw 'Source build options require --from-source'
+    }
+    $downloadParameters = @{ Version = $version }
+    if ($name) { $downloadParameters.Name = $name }
+    if ($verify) { $downloadParameters.VerifyPolicy = $verify }
+    if ($quiet) { $downloadParameters.Quiet = $true }
+    if ($verboseMode) { $downloadParameters.Verbose = $true }
+
+    $defaultTarget = $name
+    if ($setDefault -and -not $defaultTarget) {
+        $resolvedText = (& $downloadScript -Version $version -ResolveOnly -OutputFormat Json -Quiet | Out-String)
+        $defaultTarget = ($resolvedText | ConvertFrom-Json).version
+    }
+    & $downloadScript @downloadParameters
+    if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { return $false }
+    if ($setDefault) { return Set-LlvmDefaultVersion -Version $defaultTarget }
+}
+
+function Invoke-LlvmUpResolve {
+    param([string[]]$Tokens)
+    $version = 'latest'
+    $format = 'Text'
+    $platform = $null
+    $arch = $null
+    $useConfig = $false
+    for ($i = 0; $i -lt $Tokens.Count; $i++) {
+        switch ($Tokens[$i]) {
+            '--format' {
+                if (++$i -ge $Tokens.Count) { throw '--format requires a value' }
+                if ($Tokens[$i] -notin @('tag', 'json')) { throw '--format must be tag or json' }
+                $format = if ($Tokens[$i] -eq 'json') { 'Json' } else { 'Text' }
+            }
+            '--platform' { if (++$i -ge $Tokens.Count) { throw '--platform requires a value' }; $platform = $Tokens[$i] }
+            '--arch' { if (++$i -ge $Tokens.Count) { throw '--arch requires a value' }; $arch = $Tokens[$i] }
+            '--config' { $useConfig = $true }
+            default { if ($Tokens[$i].StartsWith('-')) { throw "Unknown resolve option: $($Tokens[$i])" }; $version = $Tokens[$i] }
+        }
+    }
+    if ($useConfig) { $version = (Import-LlvmConfig).Version }
+    $parameters = @{ Version = $version; ResolveOnly = $true; OutputFormat = $format; Quiet = $true }
+    if ($platform) { $parameters.Platform = $platform }
+    if ($arch) { $parameters.Arch = $arch }
+    & (Join-Path $PSScriptRoot 'Download-Llvm.ps1') @parameters
+}
+
+function Resolve-LlvmUpConfigVersion {
+    $config = Import-LlvmConfig
+    if ($config.Name -and (Test-LlvmVersionExists $config.Name)) { return $config.Name }
+    if (Test-LlvmVersionExists $config.Version) { return $config.Version }
+    $matches = @(Invoke-LlvmMatchVersions -Expression $config.Version -ToolchainsPath (Get-LlvmSessionToolchainsPath))
+    if (-not $matches.Count) { throw "No installed LLVM version matches '$($config.Version)'" }
+    return $matches[0]
+}
+
+function Invoke-LlvmUpEnv {
+    param([string[]]$Tokens)
+    $format = 'powershell'
+    $useConfig = $false
+    $version = $null
+    for ($i = 0; $i -lt $Tokens.Count; $i++) {
+        switch ($Tokens[$i]) {
+            '--config' { $useConfig = $true }
+            '--format' { if (++$i -ge $Tokens.Count) { throw '--format requires a value' }; $format = $Tokens[$i].ToLowerInvariant() }
+            default { if ($Tokens[$i].StartsWith('-')) { throw "Unknown env option: $($Tokens[$i])" }; $version = $Tokens[$i] }
+        }
+    }
+    if ($useConfig) { $version = Resolve-LlvmUpConfigVersion }
+    if (-not $version) { throw "Missing version argument for 'env'" }
+
+    $toolchain = Join-Path (Get-LlvmSessionToolchainsPath) $version
+    if (-not (Test-Path -LiteralPath $toolchain -PathType Container)) { throw "LLVM version '$version' is not installed" }
+    $bin = Join-Path $toolchain 'bin'
+    $clang = Join-Path $bin 'clang.exe'
+    if (-not (Test-Path -LiteralPath $clang)) { $clang = Join-Path $bin 'clang' }
+    $clangxx = Join-Path $bin 'clang++.exe'
+    if (-not (Test-Path -LiteralPath $clangxx)) { $clangxx = Join-Path $bin 'clang++' }
+
+    if ($format -eq 'github') {
+        if (-not $env:GITHUB_PATH -or -not $env:GITHUB_ENV) { throw 'GITHUB_PATH and GITHUB_ENV are required for github format' }
+        Add-Content -LiteralPath $env:GITHUB_PATH -Value $bin
+        @("CC=$clang", "CXX=$clangxx", "LLVMUP_ACTIVE_VERSION=$version", "LLVMUP_ACTIVE_PATH=$toolchain") |
+            Add-Content -LiteralPath $env:GITHUB_ENV
+        return
+    }
+    if ($format -notin @('powershell', 'shell')) { throw "Unsupported env format: $format" }
+    $escapedBin = $bin.Replace("'", "''")
+    $escapedClang = $clang.Replace("'", "''")
+    $escapedClangxx = $clangxx.Replace("'", "''")
+    $escapedVersion = $version.Replace("'", "''")
+    $escapedToolchain = $toolchain.Replace("'", "''")
+    Write-Output "`$env:PATH = '$escapedBin' + [IO.Path]::PathSeparator + `$env:PATH"
+    Write-Output "`$env:CC = '$escapedClang'"
+    Write-Output "`$env:CXX = '$escapedClangxx'"
+    Write-Output "`$env:LLVMUP_ACTIVE_VERSION = '$escapedVersion'"
+    Write-Output "`$env:LLVMUP_ACTIVE_PATH = '$escapedToolchain'"
+}
+
+function Invoke-LlvmUpConfig {
+    param([string[]]$Tokens)
+    $action = if ($Tokens.Count) { $Tokens[0].ToLowerInvariant() } else { '' }
+    switch ($action) {
+        'init' { return Initialize-LlvmConfig }
+        'load' { return Import-LlvmConfig }
+        'apply' {
+            $config = Import-LlvmConfig
+            Push-Location $config.Root
+            try { return & (Join-Path $PSScriptRoot 'Install-Llvm.ps1') config apply }
+            finally { Pop-Location }
+        }
+        'activate' {
+            $version = Resolve-LlvmUpConfigVersion
+            $active = Get-LlvmActiveVersion
+            if ($active -and $active -ne $version) { $null = Deactivate-Llvm }
+            return Activate-Llvm $version
+        }
+        default { throw 'Available config subcommands: init, load, apply, activate' }
+    }
+}
+
+function llvmup {
+    param($First)
+
+    $tokens = @()
+    if ($null -ne $First -and [string]$First -ne '') { $tokens += [string]$First }
+    $tokens += @($args | ForEach-Object { [string]$_ })
+    $knownCommands = @('install', 'activate', 'deactivate', 'env', 'resolve', 'vscode-activate', 'status', 'list', 'remove', 'disk-usage', 'default', 'config', 'help')
+    $command = 'install'
+    if ($tokens.Count -and $knownCommands -contains $tokens[0].ToLowerInvariant()) {
+        $command = $tokens[0].ToLowerInvariant()
+        $tokens = @($tokens | Select-Object -Skip 1)
+    }
+
+    try {
+        switch ($command) {
+            'install' { return Invoke-LlvmUpInstall -Tokens $tokens }
+            'activate' { if (-not $tokens.Count) { throw "Missing version argument for 'activate'" }; return Activate-Llvm $tokens[0] }
+            'deactivate' { return Deactivate-Llvm }
+            'env' { return Invoke-LlvmUpEnv -Tokens $tokens }
+            'resolve' { return Invoke-LlvmUpResolve -Tokens $tokens }
+            'vscode-activate' {
+                if (-not $tokens.Count) { throw "Missing version argument for 'vscode-activate'" }
+                return & (Join-Path $PSScriptRoot 'Activate-LlvmVsCode.ps1') -Version $tokens[0]
+            }
+            'status' { return Get-LlvmStatus }
+            'list' {
+                $unknown = @($tokens | Where-Object { $_ -notin @('--remote', '--json') })
+                if ($unknown.Count) { throw "Unknown list option: $($unknown[0])" }
+                return Get-LlvmList -Remote:($tokens -contains '--remote') -Json:($tokens -contains '--json')
+            }
+            'remove' {
+                $force = $tokens -contains '--force'
+                $versions = @($tokens | Where-Object { $_ -ne '--force' })
+                if ($versions.Count -ne 1) { throw 'remove requires exactly one installed LLVM identifier' }
+                return Remove-LlvmVersion -Version $versions[0] -Force:$force
+            }
+            'disk-usage' {
+                $unknown = @($tokens | Where-Object { $_ -notin @('-h', '--human-readable') })
+                if ($unknown.Count) { throw "Unknown disk-usage option: $($unknown[0])" }
+                return Get-LlvmDiskUsage -HumanReadable:($tokens.Count -gt 0)
+            }
+            'default' {
+                $action = if ($tokens.Count) { $tokens[0].ToLowerInvariant() } else { 'show' }
+                switch ($action) {
+                    'set' { if ($tokens.Count -ne 2) { throw 'default set requires one version' }; return Set-LlvmDefaultVersion -Version $tokens[1] }
+                    'show' {
+                        $defaultVersion = Get-LlvmDefaultVersion
+                        if ($defaultVersion) { return $defaultVersion }
+                        Write-Output 'No default LLVM version is set'
+                        return
+                    }
+                    'unset' { return Clear-LlvmDefaultVersion }
+                    default { throw 'Available default subcommands: set, show, unset' }
+                }
+            }
+            'config' { return Invoke-LlvmUpConfig -Tokens $tokens }
+            'help' { return Show-LlvmHelp }
+        }
+    } catch {
+        Write-Error $_.Exception.Message
+        return $false
+    }
+}
+
 # Export functions
 Export-ModuleMember -Function @(
+    'llvmup',
     'Activate-Llvm',
     'Deactivate-Llvm',
     'Get-LlvmDiskUsage',

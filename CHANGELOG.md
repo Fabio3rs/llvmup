@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Canonical `llvmup` PowerShell function with install, activation, inspection,
+  configuration, default-version, environment, resolution, and VSCode routing
+- `llvmup remove <version> [--force]` with active/default protection
+- `llvmup default unset`
+- `llvmup list --remote` and machine-readable `llvmup list --json`
+- PowerShell and Bash remote release listing with stable semantic ordering
+
+### Fixed
+- Executable `llvmup config apply` now loads the nearest project configuration
+- Local JSON listing now emits real nulls and active/default metadata
+- Bash, Zsh, and PowerShell completion now cover the consolidated lifecycle commands
+
 ## [0.5.0] - 2026-08-08
 
 ### Added

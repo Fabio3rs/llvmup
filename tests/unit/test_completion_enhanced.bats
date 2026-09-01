@@ -160,6 +160,7 @@ EOF
     [[ "$completions" == *"vscode-activate"* ]]
     [[ "$completions" == *"status"* ]]
     [[ "$completions" == *"list"* ]]
+    [[ "$completions" == *"remove"* ]]
 
     # Test "llvmup default <TAB>"
     COMP_WORDS=("llvmup" "default" "")
@@ -171,6 +172,15 @@ EOF
     local completions="${COMPREPLY[*]}"
     [[ "$completions" == *"set"* ]]
     [[ "$completions" == *"show"* ]]
+    [[ "$completions" == *"unset"* ]]
+
+    COMP_WORDS=("llvmup" "list" "--")
+    COMP_CWORD=2
+    COMPREPLY=()
+    _llvmup_completions
+    local completions="${COMPREPLY[*]}"
+    [[ "$completions" == *"--remote"* ]]
+    [[ "$completions" == *"--json"* ]]
 
     # Test "llvmup config <TAB>"
     COMP_WORDS=("llvmup" "config" "")

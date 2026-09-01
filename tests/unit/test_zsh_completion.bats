@@ -60,6 +60,7 @@ teardown() {
     [[ "$output" == *"activate:Activate an installed LLVM version in the current shell"* ]]
     [[ "$output" == *"deactivate:Deactivate the current LLVM version in the current shell"* ]]
     [[ "$output" == *"status:Show the current LLVM environment status"* ]]
+    [[ "$output" == *"remove:Remove one installed LLVM version"* ]]
     [[ "$output" == *"llvmorg-19.1.7:Installed locally"* ]]
     [[ "$output" == *"source-llvmorg-20.1.0:Installed locally"* ]]
 }

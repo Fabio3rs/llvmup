@@ -62,6 +62,6 @@ teardown() {
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"LLVM Manager - Complete Usage Guide"* ]]
-    [[ "$output" == *"llvm-config-init"* ]]
-    [[ "$output" == *"llvm-config-activate"* ]]
+    [[ "$output" == *"llvmup config init"* ]]
+    [[ "$output" == *"llvmup config activate"* ]]
 }

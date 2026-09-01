@@ -396,7 +396,139 @@ function Get-LlvmSessionToolchainsPath {
         }
     }
 
-    return $null
+    return Join-Path (Get-LlvmHomePath) 'toolchains'
+}
+
+function Get-LlvmHomePath {
+    [CmdletBinding()]
+    param()
+
+    if ($env:LLVM_HOME) { return $env:LLVM_HOME }
+    if ($env:LLVM_CUSTOM_HOME) { return $env:LLVM_CUSTOM_HOME }
+
+    $homeDir = if ($env:USERPROFILE) {
+        $env:USERPROFILE
+    } elseif ($env:HOME) {
+        $env:HOME
+    } else {
+        [Environment]::GetFolderPath([System.Environment+SpecialFolder]::UserProfile)
+    }
+    return Join-Path $homeDir '.llvm'
+}
+
+function Get-LlvmDefaultPath {
+    [CmdletBinding()]
+    param()
+    return Join-Path (Get-LlvmHomePath) 'default'
+}
+
+function Get-LlvmDefaultVersion {
+    [CmdletBinding()]
+    param()
+
+    $defaultPath = Get-LlvmDefaultPath
+    if (-not (Test-Path -LiteralPath $defaultPath)) { return $null }
+
+    $item = Get-Item -LiteralPath $defaultPath -Force -ErrorAction SilentlyContinue
+    if (-not $item -or -not $item.Target) { return $null }
+    $target = @($item.Target)[0]
+    if (-not $target) { return $null }
+    return Split-Path ([string]$target) -Leaf
+}
+
+function Set-LlvmDefaultVersion {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Version,
+        [string]$ToolchainsPath
+    )
+
+    if (-not $ToolchainsPath) { $ToolchainsPath = Get-LlvmSessionToolchainsPath }
+    $versionPath = Join-Path $ToolchainsPath $Version
+    if (-not (Test-Path -LiteralPath $versionPath -PathType Container)) {
+        throw "LLVM version '$Version' is not installed in $ToolchainsPath"
+    }
+
+    $defaultPath = Get-LlvmDefaultPath
+    $parent = Split-Path $defaultPath -Parent
+    if (-not (Test-Path -LiteralPath $parent)) {
+        New-Item -ItemType Directory -Path $parent -Force | Out-Null
+    }
+    if (Get-Item -LiteralPath $defaultPath -Force -ErrorAction SilentlyContinue) {
+        $cleared = Clear-LlvmDefaultVersion
+        if (-not $cleared) { return $false }
+    }
+
+    $itemType = if ($IsWindows -or $env:OS -eq 'Windows_NT') { 'Junction' } else { 'SymbolicLink' }
+    New-Item -ItemType $itemType -Path $defaultPath -Target $versionPath -ErrorAction Stop | Out-Null
+    return $true
+}
+
+function Clear-LlvmDefaultVersion {
+    [CmdletBinding()]
+    param()
+
+    $defaultPath = Get-LlvmDefaultPath
+    $item = Get-Item -LiteralPath $defaultPath -Force -ErrorAction SilentlyContinue
+    if (-not $item) { return $true }
+
+    $isLink = $item.LinkType -in @('Junction', 'SymbolicLink') -or
+        (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)
+    if (-not $isLink) {
+        throw "Refusing to remove non-link default path: $defaultPath"
+    }
+
+    Remove-Item -LiteralPath $defaultPath -Force -ErrorAction Stop
+    return $true
+}
+
+function Remove-LlvmVersion {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Version,
+        [switch]$Force,
+        [string]$ToolchainsPath
+    )
+
+    if ($Version -in @('.', '..') -or
+        $Version.Contains([IO.Path]::DirectorySeparatorChar) -or
+        $Version.Contains([IO.Path]::AltDirectorySeparatorChar) -or
+        $Version.Contains('/') -or $Version.Contains('\')) {
+        throw "Invalid installed LLVM identifier: $Version"
+    }
+
+    if (-not $ToolchainsPath) { $ToolchainsPath = Get-LlvmSessionToolchainsPath }
+    $target = Join-Path $ToolchainsPath $Version
+    if (-not (Test-Path -LiteralPath $target)) {
+        throw "LLVM version '$Version' is not installed in $ToolchainsPath"
+    }
+
+    $activeVersion = if ($env:_ACTIVE_LLVM) { $env:_ACTIVE_LLVM } else { $env:LLVMUP_ACTIVE_VERSION }
+    $defaultVersion = Get-LlvmDefaultVersion
+    if ($activeVersion -eq $Version -and -not $Force) {
+        throw "Cannot remove active LLVM version '$Version' without --force"
+    }
+    if ($defaultVersion -eq $Version -and -not $Force) {
+        throw "Cannot remove default LLVM version '$Version' without --force"
+    }
+
+    if ($activeVersion -eq $Version) {
+        if ($env:_ACTIVE_LLVM) {
+            if (-not (Invoke-LlvmDeactivate)) {
+                throw "Failed to deactivate LLVM version '$Version' before removal"
+            }
+        } else {
+            Remove-Item Env:LLVMUP_ACTIVE_VERSION -ErrorAction SilentlyContinue
+            Remove-Item Env:LLVMUP_ACTIVE_PATH -ErrorAction SilentlyContinue
+            Write-Warning 'PATH may still reference the removed toolchain; restart or repair the current session'
+        }
+    }
+    if ($defaultVersion -eq $Version) {
+        $null = Clear-LlvmDefaultVersion
+    }
+
+    Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction Stop
+    return $true
 }
 
 function Get-LlvmDiskUsageData {
@@ -1031,6 +1163,13 @@ Export-ModuleMember -Function @(
     'Get-LlvmAutoActivateConfig',
     'Get-LlvmVersionsSimple',
     'Resolve-LlvmToolchainsPath',
+    'Get-LlvmSessionToolchainsPath',
+    'Get-LlvmHomePath',
+    'Get-LlvmDefaultPath',
+    'Get-LlvmDefaultVersion',
+    'Set-LlvmDefaultVersion',
+    'Clear-LlvmDefaultVersion',
+    'Remove-LlvmVersion',
     'Format-LlvmByteSize',
     'Get-LlvmDiskUsageData',
     'Invoke-LlvmMatchVersions',

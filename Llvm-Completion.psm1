@@ -245,10 +245,39 @@ $installSB = {
     }
 }
 
+$llvmupSB = {
+    param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+    $elements = @($commandAst.CommandElements | ForEach-Object { $_.Extent.Text.Trim([char[]]@([char]39, [char]34)) })
+    $commands = @('install','activate','deactivate','env','resolve','vscode-activate','status','list','remove','disk-usage','default','config','help')
+    $values = @()
+    if ($elements.Count -le 2) {
+        $values = $commands
+    } else {
+        $subcommand = $elements[1].ToLowerInvariant()
+        switch ($subcommand) {
+            'activate' { $values = Get-LlvmLocalVersions }
+            'vscode-activate' { $values = Get-LlvmLocalVersions }
+            'remove' { $values = if ($wordToComplete -like '-*') { @('--force','--help') } else { Get-LlvmLocalVersions } }
+            'list' { $values = @('--remote','--json','--help') }
+            'default' {
+                if ($elements.Count -le 3) { $values = @('set','show','unset') }
+                elseif ($elements[2] -eq 'set') { $values = Get-LlvmLocalVersions }
+            }
+            'config' { $values = @('init','load','apply','activate') }
+            'disk-usage' { $values = @('-h','--human-readable') }
+            'install' { $values = @('--from-source','--verify','--name','--default','--profile','--component','--reconfigure','--list-only') + @(Get-LlvmRemoteVersions) }
+            default { $values = @() }
+        }
+    }
+    foreach ($value in @($values | Where-Object { $_ -like "$wordToComplete*" } | Select-Object -Unique)) {
+        [System.Management.Automation.CompletionResult]::new($value, $value, 'ParameterValue', $value)
+    }
+}
+
 # Register idempotently
 try { Register-LlvmCompleter -CommandName 'Activate-Llvm' -ParameterName 'Version' -ScriptBlock $activateSB } catch {}
 try { Register-LlvmCompleter -CommandName 'Install-Llvm' -ParameterName 'Version' -ScriptBlock $installSB } catch {}
-try { Register-LlvmCompleter -CommandName 'llvmup' -ParameterName 'install' -ScriptBlock $installSB } catch {}
+try { Register-LlvmCompleter -CommandName 'llvmup' -ParameterName 'First' -ScriptBlock $llvmupSB } catch {}
 
 # Export functions for testing if desired
 Export-ModuleMember -Function Get-LlvmLocalVersions, Get-LlvmRemoteVersions, Register-LlvmCompleter

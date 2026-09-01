@@ -18,6 +18,9 @@ param (
     [string[]]$Component = @(),
     [switch]$DisableLibcWnoError,
     [switch]$Reconfigure,
+    [switch]$Force,
+    [switch]$Remote,
+    [switch]$Json,
     [switch]$VerboseMode,
     [switch]$Quiet,
     [switch]$Help
@@ -36,10 +39,12 @@ function Get-TrimmedString {
 
 $modulePath = Join-Path $PSScriptRoot 'Get-UserHome.psm1'
 if (Test-Path $modulePath) { Import-Module $modulePath -Force } else { . "$PSScriptRoot\Get-UserHome.ps1" }
+$coreModulePath = Join-Path $PSScriptRoot 'Llvm-Functions-Core.psm1'
+if (Test-Path $coreModulePath) { Import-Module $coreModulePath -Force -DisableNameChecking }
 $homeDir = Get-UserHome
-$script:LLVM_HOME = Join-Path $homeDir ".llvm"
-$script:TOOLCHAINS_DIR = Join-Path $script:LLVM_HOME "toolchains"
-$script:SOURCES_DIR = Join-Path $script:LLVM_HOME "sources"
+$script:LLVM_HOME = if ($env:LLVM_HOME) { $env:LLVM_HOME } elseif ($env:LLVM_CUSTOM_HOME) { $env:LLVM_CUSTOM_HOME } else { Join-Path $homeDir ".llvm" }
+$script:TOOLCHAINS_DIR = if ($env:LLVM_TOOLCHAINS_DIR) { $env:LLVM_TOOLCHAINS_DIR } elseif ($env:LLVM_CUSTOM_TOOLCHAINS_DIR) { $env:LLVM_CUSTOM_TOOLCHAINS_DIR } else { Join-Path $script:LLVM_HOME "toolchains" }
+$script:SOURCES_DIR = if ($env:LLVM_SOURCES_DIR) { $env:LLVM_SOURCES_DIR } elseif ($env:LLVM_CUSTOM_SOURCES_DIR) { $env:LLVM_CUSTOM_SOURCES_DIR } else { Join-Path $script:LLVM_HOME "sources" }
 
 # Enhanced logging functions - similar to bash version
 function Write-VerboseLog {
@@ -136,6 +141,8 @@ Usage: .\Install-Llvm.ps1 [COMMAND] [OPTIONS] [VERSION]
 
 Commands:
   install          Install an LLVM version (default command)
+  list             List installed or remote LLVM versions
+  remove           Remove one installed LLVM version
   config           Manage project configuration (.llvmup-config)
   default          Manage default LLVM version
   help             Show this help message
@@ -175,6 +182,9 @@ Examples:
   .\Install-Llvm.ps1 config apply                             # Install from config
   .\Install-Llvm.ps1 default set llvmorg-18.1.8              # Set default version
   .\Install-Llvm.ps1 default show                             # Show current default
+  .\Install-Llvm.ps1 default unset                            # Clear current default
+  .\Install-Llvm.ps1 list -Remote -Json                       # List remote releases as JSON
+  .\Install-Llvm.ps1 remove llvmorg-18.1.8 -Force             # Remove a protected version
 
 Project Configuration (.llvmup-config):
   [version]
@@ -848,7 +858,13 @@ function Invoke-LlvmConfigActivate {
         return $false
     }
 
-    # Try to activate the installation (simplified - would integrate with existing activation logic)
+    try {
+        $result = Invoke-LlvmActivate -Version $installationName -ToolchainsPath $script:TOOLCHAINS_DIR
+        if (-not $result) { return $false }
+    } catch {
+        Write-ErrorLog "Failed to activate LLVM configuration: $($_.Exception.Message)"
+        return $false
+    }
     Write-SuccessLog "LLVM configuration activated: $installationName"
     if ($config.AutoActivate -eq "true") {
         Write-InfoLog "Auto-activation enabled for this project"
@@ -886,9 +902,44 @@ switch ($Command.ToLower()) {
             Set-DefaultVersion $args[0]
         } elseif ($Version -eq "show" -or -not $Version) {
             Show-DefaultVersion
+        } elseif ($Version -eq "unset") {
+            try {
+                $result = Clear-LlvmDefaultVersion
+                if (-not $result) { exit 1 }
+            } catch {
+                Write-ErrorLog $_.Exception.Message
+                exit 1
+            }
         } else {
             Write-ErrorLog "Unknown default subcommand: $Version"
-            Write-InfoLog "Available subcommands: set, show"
+            Write-InfoLog "Available subcommands: set, show, unset"
+            exit 1
+        }
+    }
+    "list" {
+        if ($Remote) {
+            $format = if ($Json) { 'Json' } else { 'Text' }
+            & (Join-Path $PSScriptRoot 'Download-Llvm.ps1') -ListOnly -OutputFormat $format -Quiet
+        } else {
+            $versions = @(Get-ChildItem -LiteralPath $script:TOOLCHAINS_DIR -Directory -ErrorAction SilentlyContinue | Sort-Object Name)
+            if ($Json) {
+                @{ installed_versions = @($versions | ForEach-Object { $_.Name }) } | ConvertTo-Json -Depth 3
+            } else {
+                $versions | ForEach-Object { $_.Name }
+            }
+        }
+    }
+    "remove" {
+        if (-not $Version) {
+            Write-ErrorLog "Missing installed LLVM identifier for 'remove'"
+            exit 1
+        }
+        try {
+            $result = Remove-LlvmVersion -Version $Version -Force:$Force -ToolchainsPath $script:TOOLCHAINS_DIR
+            if (-not $result) { exit 1 }
+            Write-SuccessLog "Removed LLVM toolchain: $Version"
+        } catch {
+            Write-ErrorLog $_.Exception.Message
             exit 1
         }
     }

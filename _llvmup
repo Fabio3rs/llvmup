@@ -175,7 +175,23 @@ _llvmup() {
             fi
             return 0
             ;;
-        deactivate|status|list|help)
+        deactivate|status|help)
+            return 0
+            ;;
+        list)
+            if [[ "$cur" == -* ]]; then
+                _llvmup_zsh_collect_specs _llvmup_get_list_flag_items
+                _describe -t llvmup-flags 'Flags' _LLVMUP_ZSH_FLAGS
+            fi
+            return 0
+            ;;
+        remove)
+            if [[ "$cur" == -* ]]; then
+                _llvmup_zsh_collect_specs _llvmup_get_remove_flag_items
+                _describe -t llvmup-flags 'Flags' _LLVMUP_ZSH_FLAGS
+            else
+                _llvmup_zsh_complete_local_versions
+            fi
             return 0
             ;;
         disk-usage)
@@ -187,7 +203,7 @@ _llvmup() {
             ;;
         default)
             if (( CURRENT == 3 )); then
-                compadd -- set show
+                compadd -- set show unset
                 return 0
             fi
             if [[ "$prev" == "set" ]]; then
@@ -232,7 +248,7 @@ _llvmup() {
 
             for arg in "${words[@]:3}"; do
                 case "$arg" in
-                    ""|--from-source|--verbose|--quiet|--default|--reconfigure|--disable-libc-wno-error|help)
+                    ""|--from-source|--verbose|--quiet|--default|--reconfigure|--disable-libc-wno-error|--list-only|help)
                         ;;
                     -c|--cmake-flags|-n|--name|-p|--profile|--component|--verify)
                         ;;

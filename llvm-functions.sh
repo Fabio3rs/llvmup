@@ -337,6 +337,128 @@ llvm-default-show() {
     return 0
 }
 
+llvm-default-unset() {
+    local default_link
+    default_link="$(llvm-get-default-link)"
+
+    if [ -L "$default_link" ]; then
+        rm -f -- "$default_link"
+        log_success "Default LLVM version cleared"
+        return 0
+    fi
+
+    if [ -e "$default_link" ]; then
+        log_error "Refusing to remove non-symlink default path: $default_link"
+        return 1
+    fi
+
+    echo "No default LLVM version is set"
+    return 0
+}
+
+llvm-get-default-version() {
+    local default_link
+    local target
+
+    default_link="$(llvm-get-default-link)"
+    [ -L "$default_link" ] || return 1
+    target="$(readlink "$default_link" 2>/dev/null)" || return 1
+    [ -n "$target" ] || return 1
+    basename "$target"
+}
+
+llvm-remove() {
+    local version=""
+    local force=0
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --force)
+                force=1
+                ;;
+            -h|--help)
+                cat <<EOF
+Usage: llvmup remove <installed-id> [--force]
+
+Remove one installed LLVM toolchain. Source checkouts and build directories are preserved.
+
+Options:
+  --force   Allow removal of the active or default toolchain
+EOF
+                return 0
+                ;;
+            -*)
+                log_error "Unknown remove option: $1"
+                return 1
+                ;;
+            *)
+                if [ -n "$version" ]; then
+                    log_error "Only one installed LLVM identifier can be removed"
+                    return 1
+                fi
+                version="$1"
+                ;;
+        esac
+        shift
+    done
+
+    if [ -z "$version" ]; then
+        log_error "Missing installed LLVM identifier for 'remove'"
+        return 1
+    fi
+
+    case "$version" in
+        .|..|*/*|*\\*)
+            log_error "Invalid installed LLVM identifier: $version"
+            return 1
+            ;;
+    esac
+
+    local toolchains_dir
+    local target
+    local active_version
+    local default_version=""
+    toolchains_dir="$(llvm-get-toolchains-dir)"
+    target="$toolchains_dir/$version"
+    active_version="${_ACTIVE_LLVM:-${LLVMUP_ACTIVE_VERSION:-}}"
+    default_version="$(llvm-get-default-version 2>/dev/null)" || default_version=""
+
+    if [ ! -d "$target" ] && [ ! -L "$target" ]; then
+        log_error "LLVM version '$version' is not installed in $toolchains_dir"
+        return 1
+    fi
+
+    if [ "$active_version" = "$version" ] && [ "$force" -ne 1 ]; then
+        log_error "Cannot remove active LLVM version '$version' without --force"
+        return 1
+    fi
+
+    if [ "$default_version" = "$version" ] && [ "$force" -ne 1 ]; then
+        log_error "Cannot remove default LLVM version '$version' without --force"
+        return 1
+    fi
+
+    if [ "$active_version" = "$version" ]; then
+        if [ "${_ACTIVE_LLVM:-}" = "$version" ] && command -v llvm-deactivate >/dev/null 2>&1; then
+            llvm-deactivate >/dev/null || return $?
+        else
+            unset LLVMUP_ACTIVE_VERSION LLVMUP_ACTIVE_PATH
+            log_warn "PATH may still reference the removed toolchain; restart or repair the current shell"
+        fi
+        if [ "${LLVMUP_EXECUTABLE_MODE:-0}" = "1" ]; then
+            log_warn "The parent shell may still reference the removed toolchain; deactivate or restart it"
+        fi
+    fi
+
+    if [ "$default_version" = "$version" ]; then
+        llvm-default-unset || return $?
+    fi
+
+    rm -rf -- "$target"
+    log_success "Removed LLVM toolchain: $version"
+    log_info "Preserved source checkouts under $(llvm-get-sources-dir)"
+}
+
 llvm-disk-usage() {
     local human_readable=0
     local toolchains_dir
@@ -469,6 +591,11 @@ llvmup() {
             llvm-list "$@"
             return $?
             ;;
+        remove)
+            shift
+            llvm-remove "$@"
+            return $?
+            ;;
         disk-usage)
             shift
             llvm-disk-usage "$@"
@@ -525,10 +652,14 @@ llvmup() {
                     llvm-config-load "$@"
                     ;;
                 apply)
-                    llvm-config-load >/dev/null && llvm-config-apply "$@"
+                    local config_root
+                    config_root="$(llvm-find-config-root)" || config_root=""
+                    llvm-load-config-from-root "$config_root" >/dev/null && llvm-config-apply "$@"
                     ;;
                 activate)
-                    llvm-config-load >/dev/null && llvm-config-activate "$@"
+                    local config_root
+                    config_root="$(llvm-find-config-root)" || config_root=""
+                    llvm-load-config-from-root "$config_root" >/dev/null && llvm-config-activate "$@"
                     ;;
                 *)
                     if [ -n "$runtime_script" ]; then
@@ -554,9 +685,12 @@ llvmup() {
                 show)
                     llvm-default-show
                     ;;
+                unset)
+                    llvm-default-unset
+                    ;;
                 *)
                     log_error "Unknown default subcommand: $default_subcommand"
-                    log_info "Available subcommands: set, show"
+                    log_info "Available subcommands: set, show, unset"
                     return 1
                     ;;
             esac
@@ -748,6 +882,51 @@ llvm-status() {
 
 # Function to list installed LLVM versions
 llvm-list() {
+    local remote=0
+    local json=0
+    local arg
+
+    for arg in "$@"; do
+        case "$arg" in
+            --remote) remote=1 ;;
+            --json) json=1 ;;
+            -h|--help)
+                cat <<EOF
+Usage: llvmup list [--remote] [--json]
+
+Options:
+  --remote   List stable LLVM releases available remotely
+  --json     Emit machine-readable JSON
+EOF
+                return 0
+                ;;
+            *)
+                log_error "Unknown option for llvmup list: $arg"
+                return 1
+                ;;
+        esac
+    done
+
+    if [ "$remote" -eq 1 ]; then
+        local releases_json
+        releases_json="$(llvm-get-remote-stable-releases)" || return $?
+        if [ "$json" -eq 1 ]; then
+            jq '{remote_versions: ([.[].tag_name]
+                | sort_by(sub("^llvmorg-"; "") | split(".") | map(tonumber))
+                | reverse)}' <<< "$releases_json"
+        else
+            jq -r '[.[].tag_name]
+                | sort_by(sub("^llvmorg-"; "") | split(".") | map(tonumber))
+                | reverse[]' <<< "$releases_json"
+        fi
+        return $?
+    fi
+
+    if [ "$json" -eq 1 ]; then
+        llvm-get-versions-json
+        return $?
+    fi
+
     local toolchains_dir="$(llvm-get-toolchains-dir)"
 
     echo "╭─ Installed LLVM Versions ──────────────────────────────────╮"
@@ -857,13 +1036,16 @@ llvm-help() {
     echo "│   llvmup install --cmake-flags '-DCMAKE_BUILD_TYPE=Debug'  │"
     echo "│                                                            │"
     echo -e "│ ${CYAN}VERSION MANAGEMENT:${NC}                                      │"
-    echo "│   llvm-activate <version>     # Activate LLVM version      │"
-    echo "│   llvm-deactivate             # Deactivate current version │"
-    echo "│   llvm-status                 # Show current status        │"
-    echo "│   llvm-list                   # List installed versions    │"
-    echo "│   llvm-disk-usage            # Show disk usage by install │"
+    echo "│   llvmup activate <version>   # Activate LLVM version      │"
+    echo "│   llvmup deactivate           # Deactivate current version │"
+    echo "│   llvmup status               # Show current status        │"
+    echo "│   llvmup list [--json]        # List installed versions    │"
+    echo "│   llvmup list --remote        # List stable remote releases│"
+    echo "│   llvmup remove <version>     # Remove installed toolchain │"
+    echo "│   llvmup disk-usage           # Show disk usage by install │"
     echo "│   llvmup default set <ver>    # Set default version        │"
     echo "│   llvmup default show         # Show current default       │"
+    echo "│   llvmup default unset        # Clear current default      │"
     echo "│                                                            │"
     echo -e "│ ${BLUE}VERSION PARSING & UTILITIES:${NC}                             │"
     echo "│   llvm-parse-version <ver>    # Parse version string       │"
@@ -888,11 +1070,11 @@ llvm-help() {
     echo "│   • Specific: llvmorg-18.1.8, source-llvmorg-20.1.0       │"
     echo "│                                                            │"
     echo -e "│ ${GREEN}DEVELOPMENT INTEGRATION:${NC}                                 │"
-    echo "│   llvm-vscode-activate <ver>  # Setup VSCode integration   │"
-    echo "│   llvm-config-init            # Initialize .llvmup-config  │"
-    echo "│   llvm-config-load            # Load project config        │"
-    echo "│   llvm-config-apply           # Install from config        │"
-    echo "│   llvm-config-activate        # Activate configured version│"
+    echo "│   llvmup vscode-activate <ver># Setup VSCode integration   │"
+    echo "│   llvmup config init          # Initialize .llvmup-config  │"
+    echo "│   llvmup config load          # Load project config        │"
+    echo "│   llvmup config apply         # Install from config        │"
+    echo "│   llvmup config activate      # Activate configured version│"
     echo "│                                                            │"
     echo -e "│ ${CYAN}AVAILABLE TOOLS AFTER ACTIVATION:${NC}                       │"
     echo "│   • clang/clang++    # C/C++ compilers                     │"
@@ -2423,49 +2605,48 @@ llvm-get-versions-list() {
 # Get versions in JSON format
 llvm-get-versions-json() {
     local toolchains_dir="$(llvm-get-toolchains-dir)"
-    local first=true
+    local active_version="${_ACTIVE_LLVM:-${LLVMUP_ACTIVE_VERSION:-}}"
+    local default_version=""
+    local entries='[]'
+    local dir
 
-    echo "{"
-    echo "  \"installed_versions\": ["
+    default_version="$(llvm-get-default-version 2>/dev/null)" || default_version=""
 
-    for dir in "$toolchains_dir"/*; do
-        if [ -d "$dir" ]; then
-            local version_name=$(basename "$dir")
-            local parsed_version=$(llvm-parse-version "$version_name" 2>/dev/null)
-            local is_active="false"
+    if [ -d "$toolchains_dir" ]; then
+        for dir in "$toolchains_dir"/*; do
+            [ -d "$dir" ] || continue
+            local version_name
+            local parsed_version
             local install_type="prebuilt"
+            local is_active=false
+            local is_default=false
+            version_name="$(basename "$dir")"
+            parsed_version="$(llvm-parse-version "$version_name" 2>/dev/null)" || parsed_version="$version_name"
+            [ -n "$parsed_version" ] || parsed_version="$version_name"
+            [[ "$version_name" == source-* ]] && install_type="source"
+            [ "$version_name" = "$active_version" ] && is_active=true
+            [ "$version_name" = "$default_version" ] && is_default=true
+            entries="$(jq -c \
+                --arg name "$version_name" \
+                --arg version "$parsed_version" \
+                --arg type "$install_type" \
+                --arg path "$dir" \
+                --argjson active "$is_active" \
+                --argjson default "$is_default" \
+                '. + [{name: $name, version: $version, type: $type, active: $active, default: $default, path: $path}]' \
+                <<< "$entries")" || return 1
+        done
+    fi
 
-            # Check if this version is active
-            if [ -n "$_ACTIVE_LLVM" ] && [ "$version_name" = "$_ACTIVE_LLVM" ]; then
-                is_active="true"
-            fi
-
-            # Determine installation type
-            if echo "$version_name" | grep -q "^source-"; then
-                install_type="source"
-            fi
-
-            # Add comma separator for multiple entries
-            if [ "$first" = true ]; then
-                first=false
-            else
-                echo ","
-            fi
-
-            echo "    {"
-            echo "      \"name\": \"$version_name\","
-            echo "      \"version\": \"${parsed_version:-$version_name}\","
-            echo "      \"type\": \"$install_type\","
-            echo "      \"active\": $is_active,"
-            echo "      \"path\": \"$dir\""
-            echo -n "    }"
-        fi
-    done
-
-    echo ""
-    echo "  ],"
-    echo "  \"active_version\": \"${_ACTIVE_LLVM:-null}\""
-    echo "}"
+    jq -n \
+        --argjson installed_versions "$entries" \
+        --arg active_version "$active_version" \
+        --arg default_version "$default_version" \
+        '{
+            installed_versions: $installed_versions,
+            active_version: (if $active_version == "" then null else $active_version end),
+            default_version: (if $default_version == "" then null else $default_version end)
+        }'
 }
 
 # Check if a specific version is installed
