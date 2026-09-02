@@ -61,6 +61,13 @@ Describe 'Range expression matching' {
         $matches | Should -Not -Contain 'llvmorg-20.0.0'
     }
 
+    It 'preserves an explicit patch as the tilde lower bound' {
+        Invoke-LlvmVersionMatchesRange -CandidateVersion '1.2.2' -RangeExpression '~1.2.3' |
+            Should -BeFalse
+        Invoke-LlvmVersionMatchesRange -CandidateVersion '1.2.3' -RangeExpression '~1.2.3' |
+            Should -BeTrue
+    }
+
     It 'supports wildcard ranges' {
         $matches = Invoke-LlvmMatchVersions -Expression '18.*' -ToolchainsPath $script:ToolchainsPath
         $matches | Should -Contain 'llvmorg-18.0.0'

@@ -197,3 +197,33 @@ EOF
     [[ "$output" =~ "Configuration loaded:" ]]
     [[ "$output" =~ "Next steps:" ]]
 }
+
+@test "directory settings do not leak between project configs" {
+    mkdir -p project-a project-b
+    cat > project-a/.llvmup-config << EOF
+[version]
+default = "llvmorg-18.1.8"
+[paths]
+llvm_home = "$TEST_TEMP_DIR/project-a-home"
+EOF
+    cat > project-b/.llvmup-config << 'EOF'
+[version]
+default = "llvmorg-18.1.8"
+EOF
+
+    run bash -c "
+        export HOME='$TEST_TEMP_DIR/home'
+        export LLVMUP_DISABLE_AUTOACTIVATE=1
+        source '$LLVM_MANAGER_DIR/llvm-functions.sh'
+        cd '$TEST_TEMP_DIR/project-a'
+        llvm-config-load >/dev/null
+        first=\$(llvm-get-toolchains-dir)
+        cd '$TEST_TEMP_DIR/project-b'
+        llvm-config-load >/dev/null
+        second=\$(llvm-get-toolchains-dir)
+        printf '%s|%s' \"\$first\" \"\$second\"
+    "
+
+    [ "$status" -eq 0 ]
+    [ "$output" = "$TEST_TEMP_DIR/project-a-home/toolchains|$TEST_TEMP_DIR/home/.llvm/toolchains" ]
+}

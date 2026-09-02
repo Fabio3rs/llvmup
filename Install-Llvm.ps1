@@ -224,30 +224,157 @@ function Get-ProfileProjects {
     }
 }
 
+function Get-LlvmCommandPath {
+    param([Parameter(Mandatory = $true)][string]$Name)
+
+    $command = Get-Command $Name -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $command) { return $null }
+    if ($command.Path) { return $command.Path }
+    if ($command.Source) { return $command.Source }
+    return $command.Name
+}
+
+function Get-LlvmSourceBuildTools {
+    $tools = @{}
+    $missing = @()
+
+    foreach ($name in @('git', 'cmake', 'ninja')) {
+        $path = Get-LlvmCommandPath -Name $name
+        if ($path) {
+            $tools[$name] = $path
+        } else {
+            $missing += $name
+        }
+    }
+
+    if ($missing.Count -gt 0) {
+        Write-ErrorLog "Cannot build LLVM from source because required tools are missing: $($missing -join ', ')."
+        Write-Host "   Install Git, CMake, and Ninja, then open a new PowerShell session."
+        Write-Host "   Confirm the setup with: git --version; cmake --version; ninja --version"
+        return $null
+    }
+
+    $compiler = Get-LlvmCommandPath -Name 'cl.exe'
+    if (-not $compiler) { $compiler = Get-LlvmCommandPath -Name 'cl' }
+    if (-not $compiler) { $compiler = Get-LlvmCommandPath -Name 'clang-cl.exe' }
+    if (-not $compiler) { $compiler = Get-LlvmCommandPath -Name 'clang-cl' }
+
+    if (-not $compiler) {
+        $clang = Get-LlvmCommandPath -Name 'clang.exe'
+        if (-not $clang) { $clang = Get-LlvmCommandPath -Name 'clang' }
+        $clangxx = Get-LlvmCommandPath -Name 'clang++.exe'
+        if (-not $clangxx) { $clangxx = Get-LlvmCommandPath -Name 'clang++' }
+        if ($clang -and $clangxx) { $compiler = $clang }
+    }
+
+    if (-not $compiler) {
+        $gcc = Get-LlvmCommandPath -Name 'gcc.exe'
+        if (-not $gcc) { $gcc = Get-LlvmCommandPath -Name 'gcc' }
+        $gxx = Get-LlvmCommandPath -Name 'g++.exe'
+        if (-not $gxx) { $gxx = Get-LlvmCommandPath -Name 'g++' }
+        if ($gcc -and $gxx) { $compiler = $gcc }
+    }
+
+    if (-not $compiler) {
+        Write-ErrorLog "No C/C++ bootstrap toolchain was found in PATH. LLVM cannot compile itself without an existing compiler."
+        Write-Host "   Install Visual Studio Build Tools with the 'Desktop development with C++' workload."
+        Write-Host "   Then run llvmup from 'Developer PowerShell for VS', where cl.exe is available."
+        Write-Host "   An existing clang-cl/Clang or GCC toolchain in PATH is also supported."
+        return $null
+    }
+
+    $tools.compiler = $compiler
+    return $tools
+}
+
+function Invoke-LlvmNativeCommand {
+    param(
+        [Parameter(Mandatory = $true)][string]$Command,
+        [string[]]$Arguments = @(),
+        [Parameter(Mandatory = $true)][string]$Description,
+        [switch]$CaptureOutput
+    )
+
+    if ($CaptureOutput) {
+        $output = @(& $Command @Arguments 2>&1)
+        $exitCode = $LASTEXITCODE
+    } else {
+        & $Command @Arguments 2>&1 | ForEach-Object { Write-Host $_ }
+        $exitCode = $LASTEXITCODE
+    }
+    if ($exitCode -ne 0) {
+        throw "$Description failed with exit code $exitCode."
+    }
+    if ($CaptureOutput) { return $output }
+}
+
+function Resolve-LlvmSourceVersion {
+    param(
+        [string]$Expression,
+        [Parameter(Mandatory = $true)][string]$GitCommand
+    )
+
+    if (-not $Expression) { $Expression = 'latest' }
+    if ($Expression -match '^(?:llvmorg-)?(\d+\.\d+\.\d+)$') {
+        return "llvmorg-$($matches[1])"
+    }
+
+    Write-InfoLog "Fetching stable LLVM source tags..."
+    $remote = @(Invoke-LlvmNativeCommand -Command $GitCommand -Arguments @(
+        'ls-remote', '--tags', 'https://github.com/llvm/llvm-project.git'
+    ) -Description 'Fetching LLVM release tags' -CaptureOutput)
+
+    $tags = @($remote | ForEach-Object {
+        if ([string]$_ -match 'refs/tags/(llvmorg-\d+\.\d+\.\d+)(?:\^\{\})?$') {
+            $matches[1]
+        }
+    } | Sort-Object -Unique)
+
+    if ($tags.Count -eq 0) {
+        throw 'No stable LLVM release tags were returned by the upstream repository.'
+    }
+
+    # Use the imported core command explicitly so the legacy facade cannot
+    # shadow it with its older one-parameter implementation.
+    $matched = @(Llvm-Functions-Core\Invoke-LlvmMatchVersions -Expression $Expression -CandidateVersions $tags)
+    if ($matched.Count -eq 0) {
+        throw "No stable LLVM source release matches '$Expression'."
+    }
+
+    return $matched | Sort-Object {
+        [version]($_ -replace '^llvmorg-', '')
+    } -Descending | Select-Object -First 1
+}
+
+function Test-LlvmBuiltToolchain {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $binPath = Join-Path $Path 'bin'
+    if (-not (Test-Path -LiteralPath $binPath -PathType Container)) { return $false }
+
+    foreach ($name in @('clang', 'clang++')) {
+        $compiler = Get-ChildItem -LiteralPath $binPath -ErrorAction SilentlyContinue |
+            Where-Object { $_.BaseName -eq $name -or $_.Name -eq "$name.cmd" } |
+            Select-Object -First 1
+        if (-not $compiler) { return $false }
+        try {
+            & $compiler.FullName --version *> $null
+            if ($LASTEXITCODE -ne 0) { return $false }
+        } catch {
+            return $false
+        }
+    }
+    return $true
+}
+
 function Set-DefaultVersion {
     param([string]$VersionName)
-
-    $versionPath = Join-Path $script:TOOLCHAINS_DIR $VersionName
-    $defaultPath = Join-Path $script:LLVM_HOME "default"
-
-    if (-not (Test-Path $versionPath)) {
-        Write-Log "Version $VersionName is not installed" -Level Error
-        Write-Log "Use 'Get-LlvmList' to see installed versions" -Level Info
-        return $false
-    }
-
-    # Remove existing default link if it exists
-    if (Test-Path $defaultPath) {
-        Remove-Item $defaultPath -Force -Recurse
-    }
-
-    # Create junction (symlink equivalent for Windows)
     try {
-        New-Item -ItemType Junction -Path $defaultPath -Target $versionPath | Out-Null
+        Set-LlvmDefaultVersion -Version $VersionName -ToolchainsPath $script:TOOLCHAINS_DIR -HomePath $script:LLVM_HOME | Out-Null
         Write-Log "✅ Default LLVM version set to: $VersionName" -Level Info
         return $true
     } catch {
-        Write-Log "Failed to set default version: $_" -Level Error
+        Write-Log "Failed to set default version: $($_.Exception.Message)" -Level Error
         return $false
     }
 }
@@ -460,7 +587,9 @@ function Install-LlvmVersion {
         if (-not $DisableLibcWnoErrorFlag) { $DisableLibcWnoErrorFlag = $config.DisableLibcWnoError }
     }
 
-    if (-not $VersionToInstall) {
+    if (-not $VersionToInstall -and $BuildFromSource) {
+        $VersionToInstall = 'latest'
+    } elseif (-not $VersionToInstall) {
         Write-ErrorLog "No version specified"
         return $false
     }
@@ -511,9 +640,25 @@ function Install-FromSource {
         [bool]$ForceReconfigure = $false
     )
 
+    $tools = Get-LlvmSourceBuildTools
+    if (-not $tools) { return $false }
+
+    try {
+        $Version = Resolve-LlvmSourceVersion -Expression $Version -GitCommand $tools.git
+    } catch {
+        Write-ErrorLog "Unable to select an LLVM source release: $($_.Exception.Message)"
+        Write-Host "   Check the requested version and your connection to https://github.com/llvm/llvm-project."
+        return $false
+    }
+
     Write-InfoLog "🔨 Building LLVM $Version from source..."
 
     $buildName = if ($Name) { $Name } else { $Version }
+    if ($buildName -in @('.', '..') -or $buildName.Contains('/') -or $buildName.Contains('\')) {
+        Write-ErrorLog "Invalid installation name: $buildName"
+        Write-Host "   Use a single directory name without path separators."
+        return $false
+    }
 
     # Extract major version number for version-specific configuration
     $majorVersion = ""
@@ -547,30 +692,70 @@ function Install-FromSource {
         Write-VerboseLog "Skipped LIBC_WNO_ERROR=ON flag (disabled)"
     }
 
-    # Check if we're in mock mode
-    if ($env:LLVM_TEST_MODE) {
-        Write-InfoLog "🧪 Test mode: Mock build completed successfully!"
-        Write-InfoLog "📁 LLVM $buildName would be installed to: $script:TOOLCHAINS_DIR\$buildName"
-        Write-InfoLog "🚀 To activate: llvm-activate $buildName"
-
-        if ($SetDefault) {
-            Write-InfoLog "🔗 This version would be set as default"
-        }
-        return $true
-    }
-
-    # Real build process would start here
     Write-InfoLog "🏗️  Starting real LLVM build process..."
 
-    # Prepare CMake arguments (similar to bash version)
+    $sourceDir = Join-Path $script:SOURCES_DIR $Version
+    $llvmSourceDir = Join-Path $sourceDir 'llvm'
+    $buildDir = Join-Path $sourceDir 'build'
+    $installDir = Join-Path $script:TOOLCHAINS_DIR $buildName
+
+    if (Test-Path -LiteralPath $installDir) {
+        if (Test-LlvmBuiltToolchain -Path $installDir) {
+            Write-WarningLog "LLVM $buildName is already installed at $installDir"
+            if ($SetDefault -and -not (Set-DefaultVersion $buildName)) { return $false }
+            return $true
+        }
+        Write-ErrorLog "An incomplete installation already exists at $installDir"
+        Write-Host "   Move or remove that directory, or choose another name with --name, then retry."
+        return $false
+    }
+
+    New-Item -ItemType Directory -Path $script:SOURCES_DIR -Force | Out-Null
+    New-Item -ItemType Directory -Path $script:TOOLCHAINS_DIR -Force | Out-Null
+
+    if (Test-Path -LiteralPath $sourceDir) {
+        $gitDir = Join-Path $sourceDir '.git'
+        $cmakeLists = Join-Path $llvmSourceDir 'CMakeLists.txt'
+        if (-not (Test-Path -LiteralPath $gitDir -PathType Container) -or
+            -not (Test-Path -LiteralPath $cmakeLists -PathType Leaf)) {
+            Write-ErrorLog "The existing source directory is incomplete: $sourceDir"
+            Write-Host "   Move or remove it so llvmup can clone $Version again."
+            return $false
+        }
+        Write-InfoLog "Using existing LLVM source at $sourceDir"
+    } else {
+        $cloneDir = "$sourceDir.clone-$PID-$([guid]::NewGuid().ToString('N'))"
+        try {
+            Write-InfoLog "Cloning LLVM $Version (shallow checkout)..."
+            Invoke-LlvmNativeCommand -Command $tools.git -Arguments @(
+                'clone', '--depth', '1', '--branch', $Version,
+                'https://github.com/llvm/llvm-project.git', $cloneDir
+            ) -Description "Cloning LLVM $Version"
+            if (-not (Test-Path -LiteralPath (Join-Path $cloneDir 'llvm/CMakeLists.txt') -PathType Leaf)) {
+                throw 'The cloned repository does not contain llvm/CMakeLists.txt.'
+            }
+            Move-Item -LiteralPath $cloneDir -Destination $sourceDir -ErrorAction Stop
+        } catch {
+            Write-ErrorLog "Unable to prepare LLVM sources: $($_.Exception.Message)"
+            Write-Host "   The final source directory was not changed. Check Git access and available disk space."
+            return $false
+        } finally {
+            if (Test-Path -LiteralPath $cloneDir) {
+                Remove-Item -LiteralPath $cloneDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
+    New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
+    $stagingInstallDir = "$installDir.installing-$PID-$([guid]::NewGuid().ToString('N'))"
+
+    # Install into a temporary sibling and publish only after validation.
     $cmakeArgs = @(
-        "-S", "$script:SOURCES_DIR\$Version\llvm"
-        "-B", "$script:SOURCES_DIR\$Version\build"
+        "-S", $llvmSourceDir
+        "-B", $buildDir
         "-G", "Ninja"
         "-DCMAKE_BUILD_TYPE=Release"
-        "-DCMAKE_C_FLAGS=-march=native -mtune=native"
-        "-DCMAKE_CXX_FLAGS=-march=native -mtune=native"
-        "-DCMAKE_INSTALL_PREFIX=$script:TOOLCHAINS_DIR\$buildName"
+        "-DCMAKE_INSTALL_PREFIX=$stagingInstallDir"
     )
 
     # Add LIBC_WNO_ERROR flag if not disabled
@@ -597,28 +782,54 @@ function Install-FromSource {
 
     Write-VerboseLog "CMake command: cmake $($cmakeArgs -join ' ')"
 
-    # Force reconfiguration if requested and CMakeCache.txt exists
-    $buildDir = "$script:SOURCES_DIR\$Version\build"
-    $cmakeCachePath = "$buildDir\CMakeCache.txt"
-    if ($ForceReconfigure -and (Test-Path $cmakeCachePath)) {
+    $cmakeCachePath = Join-Path $buildDir 'CMakeCache.txt'
+    if ($ForceReconfigure -and (Test-Path -LiteralPath $cmakeCachePath)) {
         Write-InfoLog "♻️  Forcing CMake reconfiguration..."
-        Remove-Item $cmakeCachePath -Force -ErrorAction SilentlyContinue
-        $cmakeFilesPath = "$buildDir\CMakeFiles"
-        if (Test-Path $cmakeFilesPath) {
-            Remove-Item $cmakeFilesPath -Force -Recurse -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $cmakeCachePath -Force -ErrorAction SilentlyContinue
+        $cmakeFilesPath = Join-Path $buildDir 'CMakeFiles'
+        if (Test-Path -LiteralPath $cmakeFilesPath) {
+            Remove-Item -LiteralPath $cmakeFilesPath -Force -Recurse -ErrorAction SilentlyContinue
         }
         Write-VerboseLog "Removed CMakeCache.txt and CMakeFiles directory"
     }
 
-    # TODO: Implement actual source build logic
-    # This would involve git clone, cmake configure, build, and install
+    $jobs = [Math]::Max(1, [Environment]::ProcessorCount)
+    try {
+        Write-InfoLog "Configuring LLVM with CMake and Ninja..."
+        Write-InfoLog "Bootstrap compiler: $($tools.compiler)"
+        Invoke-LlvmNativeCommand -Command $tools.cmake -Arguments $cmakeArgs -Description 'CMake configuration'
+
+        Write-InfoLog "Building LLVM with $jobs parallel jobs. This can take 30 minutes or longer..."
+        Invoke-LlvmNativeCommand -Command $tools.cmake -Arguments @(
+            '--build', $buildDir, '--parallel', [string]$jobs
+        ) -Description 'LLVM build'
+
+        Write-InfoLog "Installing LLVM into a staging directory..."
+        Invoke-LlvmNativeCommand -Command $tools.cmake -Arguments @(
+            '--build', $buildDir, '--target', 'install'
+        ) -Description 'LLVM installation'
+
+        if (-not (Test-LlvmBuiltToolchain -Path $stagingInstallDir)) {
+            throw 'Installation validation failed: clang and clang++ are missing or cannot run.'
+        }
+        Move-Item -LiteralPath $stagingInstallDir -Destination $installDir -ErrorAction Stop
+    } catch {
+        Write-ErrorLog "LLVM source build failed: $($_.Exception.Message)"
+        Write-Host "   Source and build files were kept at $sourceDir so the build can be diagnosed or retried."
+        Write-Host "   If CMake could not find a compiler, retry from 'Developer PowerShell for VS'."
+        return $false
+    } finally {
+        if (Test-Path -LiteralPath $stagingInstallDir) {
+            Remove-Item -LiteralPath $stagingInstallDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
 
     Write-SuccessLog "Build and installation complete!"
-    Write-InfoLog "📁 LLVM version $Version has been installed as $buildName"
+    Write-InfoLog "📁 LLVM version $Version has been installed at $installDir"
     Write-TipLog "To activate: llvm-activate $buildName"
 
     if ($SetDefault) {
-        Set-DefaultVersion $buildName | Out-Null
+        if (-not (Set-DefaultVersion $buildName)) { return $false }
     }
 
     return $true
@@ -904,7 +1115,7 @@ switch ($Command.ToLower()) {
             Show-DefaultVersion
         } elseif ($Version -eq "unset") {
             try {
-                $result = Clear-LlvmDefaultVersion
+                $result = Clear-LlvmDefaultVersion -HomePath $script:LLVM_HOME
                 if (-not $result) { exit 1 }
             } catch {
                 Write-ErrorLog $_.Exception.Message

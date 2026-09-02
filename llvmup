@@ -461,7 +461,7 @@ usage() {
         exit_code=1
     fi
 
-    cat <<EOF
+    cat <<'EOF'
 Usage: llvmup [install] [OPTIONS] [VERSION]
 
 Commands:
@@ -732,6 +732,14 @@ while [[ $# -gt 0 ]]; do
 done
 
 log_verbose "Parsed ${#remaining_args[@]} remaining arguments: ${remaining_args[*]}"
+
+if [ "$FROM_SOURCE" -ne 1 ]; then
+    if [ -n "$PROFILE" ] || [ "${#CMAKE_FLAGS[@]}" -gt 0 ] || [ "${#COMPONENTS[@]}" -gt 0 ] ||
+        [ "$DISABLE_LIBC_WNO_ERROR" -eq 1 ] || [ "$RECONFIGURE" -eq 1 ]; then
+        log_error "Build options require --from-source"
+        exit 1
+    fi
+fi
 
 # Prepare arguments to pass to the target script
 script_args=()

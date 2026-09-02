@@ -166,12 +166,13 @@ function Invoke-LlvmVersionMatchesRange {
 
     $parsed = Invoke-LlvmParseVersionExpression -Expression $RangeExpression
     if ($parsed.kind -eq 'range' -and $parsed.range.op -eq '~') {
-        # Tilde range: ~19.1 means >=19.1.0 and <19.2.0
+        # Tilde range: preserve the requested patch and stop at the next minor
         $parts = $parsed.range.version -split '\.'
         $major = [int]$parts[0]
         $minor = if ($parts.Count -ge 2) { [int]$parts[1] } else { 0 }
+        $patch = if ($parts.Count -ge 3) { [int]$parts[2] } else { 0 }
 
-        $minVer = "$major.$minor.0"
+        $minVer = "$major.$minor.$patch"
         $maxVer = "$major.$([int]($minor + 1)).0"
 
         # Use normalized comparison
@@ -418,15 +419,16 @@ function Get-LlvmHomePath {
 
 function Get-LlvmDefaultPath {
     [CmdletBinding()]
-    param()
-    return Join-Path (Get-LlvmHomePath) 'default'
+    param([string]$HomePath)
+    if (-not $HomePath) { $HomePath = Get-LlvmHomePath }
+    return Join-Path $HomePath 'default'
 }
 
 function Get-LlvmDefaultVersion {
     [CmdletBinding()]
-    param()
+    param([string]$HomePath)
 
-    $defaultPath = Get-LlvmDefaultPath
+    $defaultPath = Get-LlvmDefaultPath -HomePath $HomePath
     if (-not (Test-Path -LiteralPath $defaultPath)) { return $null }
 
     $item = Get-Item -LiteralPath $defaultPath -Force -ErrorAction SilentlyContinue
@@ -440,7 +442,8 @@ function Set-LlvmDefaultVersion {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)][string]$Version,
-        [string]$ToolchainsPath
+        [string]$ToolchainsPath,
+        [string]$HomePath
     )
 
     if (-not $ToolchainsPath) { $ToolchainsPath = Get-LlvmSessionToolchainsPath }
@@ -449,13 +452,13 @@ function Set-LlvmDefaultVersion {
         throw "LLVM version '$Version' is not installed in $ToolchainsPath"
     }
 
-    $defaultPath = Get-LlvmDefaultPath
+    $defaultPath = Get-LlvmDefaultPath -HomePath $HomePath
     $parent = Split-Path $defaultPath -Parent
     if (-not (Test-Path -LiteralPath $parent)) {
         New-Item -ItemType Directory -Path $parent -Force | Out-Null
     }
     if (Get-Item -LiteralPath $defaultPath -Force -ErrorAction SilentlyContinue) {
-        $cleared = Clear-LlvmDefaultVersion
+        $cleared = Clear-LlvmDefaultVersion -HomePath $HomePath
         if (-not $cleared) { return $false }
     }
 
@@ -466,9 +469,9 @@ function Set-LlvmDefaultVersion {
 
 function Clear-LlvmDefaultVersion {
     [CmdletBinding()]
-    param()
+    param([string]$HomePath)
 
-    $defaultPath = Get-LlvmDefaultPath
+    $defaultPath = Get-LlvmDefaultPath -HomePath $HomePath
     $item = Get-Item -LiteralPath $defaultPath -Force -ErrorAction SilentlyContinue
     if (-not $item) { return $true }
 

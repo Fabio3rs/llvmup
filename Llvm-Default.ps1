@@ -54,6 +54,9 @@ function Write-LogError {
     Write-Error "❌ $Message"
 }
 
+$coreModulePath = Join-Path $PSScriptRoot 'Llvm-Functions-Core.psm1'
+Import-Module $coreModulePath -Force -DisableNameChecking
+
 function Set-DefaultVersion {
     param([string]$Version)
 
@@ -63,53 +66,28 @@ function Set-DefaultVersion {
         return 1
     }
 
-    # Load helper and determine user home directory
-    $modulePath = Join-Path $PSScriptRoot 'Get-UserHome.psm1'
-    if (Test-Path $modulePath) { Import-Module $modulePath -Force } else { . "$PSScriptRoot\Get-UserHome.ps1" }
-    $homeDir = Get-UserHome
-
-    $defaultPath = Join-Path $homeDir ".llvm\default"
-    $versionPath = Join-Path $homeDir ".llvm\toolchains\$Version"
-
-    if (-not (Test-Path $versionPath)) {
-        Write-LogError "Version $Version is not installed"
-        Write-LogInfo "Available versions:"
-    $toolchainsPath = Join-Path $homeDir ".llvm\toolchains"
-        if (Test-Path $toolchainsPath) {
-            Get-ChildItem $toolchainsPath -Directory | ForEach-Object {
-                Write-LogInfo "  - $($_.Name)"
-            }
-        }
-        return 1
-    }
-
-    # Remove existing default if it exists
-    if (Test-Path $defaultPath) {
-        Remove-Item $defaultPath -Force -Recurse
-    }
-
-    # Create directory junction (similar to symbolic link)
+    $homeDir = Get-LlvmHomePath
+    $toolchainsPath = Get-LlvmSessionToolchainsPath
+    $defaultPath = Get-LlvmDefaultPath -HomePath $homeDir
     try {
-        New-Item -ItemType Junction -Path $defaultPath -Target $versionPath | Out-Null
+        Set-LlvmDefaultVersion -Version $Version -ToolchainsPath $toolchainsPath -HomePath $homeDir | Out-Null
         Write-LogSuccess "Default LLVM version set to: $Version"
         Write-LogInfo "💡 Default toolchain available at: $defaultPath"
     } catch {
-        Write-LogError "Failed to create default version link: $_"
+        Write-LogError $_.Exception.Message
         return 1
     }
 }
 
 function Show-DefaultVersion {
-    # Determine home directory cross-platform
-    $homeDir = if ($env:USERPROFILE) { $env:USERPROFILE } elseif ($env:HOME) { $env:HOME } else { [Environment]::GetFolderPath([System.Environment+SpecialFolder]::UserProfile) }
-
-    $defaultPath = Join-Path $homeDir ".llvm\default"
+    $homeDir = Get-LlvmHomePath
+    $defaultPath = Get-LlvmDefaultPath -HomePath $homeDir
 
     if (Test-Path $defaultPath) {
         try {
             # Get the target of the junction
             $item = Get-Item $defaultPath
-            if ($item.LinkType -eq "Junction") {
+            if ($item.LinkType -in @('Junction', 'SymbolicLink')) {
                 $target = $item.Target
                 $version = Split-Path $target -Leaf
                 Write-LogInfo "📦 Current default LLVM version: $version"
@@ -138,20 +116,14 @@ function Show-DefaultVersion {
 }
 
 function Clear-DefaultVersion {
-    $homeDir = if ($env:LLVM_HOME) { $env:LLVM_HOME } elseif ($env:USERPROFILE) { Join-Path $env:USERPROFILE '.llvm' } elseif ($env:HOME) { Join-Path $env:HOME '.llvm' } else { Join-Path ([Environment]::GetFolderPath([System.Environment+SpecialFolder]::UserProfile)) '.llvm' }
-    $defaultPath = if ($env:LLVM_HOME) { Join-Path $env:LLVM_HOME 'default' } else { Join-Path $homeDir 'default' }
-    $item = Get-Item -LiteralPath $defaultPath -Force -ErrorAction SilentlyContinue
-    if (-not $item) {
-        Write-LogInfo "No default LLVM version is set"
-        return 0
-    }
-    $isLink = $item.LinkType -in @('Junction', 'SymbolicLink') -or (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)
-    if (-not $isLink) {
-        Write-LogError "Refusing to remove non-link default path: $defaultPath"
+    $homeDir = Get-LlvmHomePath
+    try {
+        Clear-LlvmDefaultVersion -HomePath $homeDir | Out-Null
+        Write-LogSuccess "Default LLVM version cleared"
+    } catch {
+        Write-LogError $_.Exception.Message
         return 1
     }
-    Remove-Item -LiteralPath $defaultPath -Force
-    Write-LogSuccess "Default LLVM version cleared"
 }
 
 # Execute command

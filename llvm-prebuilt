@@ -23,6 +23,8 @@ fi
 VERBOSE=0
 QUIET=0
 VERIFY_REQUEST=""
+CUSTOM_NAME=""
+SET_DEFAULT=0
 ARGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -43,6 +45,18 @@ while [[ $# -gt 0 ]]; do
             VERIFY_REQUEST="$2"
             shift 2
             ;;
+        -n|--name)
+            if [ $# -lt 2 ]; then
+                echo "Option $1 requires an installation name" >&2
+                exit 1
+            fi
+            CUSTOM_NAME="$2"
+            shift 2
+            ;;
+        -d|--default)
+            SET_DEFAULT=1
+            shift
+            ;;
         -h|--help)
             echo "Usage: $0 [OPTIONS] [VERSION]"
             echo ""
@@ -50,6 +64,8 @@ while [[ $# -gt 0 ]]; do
             echo "  -v, --verbose    Enable verbose output"
             echo "  -q, --quiet      Suppress non-essential output"
             echo "  --verify POLICY  Verification policy: warn, strict, or skip"
+            echo "  -n, --name NAME  Use a custom installation name"
+            echo "  -d, --default    Set the installed toolchain as default"
             echo "  -h, --help       Show this help message"
             echo ""
             echo "Arguments:"
@@ -76,6 +92,17 @@ done
 
 # Restore positional parameters
 set -- "${ARGS[@]}"
+if [ $# -gt 1 ]; then
+    echo "Only one LLVM version can be installed at a time" >&2
+    exit 1
+fi
+
+case "$CUSTOM_NAME" in
+    .|..|*/*|*\\*)
+        echo "Invalid installation name: $CUSTOM_NAME" >&2
+        exit 1
+        ;;
+esac
 
 # Logging functions
 log_verbose() {
@@ -144,13 +171,17 @@ SHA_URL="$(jq -r '.checksum_url // ""' <<< "$RELEASE_METADATA")"
 JSONL_URL="$(jq -r '.attestation_url // ""' <<< "$RELEASE_METADATA")"
 
 LLVM_TOOLCHAINS_DIR="$(llvm-get-toolchains-dir 2>/dev/null || echo "$HOME/.llvm/toolchains")"
-TARGET_DIR="$LLVM_TOOLCHAINS_DIR/$SELECTED_VERSION"
+INSTALL_NAME="${CUSTOM_NAME:-$SELECTED_VERSION}"
+TARGET_DIR="$LLVM_TOOLCHAINS_DIR/$INSTALL_NAME"
 
 if [ -e "$TARGET_DIR" ]; then
     if llvm-validate-toolchain-path "$TARGET_DIR"; then
         llvm-validate-verification-marker "$TARGET_DIR" "$SELECTED_VERSION" \
             "$ASSET_DIGEST" "$VERIFY_POLICY" || exit 1
-        log_success "LLVM $SELECTED_VERSION is already installed in $TARGET_DIR"
+        if [ "$SET_DEFAULT" -eq 1 ]; then
+            llvm-default-set "$INSTALL_NAME" || exit 1
+        fi
+        log_success "LLVM $SELECTED_VERSION is already installed as $INSTALL_NAME in $TARGET_DIR"
         exit 0
     fi
 
@@ -171,8 +202,15 @@ TEMP_DIR="$(mktemp -d "$TEMP_BASE/llvmup-${SELECTED_VERSION}.XXXXXX")" || {
     log_error "Failed to create a temporary directory in $TEMP_BASE"
     exit 1
 }
+STAGING_ROOT=""
 log_verbose "Temporary directory: $TEMP_DIR"
-trap 'rm -rf "$TEMP_DIR"' EXIT
+cleanup_prebuilt_install() {
+    rm -rf -- "$TEMP_DIR"
+    if [ -n "$STAGING_ROOT" ]; then
+        rm -rf -- "$STAGING_ROOT"
+    fi
+}
+trap cleanup_prebuilt_install EXIT
 
 DEST_FILE="$TEMP_DIR/$ASSET_NAME"
 
@@ -226,16 +264,29 @@ fi
 log_info "Extracting the archive... (this may take a few moments)"
 echo "Extraction progress:"
 
+ARCHIVE_LIST_FILE="$TEMP_DIR/archive.list"
+if ! tar -tf "$DEST_FILE" >"$ARCHIVE_LIST_FILE" 2>/dev/null; then
+    log_error "Failed to inspect the downloaded tarball."
+    log_info "The downloaded file might be corrupted. Please try again."
+    exit 1
+fi
+EXTRACTED_DIR="$(awk -F/ 'NF && $1 != "." { print $1; exit }' "$ARCHIVE_LIST_FILE")"
+if [ -z "$EXTRACTED_DIR" ] || [ "$EXTRACTED_DIR" = ".." ]; then
+    log_error "Failed to identify a safe top-level directory in the tarball."
+    exit 1
+fi
+
 # Always show some extraction feedback, even in non-verbose mode
 if [ "$VERBOSE" -eq 1 ]; then
     log_verbose "Extracting with verbose output (showing first 50 files):"
-    if ! tar -xf "$DEST_FILE" -C "$TEMP_DIR" --verbose 2>&1 | head -50; then
+    EXTRACTION_LOG="$TEMP_DIR/extraction.log"
+    if ! tar -xf "$DEST_FILE" -C "$TEMP_DIR" --verbose >"$EXTRACTION_LOG" 2>&1; then
+        sed -n '1,50p' "$EXTRACTION_LOG" >&2
         log_error "Failed to extract the tarball."
         log_info "The downloaded file might be corrupted. Please try again."
-        log_verbose "Cleaning up temporary directory: $TEMP_DIR"
-        rm -rf "$TEMP_DIR"
         exit 1
     fi
+    sed -n '1,50p' "$EXTRACTION_LOG"
 else
     # Show basic extraction progress with a simple progress indicator
     echo -n "Extracting files... "
@@ -243,22 +294,11 @@ else
         echo "FAILED"
         log_error "Failed to extract the tarball."
         log_info "The downloaded file might be corrupted. Please try again."
-        rm -rf "$TEMP_DIR"
         exit 1
     fi
     echo "DONE"
 fi
 
-# Identify the extracted folder (assuming the tarball contains a single main folder)
-log_verbose "Identifying extracted directory structure..."
-EXTRACTED_DIR=$(tar -tf "$DEST_FILE" | head -1 | cut -d/ -f1)
-if [ -z "$EXTRACTED_DIR" ]; then
-    log_error "Failed to identify the extracted directory."
-    log_info "The tarball structure might be unexpected. Please try again."
-    log_verbose "Cleaning up temporary directory: $TEMP_DIR"
-    rm -rf "$TEMP_DIR"
-    exit 1
-fi
 log_verbose "Extracted directory: $EXTRACTED_DIR"
 
 log_info "Preparing final installation directory..."
@@ -274,43 +314,49 @@ if ! mkdir -p "$LLVM_TOOLCHAINS_DIR"; then
 fi
 
 # Move the extracted folder to the final directory
-log_info "Installing LLVM to final location..."
-log_verbose "Moving from: $TEMP_DIR/$EXTRACTED_DIR"
-log_verbose "Moving to: $TARGET_DIR"
+STAGING_ROOT="$(mktemp -d "$LLVM_TOOLCHAINS_DIR/.llvmup-${INSTALL_NAME}.installing.XXXXXX")" || {
+    log_error "Failed to create an installation staging directory in $LLVM_TOOLCHAINS_DIR"
+    exit 1
+}
+STAGED_TOOLCHAIN="$STAGING_ROOT/toolchain"
 
-if ! mv "$TEMP_DIR/$EXTRACTED_DIR" "$TARGET_DIR"; then
-    log_error "Failed to move the extracted files to the target directory."
+if ! mv "$TEMP_DIR/$EXTRACTED_DIR" "$STAGED_TOOLCHAIN"; then
+    log_error "Failed to move the extracted files into the staging directory."
     log_info "Please check if you have write permissions in your home directory."
-    log_verbose "Cleaning up temporary directory: $TEMP_DIR"
-    rm -rf "$TEMP_DIR"
     exit 1
 fi
 
-log_info "LLVM $SELECTED_VERSION installed in $TARGET_DIR."
-
-# Clean up temporary files
-log_verbose "Cleaning up temporary files: $TEMP_DIR"
-if ! rm -rf "$TEMP_DIR"; then
-    log_warning "Failed to clean up temporary files in $TEMP_DIR"
-    log_info "You can safely delete this directory manually."
-fi
-trap - EXIT
-
-# Verify installation
-if ! llvm-validate-toolchain-path "$TARGET_DIR"; then
-    log_error "Installation verification failed for $TARGET_DIR"
+# Verify before publishing the final installation path.
+if ! llvm-validate-toolchain-path "$STAGED_TOOLCHAIN"; then
+    log_error "Installation verification failed before publishing $TARGET_DIR"
     if [ "$VERBOSE" -eq 1 ]; then
         log_verbose "Contents of installation directory:"
-        ls -la "$TARGET_DIR" 2>/dev/null || log_verbose "Directory listing failed"
+        ls -la "$STAGED_TOOLCHAIN" 2>/dev/null || log_verbose "Directory listing failed"
     fi
     exit 1
 fi
 
-if ! llvm-write-verification-marker "$TARGET_DIR" "$SELECTED_VERSION" \
+if ! llvm-write-verification-marker "$STAGED_TOOLCHAIN" "$SELECTED_VERSION" \
     "$ASSET_NAME" "$ASSET_DIGEST" "$VERIFY_POLICY"; then
     log_error "Failed to write the toolchain verification marker."
     exit 1
 fi
+
+log_info "Installing LLVM to final location..."
+log_verbose "Moving from: $STAGED_TOOLCHAIN"
+log_verbose "Moving to: $TARGET_DIR"
+if ! mv "$STAGED_TOOLCHAIN" "$TARGET_DIR"; then
+    log_error "Failed to publish the validated toolchain at $TARGET_DIR"
+    exit 1
+fi
+
+if [ "$SET_DEFAULT" -eq 1 ]; then
+    llvm-default-set "$INSTALL_NAME" || exit 1
+fi
+
+log_info "LLVM $SELECTED_VERSION installed as $INSTALL_NAME in $TARGET_DIR."
+cleanup_prebuilt_install
+trap - EXIT
 
 log_info "Installation verification: clang and clang++ are usable ✓"
 if [ "$VERBOSE" -eq 1 ]; then
@@ -320,5 +366,5 @@ fi
 
 log_info ""
 log_success "Installation completed successfully!"
-log_info "Run 'llvm-activate $SELECTED_VERSION' to activate the installed version."
+log_info "Run 'llvm-activate $INSTALL_NAME' to activate the installed version."
 log_info ""

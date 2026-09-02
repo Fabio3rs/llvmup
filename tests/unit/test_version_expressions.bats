@@ -257,6 +257,14 @@ teardown() {
     [ "$status" -eq 0 ]
 }
 
+@test "llvm-version-matches-range: tilde preserves an explicit patch lower bound" {
+    run llvm-version-matches-range "1.2.2" "~1.2.3"
+    [ "$status" -eq 1 ]
+
+    run llvm-version-matches-range "1.2.3" "~1.2.3"
+    [ "$status" -eq 0 ]
+}
+
 @test "llvm-version-matches-range: version matches 18.* wildcard" {
     run llvm-version-matches-range "llvmorg-18.1.8" "18.*"
     [ "$status" -eq 0 ]

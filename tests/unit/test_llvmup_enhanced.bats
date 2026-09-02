@@ -40,6 +40,20 @@ teardown() {
     assert_output --partial "--component"
 }
 
+@test "llvmup install help does not execute command substitutions from examples" {
+    run env -i HOME="$TEST_HOME" PATH=/usr/bin:/bin bash "$ORIGINAL_DIR/llvmup" install --help
+
+    assert_success
+    [[ "$output" != *"command not found"* ]]
+}
+
+@test "llvmup rejects source build options for a prebuilt install" {
+    run bash "$ORIGINAL_DIR/llvmup" install --profile minimal 22.1.8
+
+    assert_failure
+    assert_output --partial "Build options require --from-source"
+}
+
 @test "llvmup help uses shell help when functions are available" {
     run bash -lc "export HOME='$TEST_HOME'; export LLVMUP_DISABLE_AUTOACTIVATE=1; source '$ORIGINAL_DIR/llvm-functions.sh'; llvmup help"
     assert_success

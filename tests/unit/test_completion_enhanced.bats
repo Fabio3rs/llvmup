@@ -133,6 +133,18 @@ EOF
     [[ "$output" == *"source-llvmorg-21-init"* ]]
 }
 
+@test "local completion prefers the canonical toolchains directory" {
+    local canonical_dir="$TEST_DIR/canonical-toolchains"
+    mkdir -p "$canonical_dir/llvmorg-22.1.8"
+    export LLVM_TOOLCHAINS_DIR="$canonical_dir"
+
+    run _llvm_get_local_versions
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"llvmorg-22.1.8"* ]]
+    [[ "$output" != *"llvmorg-19.1.7"* ]]
+}
+
 @test "main llvmup completion provides completions" {
     # Test main command completion - the specific content depends on context
     # but it should always provide SOME completions

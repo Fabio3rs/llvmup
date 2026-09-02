@@ -72,3 +72,17 @@ teardown() {
     run llvm-deactivate
     [ "$status" -eq 0 ]
 }
+
+@test "standalone activate and deactivate restore variables that were originally unset" {
+    unset CC CXX LD PS1
+
+    source "$TEST_DIR/.local/bin/llvm-activate" "$TEST_VERSION" >/dev/null
+    [ -n "${CC+x}" ]
+    [ -n "${CXX+x}" ]
+
+    source "$TEST_DIR/.local/bin/llvm-deactivate" >/dev/null
+    [ -z "${CC+x}" ]
+    [ -z "${CXX+x}" ]
+    [ -z "${LD+x}" ]
+    [ -z "${PS1+x}" ]
+}

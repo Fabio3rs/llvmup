@@ -29,6 +29,15 @@ Describe 'PowerShell llvmup lifecycle facade' {
         }
     }
 
+    It 're-exports the core matcher with candidate-version support' {
+        $command = Get-Command Invoke-LlvmMatchVersions
+        $command.Parameters.Keys | Should -Contain 'CandidateVersions'
+
+        Invoke-LlvmMatchVersions -Expression '~22.1.3' -CandidateVersions @(
+            'llvmorg-22.1.2', 'llvmorg-22.1.3', 'llvmorg-22.1.8'
+        ) | Should -BeExactly @('llvmorg-22.1.3', 'llvmorg-22.1.8')
+    }
+
     It 'lists installed versions as valid JSON with active and default metadata' {
         $version = 'llvmorg-18.1.8'
         New-Item -ItemType Directory -Force -Path (Join-Path $env:LLVM_TOOLCHAINS_DIR "$version/bin") | Out-Null

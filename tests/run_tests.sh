@@ -178,21 +178,9 @@ if [ -n "$PWSH_BIN" ]; then
         print_error "❌ PowerShell tests FAILED"
     fi
 else
-    # Fallback: run in an interactive bash shell which may source ~/.bashrc and define functions like pwshd
-    print_status "PowerShell not found in non-interactive PATH; attempting interactive shell fallback..."
-    print_verbose "This can detect functions defined in user shell config (e.g. pwshd in .bashrc)"
-    export RUNNER_PATH="$(pwd)/tests/_pester_runner.ps1"
-    bash -ic 'if command -v pwsh >/dev/null 2>&1; then pwsh -NoProfile -File "$RUNNER_PATH"; elif command -v pwshd >/dev/null 2>&1; then pwshd -NoProfile -File "$RUNNER_PATH"; else echo "No pwsh or pwshd found in interactive shell"; exit 127; fi'
-    PESTER_RESULT=$?
-    if [ $PESTER_RESULT -eq 0 ]; then
-        print_info "✅ PowerShell tests PASSED (via interactive fallback)"
-    elif [ $PESTER_RESULT -eq 127 ]; then
-        print_warning "PowerShell not found. Skipping Pester tests."
-        print_verbose "To run PowerShell tests, install PowerShell or ensure pwshd is available in non-interactive shells."
-        PESTER_RESULT=0
-    else
-        print_error "❌ PowerShell tests FAILED (via interactive fallback)"
-    fi
+    print_warning "PowerShell not found. Skipping Pester tests."
+    print_verbose "Install pwsh or provide a non-interactive pwshd executable to run PowerShell tests locally."
+    PESTER_RESULT=0
 fi
 
 echo "==============================================="

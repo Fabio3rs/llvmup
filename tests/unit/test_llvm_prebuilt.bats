@@ -378,3 +378,54 @@ teardown() {
     [[ "$output" == *"clang++ is missing or not executable"* ]]
     [[ "$output" == *"Incomplete LLVM installation already exists"* ]]
 }
+
+@test "llvm-prebuilt installs a custom name and sets it as default" {
+    create_download_fixture
+    export LLVMUP_SKIP_VERIFY=1
+
+    run "$BATS_TEST_DIRNAME/../../llvm-prebuilt" --name custom-llvm --default "20.1.8"
+
+    [ "$status" -eq 0 ]
+    [ -x "$LLVM_TOOLCHAINS_DIR/custom-llvm/bin/clang" ]
+    [ -L "$HOME/.llvm/default" ]
+    [ "$(basename "$(readlink "$HOME/.llvm/default")")" = "custom-llvm" ]
+    [[ "$output" == *"installed as custom-llvm"* ]]
+}
+
+@test "verbose extraction propagates tar failures" {
+    create_download_fixture
+    export LLVMUP_SKIP_VERIFY=1
+    local real_tar
+    real_tar="$(command -v tar)"
+    mkdir -p "$TEST_DIR/fake-bin"
+    cat > "$TEST_DIR/fake-bin/tar" << EOF
+#!/bin/sh
+if [ "\$1" = "-tf" ]; then
+    exec "$real_tar" "\$@"
+fi
+exit 2
+EOF
+    chmod +x "$TEST_DIR/fake-bin/tar"
+    export PATH="$TEST_DIR/fake-bin:$PATH"
+
+    run "$BATS_TEST_DIRNAME/../../llvm-prebuilt" --verbose "20.1.8"
+
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"Failed to extract the tarball"* ]]
+    [ ! -e "$LLVM_TOOLCHAINS_DIR/llvmorg-20.1.8" ]
+}
+
+@test "invalid extracted toolchain is never published" {
+    create_download_fixture
+    export LLVMUP_SKIP_VERIFY=1
+    local package_dir="$TEST_DIR/package/LLVM-20.1.8-Linux-X64"
+    local archive="$TEST_DIR/LLVM-20.1.8-Linux-X64.tar.xz"
+    rm "$package_dir/bin/clang++"
+    tar -cf "$archive" -C "$TEST_DIR/package" "$(basename "$package_dir")"
+
+    run "$BATS_TEST_DIRNAME/../../llvm-prebuilt" "20.1.8"
+
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"Installation verification failed before publishing"* ]]
+    [ ! -e "$LLVM_TOOLCHAINS_DIR/llvmorg-20.1.8" ]
+}

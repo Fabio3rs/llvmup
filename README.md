@@ -138,6 +138,11 @@ when the matching toolchain is already installed.
 Source builds clone the selected LLVM release, configure it with CMake, build
 with Ninja, and install it alongside prebuilt toolchains.
 
+On Windows, run the command from **Developer PowerShell for Visual Studio**.
+Source builds require Git, CMake, Ninja, and an existing C/C++ compiler such as
+MSVC (`cl.exe`) or Clang. Installing CMake and Ninja alone is not enough because
+LLVM needs a bootstrap compiler.
+
 ```bash
 # Default source build
 llvmup install --from-source 22.1.8

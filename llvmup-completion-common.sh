@@ -55,7 +55,18 @@ EOF
 }
 
 _llvmup_get_local_versions() {
-    local toolchains_dir="${LLVM_CUSTOM_TOOLCHAINS_DIR:-$HOME/.llvm/toolchains}"
+    local toolchains_dir
+    if [ -n "${LLVM_TOOLCHAINS_DIR:-}" ]; then
+        toolchains_dir="$LLVM_TOOLCHAINS_DIR"
+    elif [ -n "${LLVM_CUSTOM_TOOLCHAINS_DIR:-}" ]; then
+        toolchains_dir="$LLVM_CUSTOM_TOOLCHAINS_DIR"
+    elif [ -n "${LLVM_HOME:-}" ]; then
+        toolchains_dir="$LLVM_HOME/toolchains"
+    elif [ -n "${LLVM_CUSTOM_HOME:-}" ]; then
+        toolchains_dir="$LLVM_CUSTOM_HOME/toolchains"
+    else
+        toolchains_dir="$HOME/.llvm/toolchains"
+    fi
     if [ -d "$toolchains_dir" ]; then
         find "$toolchains_dir" -maxdepth 1 -type d -exec basename {} \; | grep -v "^toolchains$" | sort
     fi

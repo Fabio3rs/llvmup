@@ -1538,6 +1538,36 @@ llvm-config-load() {
 
 # Function to apply directory configuration from loaded config
 llvm-config-apply-directories() {
+    local directory_var
+
+    # Restore the environment that existed before the first project config was
+    # applied. This prevents paths from one project leaking into the next one.
+    if [ "${_LLVM_CONFIG_DIRECTORY_STATE_INITIALIZED:-0}" -eq 1 ]; then
+        for directory_var in LLVM_HOME LLVM_TOOLCHAINS_DIR LLVM_SOURCES_DIR LLVM_CUSTOM_HOME LLVM_CUSTOM_TOOLCHAINS_DIR LLVM_CUSTOM_SOURCES_DIR; do
+            local set_var="_LLVM_CONFIG_ORIGINAL_${directory_var}_SET"
+            local value_var="_LLVM_CONFIG_ORIGINAL_${directory_var}"
+            if [ "${!set_var:-0}" -eq 1 ]; then
+                printf -v "$directory_var" '%s' "${!value_var}"
+                export "$directory_var"
+            else
+                unset "$directory_var"
+            fi
+        done
+    else
+        for directory_var in LLVM_HOME LLVM_TOOLCHAINS_DIR LLVM_SOURCES_DIR LLVM_CUSTOM_HOME LLVM_CUSTOM_TOOLCHAINS_DIR LLVM_CUSTOM_SOURCES_DIR; do
+            local set_var="_LLVM_CONFIG_ORIGINAL_${directory_var}_SET"
+            local value_var="_LLVM_CONFIG_ORIGINAL_${directory_var}"
+            if declare -p "$directory_var" >/dev/null 2>&1; then
+                printf -v "$set_var" '%s' 1
+                printf -v "$value_var" '%s' "${!directory_var}"
+            else
+                printf -v "$set_var" '%s' 0
+                printf -v "$value_var" '%s' ''
+            fi
+        done
+        _LLVM_CONFIG_DIRECTORY_STATE_INITIALIZED=1
+    fi
+
     # Set global variables that scripts can use
     if [ -n "$LLVM_CONFIG_LLVM_HOME" ]; then
         export LLVM_CUSTOM_HOME="$LLVM_CONFIG_LLVM_HOME"
@@ -3027,12 +3057,16 @@ llvm-version-matches-range() {
             local base_version=$(echo "$range_expr" | sed 's/^~//')
             local major=$(echo "$base_version" | cut -d. -f1)
             local minor=$(echo "$base_version" | cut -d. -f2)
+            local patch=$(echo "$base_version" | cut -d. -f3)
             if [ -z "$minor" ]; then
                 minor=0
             fi
+            if [ -z "$patch" ]; then
+                patch=0
+            fi
             local next_minor=$((minor + 1))
             local next_version="$major.$next_minor.0"
-            local floor_version="$major.$minor.0"
+            local floor_version="$major.$minor.$patch"
 
             llvm-version-compare "$parsed_version" "$floor_version" 2>/dev/null && \
             ! llvm-version-compare "$parsed_version" "$next_version" 2>/dev/null

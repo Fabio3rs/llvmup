@@ -55,10 +55,10 @@ fi
 # Backup environment variables if not already backed up
 if [ -z "$_OLD_PATH" ]; then
     export _OLD_PATH="$PATH"
-    export _OLD_CC="$CC"
-    export _OLD_CXX="$CXX"
-    export _OLD_LD="$LD"
-    export _OLD_PS1="$PS1"
+    if [ -n "${CC+x}" ]; then export _OLD_CC_SET=1 _OLD_CC="$CC"; else export _OLD_CC_SET=0; unset _OLD_CC; fi
+    if [ -n "${CXX+x}" ]; then export _OLD_CXX_SET=1 _OLD_CXX="$CXX"; else export _OLD_CXX_SET=0; unset _OLD_CXX; fi
+    if [ -n "${LD+x}" ]; then export _OLD_LD_SET=1 _OLD_LD="$LD"; else export _OLD_LD_SET=0; unset _OLD_LD; fi
+    if [ -n "${PS1+x}" ]; then export _OLD_PS1_SET=1 _OLD_PS1="$PS1"; else export _OLD_PS1_SET=0; unset _OLD_PS1; fi
 fi
 
 # Update PATH to include the selected LLVM's bin directory
