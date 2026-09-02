@@ -478,7 +478,15 @@ function Clear-LlvmDefaultVersion {
         throw "Refusing to remove non-link default path: $defaultPath"
     }
 
-    Remove-Item -LiteralPath $defaultPath -Force -ErrorAction Stop
+    # Remove the reparse point itself without traversing its target. On Windows,
+    # Remove-Item without -Recurse can reject non-empty directory junctions,
+    # while using -Recurse has historically risked operating on link targets.
+    # The .NET APIs map to removing the link entry for directory/file links.
+    if (($item.Attributes -band [IO.FileAttributes]::Directory) -ne 0) {
+        [IO.Directory]::Delete($defaultPath, $false)
+    } else {
+        [IO.File]::Delete($defaultPath)
+    }
     return $true
 }
 

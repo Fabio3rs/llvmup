@@ -61,6 +61,20 @@ Describe 'PowerShell llvmup lifecycle facade' {
         $env:_ACTIVE_LLVM | Should -BeNullOrEmpty
     }
 
+    It 'clears the default link without deleting its toolchain target' {
+        $version = 'llvmorg-18.1.8'
+        $versionPath = Join-Path $env:LLVM_TOOLCHAINS_DIR $version
+        $sentinelPath = Join-Path $versionPath 'bin/sentinel.txt'
+        New-Item -ItemType Directory -Force -Path (Split-Path $sentinelPath -Parent) | Out-Null
+        Set-Content -LiteralPath $sentinelPath -Value 'keep'
+
+        llvmup default set $version | Should -BeTrue
+        llvmup default unset | Should -BeTrue
+
+        Test-Path -LiteralPath (Join-Path $env:LLVM_HOME 'default') | Should -BeFalse
+        Test-Path -LiteralPath $sentinelPath | Should -BeTrue
+    }
+
     It 'activates the nearest project configuration in the current session' {
         $version = 'llvmorg-18.1.8'
         $project = Join-Path $TestDrive 'project'
