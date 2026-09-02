@@ -50,7 +50,14 @@ Describe 'PowerShell llvmup lifecycle facade' {
         llvmup default set $version | Should -BeTrue
         llvmup activate $version | Should -BeTrue
 
-        $blocked = & { llvmup remove $version } 2>$null
+        $previousErrorActionPreference = $global:ErrorActionPreference
+        try {
+            # Match the environment created by GitHub Actions' pwsh runner.
+            $global:ErrorActionPreference = 'Stop'
+            $blocked = & { llvmup remove $version } 2>$null
+        } finally {
+            $global:ErrorActionPreference = $previousErrorActionPreference
+        }
         $blocked | Should -BeFalse
         Test-Path (Join-Path $env:LLVM_TOOLCHAINS_DIR $version) | Should -BeTrue
 

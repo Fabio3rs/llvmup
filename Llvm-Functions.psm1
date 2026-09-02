@@ -844,7 +844,10 @@ function llvmup {
             'help' { return Show-LlvmHelp }
         }
     } catch {
-        Write-Error $_.Exception.Message
+        # This facade reports handled command failures by returning false.
+        # Keep an ambient ErrorActionPreference=Stop (as used by GitHub
+        # Actions) from turning that handled result into a new exception.
+        Write-Error $_.Exception.Message -ErrorAction Continue
         return $false
     }
 }
