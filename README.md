@@ -1,106 +1,218 @@
-# LLVMUP: LLVM Version Manager
+# LLVMUP
 
-An LLVM version manager inspired by tools like **rustup**, **Python venv**, and **Node Version Manager (nvm)**. LLVMUP allows you to download, install, compile from source, and switch between different LLVM versions.
+LLVMUP installs and switches between LLVM toolchains on Linux and Windows. It
+supports stable prebuilt releases, source builds, project configuration, and a
+reusable GitHub Action.
 
-**Development Status:** The current release line is `v0.5.0`. The project is functional but remains pre-1.0, so features and APIs may still change. Contributions and bug reports are welcome!
+The current release line is `v0.5.0`. The project is functional but remains
+pre-1.0, so interfaces may change between minor releases. Development is focused
+on bug fixes, regression tests, cross-platform consistency, and documentation
+accuracy. New features are not currently a priority; see the
+[maintenance roadmap](docs/ROADMAP.md).
 
-## Key Features
+## What it does
 
-- **Pre-built LLVM version installation**
-- **Build from source** with native optimizations
-- **Version switching** between installed versions
-- **VSCode integration**
-- **TAB auto-completion** with remote version fetching
-- **24-hour cache** for remote version queries
-- **Status display** of active environment
-- **Project-specific configuration** via `.llvmup-config` files
-- **Build profiles** (minimal, full, custom)
-- **CMake flags support**
-- **Default version management** with symlinks
-- **Component selection** for targeted installations
-- **Windows PowerShell support** with equivalent scripts
-- **Subcommand structure** (install, activate, deactivate, vscode-activate, status, list, config, default)
-- **Custom installation naming** for build variants
-- **Test suite** with 90+ automated tests
-- **LIBC_WNO_ERROR control** for system compatibility
-- **CMake reconfiguration** with `--reconfigure` flag
-- **Logging controls** with verbose/quiet modes
-- **Version parsing** supporting multiple LLVM version formats
-- **Version expressions** with selectors, ranges, and auto-activation
+- Installs stable LLVM releases or builds a release from source
+- Activates and deactivates installed toolchains in the current shell
+- Lists, removes, and reports disk usage for installed toolchains
+- Resolves version selectors and ranges such as `latest`, `~22.1`, and `22.*`
+- Reads project settings from `.llvmup-config`
+- Provides Bash, Zsh, PowerShell, and GitHub Actions entrypoints
+- Verifies prebuilt downloads according to a configurable security policy
 
-## Latest Features - Version Expression System
+## Linux quick start
 
-### Version Selection
-- **Selectors**: `latest`, `oldest`, `newest`, `earliest` for automatic version selection
-- **Type Filters**: `prebuilt`, `source`, `latest-prebuilt`, `latest-source`
-- **Version Ranges**: `>=18.0.0`, `<=19.1.0`, `~19.1`, `18.*` for version matching
-- **Specific Versions**: Support for `llvmorg-18.1.8`, `source-llvmorg-20.1.0`
+Requirements for prebuilt installs are `curl`, `jq`, and `tar`. Source builds
+also require `git`, `cmake`, and `ninja`.
 
-### Auto-Activation
-- **Expression-Based**: Use expressions in `.llvmup-config` for auto-activation
-- **Project-Specific**: Configure expressions like `latest-prebuilt` or `>=18.0.0` per project
-- **Fallback Logic**: Uses fallback when exact versions aren't available
-
-### Logging Controls
-- **EXPRESSION_VERBOSE**: Show expression processing details
-- **EXPRESSION_DEBUG**: Debug output for troubleshooting
-- **QUIET_MODE**: Minimal output for scripts and automation
-
-## Build & Configuration Features
-
-### Build System
-- **LIBC_WNO_ERROR Control**: Control over compatibility flags with `--disable-libc-wno-error`
-- **CMake Reconfiguration**: Force clean rebuilds with `--reconfigure`
-- **Config Functions**: Separate load, apply, and activate workflows
-- **CMake Presets**: Built-in Debug, Release, RelWithDebInfo, MinSizeRel presets
-- **Auto Version Detection**: Automatic detection of installed versions during config init
-- **Variable Trimming**: Config parsing with whitespace handling
-
-## Auto-Completion Features
-- **Remote Version Fetching**: Fetches LLVM versions from GitHub API
-- **Caching**: 24-hour cache system
-- **Context-Aware**: Differentiates between prebuilt and source installations
-- **Filtering**: Filters suggestions based on current input
-
-## Quick Start
-
-### Linux
-
-#### 1. Installation
-
-##### One line standard installation
 ```bash
-git clone https://github.com/Fabio3rs/llvmup.git && cd llvmup && ./install.sh && source ~/.bashrc
-```
-
-##### Standard Installation
-```bash
-# Clone the repository
 git clone https://github.com/Fabio3rs/llvmup.git
 cd llvmup
-
-# Run the installation script
 ./install.sh
-
-# Restart terminal or reload profile
 source ~/.bashrc
+
+llvmup install 22.1.8
+llvmup activate llvmorg-22.1.8
+clang --version
 ```
 
-After reloading your shell profile, Linux commands such as `llvmup activate`, `llvmup deactivate`, `llvmup config activate`, `llvmup status`, `llvmup list`, and `llvmup disk-usage` are provided by shell functions loaded from `llvm-functions.sh`. Those functions call the helper scripts installed in your `bin` directory when needed, and user installs configure both Bash and Zsh to load that function layer automatically.
+The installer copies the commands to `~/.local/bin` by default and configures
+Bash or Zsh to load the shell functions. Activation changes the environment of
+the current shell, so reload the configured profile before using it.
 
-For GitHub Actions on Linux or Windows, prefer the reusable action:
+To install without changing shell profiles:
+
+```bash
+./install.sh --no-profile
+```
+
+See [the installation guide](docs/INSTALL.md) for custom prefixes, system-wide
+installation, and CI setup.
+
+## Windows quick start
+
+Use PowerShell 5.0 or newer:
+
+```powershell
+git clone https://github.com/Fabio3rs/llvmup.git
+Set-Location llvmup
+Import-Module .\Llvm-Functions.psm1 -Force
+
+llvmup install 22.1.8
+llvmup activate llvmorg-22.1.8
+clang --version
+```
+
+Import the module in each new PowerShell session where the `llvmup` function is
+needed. Release verification can use GPG or an authenticated GitHub CLI when
+those tools are installed.
+
+## Main commands
+
+```text
+llvmup install [version]          Install a stable prebuilt release
+llvmup install --from-source      Build an LLVM release from source
+llvmup resolve <expression>       Resolve a stable release without installing it
+llvmup activate <version>         Activate an installed version in this shell
+llvmup deactivate                 Restore the previous shell environment
+llvmup status                     Show the active version and paths
+llvmup list                       List installed versions
+llvmup list --remote              List stable remote releases
+llvmup remove <version>           Remove one installed toolchain
+llvmup disk-usage [-h]            Show space used by installed toolchains
+llvmup default set <version>      Set the default installed version
+llvmup default show               Show the current default
+llvmup default unset              Clear the current default
+llvmup config init                Create a project configuration
+llvmup config apply               Install from project configuration
+llvmup config activate            Activate the configured installed version
+llvmup help                       Show command help
+```
+
+`llvmup` also accepts the legacy short form `llvmup 22.1.8` for a prebuilt
+install. Prefer the explicit `llvmup install` form in scripts.
+
+## Version expressions
+
+Installed-version matching supports:
+
+- Selectors: `latest`, `oldest`, `newest`, `earliest`
+- Installation types: `prebuilt`, `source`, `latest-prebuilt`, `latest-source`
+- Ranges: `>=18.0.0`, `<=19.1.0`, `~19.1`, `18.*`
+- Exact identifiers: `llvmorg-22.1.8`, `source-llvmorg-22.1.8`
+
+For example:
+
+```bash
+llvmup resolve latest
+llvmup resolve '~22.1'
+llvmup activate "$(llvm-match-versions latest-prebuilt)"
+```
+
+The `llvm-match-versions` helper searches installed versions. `llvmup resolve`
+searches stable remote releases and accepts `latest`, exact releases, and ranges
+such as `~22.1` or `22.*`; source-only expressions do not apply to prebuilt
+release resolution.
+
+## Project configuration
+
+Create a `.llvmup-config` with `llvmup config init`, then adjust only the values
+needed by the project. A minimal example is:
+
+```ini
+[version]
+default = "llvmorg-22.1.8"
+
+[profile]
+type = "minimal"
+
+[components]
+include = ["clang", "lld"]
+```
+
+Use `llvmup config apply` to install from the file or `llvmup config activate`
+when the matching toolchain is already installed.
+
+## Building from source
+
+Source builds clone the selected LLVM release, configure it with CMake, build
+with Ninja, and install it alongside prebuilt toolchains.
+
+```bash
+# Default source build
+llvmup install --from-source 22.1.8
+
+# Smaller clang and lld build
+llvmup install --from-source --profile minimal 22.1.8
+
+# Select projects explicitly
+llvmup install --from-source \
+  --component clang \
+  --component lld \
+  22.1.8
+
+# Pass a CMake option
+llvmup install --from-source \
+  --cmake-flags "-DCMAKE_BUILD_TYPE=Debug" \
+  22.1.8
+```
+
+Run `llvmup help` before using build customization in automation; the
+project is pre-1.0 and these options may still change.
+
+## Download verification
+
+Prebuilt installs support three verification policies:
+
+- `warn` (default): verify when supported and warn when origin authentication is
+  unavailable.
+- `strict`: require a valid GPG signature or Sigstore attestation.
+- `skip`: explicitly bypass verification.
+
+```bash
+llvmup install --verify strict 22.1.8
+```
+
+LLVMUP checks a published SHA256 digest or exact checksum companion when one is
+available. Exact `.sig` companions are checked with GPG against LLVM release
+keys; exact `.jsonl` companions are checked with `gh attestation verify` for the
+`llvm/llvm-project` repository. LLVMUP does not install verification tools.
+
+A digest mismatch or an invalid signature or attestation is fatal under `warn`
+and `strict`. Verification applies to prebuilt release assets, not source builds.
+
+The equivalent PowerShell option is:
+
+```powershell
+.\Download-Llvm.ps1 -Version 22.1.8 -VerifyPolicy Strict
+```
+
+## GitHub Actions
+
+The reusable Action supports Linux and Windows stable prebuilt releases. Caching
+is enabled by default.
+
 ```yaml
-- name: Set up LLVM
-  id: llvm
-  uses: Fabio3rs/llvmup@v0.5.0
+- uses: actions/checkout@v6
+- uses: Fabio3rs/llvmup@v0.5.0
   with:
-    version: latest
-    cache: true
-
+    version: 22.1.8
+    verify: strict
 - run: clang --version
 ```
 
-For other CI systems or a manual GitHub Actions setup, use the same CLI entrypoint:
+Inputs:
+
+- `version`: `latest`, an exact release, or a supported expression
+- `cache`: `true` or `false` (default: `true`)
+- `verify`: `warn`, `strict`, or `skip` (default: `warn`)
+- `github-token`: optional token for API and attestation requests
+
+Outputs are `version`, `llvm-path`, `cache-hit`, and `verification`.
+
+For other CI systems, install without modifying profiles and export the selected
+environment explicitly:
+
 ```bash
 LLVMUP_PREFIX="$RUNNER_TEMP/llvmup" ./install.sh --ci
 export PATH="$RUNNER_TEMP/llvmup/bin:$PATH"
@@ -108,952 +220,47 @@ llvmup install 22.1.8
 eval "$(llvmup env llvmorg-22.1.8)"
 ```
 
-##### Custom Installation Paths
-```bash
-# Install to custom location
-LLVMUP_PREFIX=/opt/llvmup ./install.sh
+## Data and installation paths
 
-# System-wide installation (requires sudo)
-LLVMUP_SYSTEM_INSTALL=1 ./install.sh
+User installations default to:
 
-# User installation with custom directory
-LLVMUP_INSTALL_DIR=$HOME/bin ./install.sh
-
-# Interactive installation helper
-./examples/install-examples.sh
+```text
+~/.local/bin/          LLVMUP commands
+~/.llvm/toolchains/    Installed LLVM toolchains
+~/.llvm/sources/       Source checkouts and build data
 ```
 
-For detailed installation instructions, see [INSTALL.md](docs/INSTALL.md).
+Installation paths and LLVM data directories can be overridden. See
+[custom directories](docs/CUSTOM_DIRECTORIES.md) for the supported variables and
+their precedence.
 
-#### 2. Installing an LLVM version
-```bash
-# Install the latest version
-llvmup
+## Uninstalling
 
-# Install a specific version
-llvmup 18.1.8
+Run the uninstaller from the repository checkout:
 
-# Build a version from source
-llvmup --from-source
-
-# Installation with verbose output
-llvmup --verbose 19.1.0
-
-# Resolve a stable remote version without installing it
-llvmup resolve latest
-```
-
-#### 3. Activating and using a version
-```bash
-# Activate a specific version
-llvm-activate 18.1.8
-
-# Check current status
-llvm-status
-
-# List all installed versions
-llvm-list
-
-# Get detailed help
-llvm-help
-```
-
-#### 4. VSCode Integration
-```bash
-# Go to your project and configure VSCode
-cd /your/project
-llvm-vscode-activate 18.1.8
-
-# Reload VSCode window to apply settings
-# Ctrl+Shift+P → "Developer: Reload Window"
-```
-
-### Windows
-1. Clone the repository:
-   ```powershell
-   git clone https://github.com/Fabio3rs/llvmup.git
-   cd llvmup
-   ```
-
-2. Open PowerShell as Administrator and run:
-   ```powershell
-   Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
-   Install-Module -Name Pester -Force -SkipPublisherCheck
-   ```
-
-3. Install an LLVM version:
-   ```powershell
-   Import-Module .\Llvm-Functions.psm1 -Force
-
-   # Canonical cross-platform facade
-   llvmup install 21.1.0
-   llvmup list --remote
-
-   # Pre-built installation
-   .\Download-Llvm.ps1
-
-   # From source with advanced options
-   .\Install-Llvm.ps1 install -FromSource -Profile minimal -Reconfigure -Verbose
-
-   # Using project configuration
-   .\Install-Llvm.ps1 config init
-   .\Install-Llvm.ps1 config apply
-   ```
-
-4. Activate the version (must be "sourced" to modify environment variables):
-   ```powershell
-   llvmup activate llvmorg-21.1.0
-
-   # Legacy script form
-   . .\Activate-Llvm.ps1 <version>
-   ```
-
-## Prerequisites
-
-### Linux
-- `curl`: For file downloads
-- `jq`: For JSON response parsing
-- `tar`: For file extraction
-- `gpg`: For LLVM `.sig` verification when a signature is published (optional in `warn` mode)
-- GitHub CLI `gh` with attestation support: For `.jsonl`/Sigstore verification (optional in `warn` mode)
-- `git`: For building from source (optional)
-- `ninja`: For building from source (optional)
-- `cmake`: For building from source (optional)
-- `bash-completion`: For command auto-completion (optional)
-
-### Windows
-- PowerShell 5.0 or higher
-- Pester module (for tests)
-- `gpg` or GitHub CLI `gh` when authenticated release verification is required
-- Internet connection for downloads
-- Administrator privileges for installation
-- Execution policy set to RemoteSigned (at least for CurrentUser)
-
-## Download Verification
-
-Prebuilt downloads first validate SHA256 integrity from GitHub's `asset.digest`
-or an exact companion checksum file. Integrity alone does not authenticate who
-published the archive, so the scripts also try every exact authentication
-companion published for that asset:
-
-- `<archive>.sig` is verified with `gpg` against LLVM's official release keys in
-  an isolated temporary keyring. The user's personal GPG keyring is never used.
-- `<archive>.jsonl` is verified with `gh attestation verify`, constrained to the
-  `llvm/llvm-project` repository and the downloaded bundle.
-
-Use `--verify warn|strict|skip` with `llvmup install`; the default is `warn`:
-
-- `warn`: try all available verifiers, but continue with a security warning when
-  no installed verifier can authenticate the asset.
-- `strict`: require at least one valid GPG signature or Sigstore attestation.
-- `skip`: explicitly bypass integrity and origin verification.
-
-A missing tool, unsupported `gh` version, unavailable key file, or companion
-download failure is treated as an unavailable method, allowing automatic
-fallback to the other already-installed verifier. No verifier is installed
-automatically. A digest mismatch or an explicit invalid GPG/Sigstore result is
-always fatal in `warn` and `strict`; it is not downgraded to a fallback warning.
-
-Legacy environment controls remain supported:
-
-- `LLVMUP_SKIP_VERIFY=1` — skip verification explicitly
-- `LLVMUP_REQUIRE_VERIFY=1` — require verification and abort if verification fails or is unavailable
-- `LLVMUP_VERIFY_POLICY=warn|strict|skip` — set the policy without a CLI option
-- `LLVMUP_RELEASE_KEYS_FILE=/path/release-keys.asc` — use a local trusted key file
-
-On Windows, use `-VerifyPolicy Warn|Strict|Skip` and optionally
-`-ReleaseKeysPath`. Successful installs record their result in
-`.llvmup-verification.json`; strict cache restores reject missing, incompatible,
-or unauthenticated markers.
-
-Verification currently applies to prebuilt release assets. Source builds reject
-`--verify` rather than implying that release-asset authentication was performed.
-
-## Available Commands
-
-### Installation Commands
-```bash
-llvmup                      # Install latest pre-built version
-llvmup 18.1.8              # Install specific version
-llvmup --from-source        # Build from source
-llvmup --verbose            # Show detailed output
-llvmup --quiet             # Suppress non-essential output
-llvmup install --verify strict 22.1.8 # Require authenticated release origin
-llvmup resolve latest      # Print latest stable remote release tag
-llvmup resolve '~22.1'     # Resolve the newest stable matching release
-
-# Build options (from source)
-llvmup install --from-source --cmake-flags "-DCMAKE_BUILD_TYPE=Debug" 18.1.8
-llvmup install --from-source --profile minimal --name "llvm-18-min" 18.1.8
-llvmup install --from-source --component clang --component lld 18.1.8
-llvmup install --from-source --disable-libc-wno-error 18.1.8  # Disable LIBC_WNO_ERROR flag
-llvmup install --from-source --reconfigure 18.1.8            # Force CMake reconfiguration
-llvmup install --from-source --default 18.1.8               # Set as default after build
-llvmup install --from-source --verbose 18.1.8               # Show verbose output
-```
-
-When remote resolution fails, `llvmup` prints up to ten stable release tags
-identified by GitHub to stderr, which keeps Action logs useful without changing
-the command's tag or JSON output format.
-
-### Environment Management
-```bash
-llvmup activate <version>   # Activate an LLVM version in the current shell
-llvmup deactivate           # Deactivate current version
-llvmup env <version>        # Print shell exports for CI/non-interactive use
-llvmup env --config         # Print shell exports from .llvmup-config
-llvmup env --format github <version> # Persist variables for subsequent Actions steps
-llvmup status               # Show detailed current status
-llvmup list                 # List installed versions
-llvmup list --remote        # List stable remote releases
-llvmup list --json          # Emit installed versions as JSON
-llvmup remove <version>     # Remove one installed toolchain
-llvmup remove <version> --force # Remove an active/default toolchain safely
-llvmup disk-usage           # Show disk usage per installed version
-llvmup disk-usage -h        # Show disk usage in human-readable units
-llvmup help                 # Show detailed usage guide
-
-llvm-activate <version>      # Activate an LLVM version
-llvm-deactivate            # Deactivate current version
-llvm-status                # Show detailed current status
-llvm-list                  # List installed versions
-llvm-disk-usage            # Show disk usage per installed version
-llvm-help                  # Show detailed usage guide
-```
-
-### Configuration Management
-```bash
-llvmup config init         # Create .llvmup-config file
-llvmup config load         # Load and display config
-llvmup config apply        # Install using config settings
-llvmup config activate     # Activate existing installation in the current shell
-llvm-config-init           # Initialize config (function)
-llvm-config-load           # Load config (function)
-llvm-config-apply          # Apply config (function)
-llvm-config-activate       # Activate config (function)
-```
-
-### Default Version Management
-```bash
-llvmup default set <version>  # Set default LLVM version
-llvmup default show           # Show current default version
-llvmup default unset          # Clear current default version
-```
-
-### Development Integration
-```bash
-llvm-vscode-activate <ver>  # Configure VSCode integration
-```
-
-### Version Management & Parsing
-```bash
-# Version parsing and information
-llvm-parse-version <version>     # Parse version string (e.g., llvmorg-18.1.8 → 18.1.8)
-llvm-get-versions [format]       # List installed versions (list/simple/json)
-llvm-version-exists <version>    # Check if version is installed
-llvm-get-active-version         # Get currently active version
-llvm-version-compare <v1> <v2>   # Compare two versions
-llvm-get-latest-version         # Find the latest installed version
-
-# Examples:
-llvm-parse-version "llvmorg-18.1.8"    # Returns: 18.1.8
-llvm-get-versions simple               # List versions one per line
-llvm-get-versions json                 # JSON format for scripting
-llvm-version-exists "llvmorg-19.1.7"   # Returns 0 if exists, 1 if not
-llvm-get-latest-version               # Returns latest version identifier
-```
-
-### Version Expressions
-```bash
-# Expression parsing and matching
-llvm-parse-version-expression <expr>    # Parse and validate expressions
-llvm-match-versions <expression>         # Find versions matching expression
-llvm-version-matches-range <ver> <range> # Check if version matches range
-
-# Selectors
-llvm-match-versions "latest"             # Newest installed version
-llvm-match-versions "oldest"             # Oldest installed version
-
-# Type filters
-llvm-match-versions "prebuilt"           # Only prebuilt versions
-llvm-match-versions "source"             # Only compiled versions
-
-# Combined expressions
-llvm-match-versions "latest-prebuilt"    # Newest prebuilt version
-llvm-match-versions "latest-source"      # Newest source version
-
-# Version ranges
-llvm-match-versions ">=18.0.0"           # Versions >= 18.0.0
-llvm-match-versions "<=19.1.0"           # Versions <= 19.1.0
-llvm-match-versions "~19.1"              # Tilde range (19.1.x)
-llvm-match-versions "18.*"               # Wildcard (18.x.x)
-
-# Specific versions
-llvm-match-versions "llvmorg-18.1.8"     # Specific prebuilt version
-llvm-match-versions "source-llvmorg-20.1.0" # Specific source version
-
-# Auto-activation (in .llvmup-config)
-[version]
-default = "latest-prebuilt"              # Use expressions for auto-activation
-
-# Verbosity controls
-EXPRESSION_VERBOSE=1 llvm-match-versions "latest"    # Show processing details
-EXPRESSION_DEBUG=1 llvm-match-versions ">=18.0.0"    # Full debug output
-QUIET_MODE=1 llvm-match-versions "latest"            # Silent operation
-```
-
-## Installation Configuration
-
-LLVMUP supports flexible installation paths through environment variables:
-
-### Environment Variables
-```bash
-# Installation prefix (default: ~/.local)
-LLVMUP_PREFIX=/opt/llvmup
-
-# Specific installation directory (overrides PREFIX)
-LLVMUP_INSTALL_DIR=$HOME/bin
-
-# Shell completion directories
-LLVMUP_COMPLETION_DIR=/usr/share/bash-completion/completions
-LLVMUP_ZSH_COMPLETION_DIR=/usr/share/zsh/site-functions
-
-# System-wide installation (requires sudo)
-LLVMUP_SYSTEM_INSTALL=1
-```
-
-### Installation Examples
-```bash
-# User installation (default)
-./install.sh
-
-# Custom user location
-LLVMUP_PREFIX=$HOME/tools ./install.sh
-
-# System-wide installation
-sudo LLVMUP_SYSTEM_INSTALL=1 ./install.sh
-
-# Custom installation directory
-LLVMUP_INSTALL_DIR=/usr/local/bin ./install.sh
-```
-
-### Interactive Helper
-Use the interactive installation helper for guided setup:
-```bash
-./examples/install-examples.sh
-```
-
-## Available Tools After Activation
-
-When you activate an LLVM version, the following tools become available:
-
-- **clang/clang++**: C/C++ compilers
-- **ld.lld**: LLVM linker
-- **lldb**: LLVM debugger
-- **clangd**: Language server for IDEs
-- **llvm-ar**: Archiver
-- **llvm-nm**: Symbol table dumper
-- **opt**: LLVM optimizer
-- And many other LLVM tools!
-
-## Example Workflows
-
-### GitHub Actions
-
-The composite action resolves only stable LLVM releases. `latest` excludes
-drafts and prereleases and is converted to a concrete tag before cache lookup.
-Caching is enabled by default and can be disabled per workflow:
-
-```yaml
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: Fabio3rs/llvmup@v0.5.0
-        id: llvm
-        with:
-          version: 22.1.8
-          cache: false
-          verify: strict
-      - run: |
-          clang --version
-          cmake -S . -B build -G Ninja
-          cmake --build build
-```
-
-Inputs:
-
-- `version`: `latest`, a specific version/tag, or an expression such as `~22.1`.
-- `cache`: `true` or `false`; defaults to `true`.
-- `verify`: `warn`, `strict`, or `skip`; defaults to `warn`.
-- `github-token`: optional API token; the workflow token is used by default.
-
-Outputs are `version`, `llvm-path`, `cache-hit`, and `verification`. Linux and
-Windows runners are supported; the resolved toolchain is added to `PATH`, and
-`CC`, `CXX`, `LD` (when available), `LLVMUP_ACTIVE_VERSION`, and
-`LLVMUP_ACTIVE_PATH` are exported to subsequent steps. The `verification` output
-reports values such as `gpg`, `sigstore`, `gpg+sigstore`, `checksum-only`, or
-`unverified`.
-
-Cache entries are separated by operating system, architecture, release asset,
-and verification policy. Every restored toolchain is revalidated before use, so
-a `strict` run never trusts a cache entry without a compatible authenticated
-verification marker.
-
-### Basic Workflow
-```bash
-# 1. Install and activate LLVM
-llvmup 18.1.8
-llvm-activate 18.1.8
-
-# 2. Verify installation
-llvm-status
-clang --version
-
-# 3. Compile a program
-echo '#include <stdio.h>
-int main() { printf("Hello LLVM!\n"); return 0; }' > hello.c
-clang hello.c -o hello
-./hello
-```
-
-### VSCode Development Setup
-```bash
-# 1. Go to your C/C++ project
-cd /my/cpp/project
-
-# 2. Configure LLVM for VSCode
-llvm-vscode-activate 18.1.8
-
-# 3. Open VSCode (settings are applied automatically)
-code .
-
-# 4. Reload VSCode window
-# Ctrl+Shift+P → "Developer: Reload Window"
-```
-
-### Switching Between Versions
-```bash
-# 1. List available versions
-llvm-list
-
-# 2. Deactivate current version
-llvm-deactivate
-
-# 3. Activate another version
-llvm-activate 19.1.0
-
-# 4. Check new active version
-llvm-status
-```
-
-### Building from Source with Custom Options
-```bash
-# 1. Basic build from source
-llvmup install --from-source 18.1.8
-
-# 2. Minimal build (faster)
-llvmup install --from-source --profile minimal 18.1.8
-
-# 3. Custom build with specific flags
-llvmup install --from-source --cmake-flags "-DCMAKE_BUILD_TYPE=Debug" --name "llvm-18-debug" 18.1.8
-
-# 4. Build specific components only
-llvmup install --from-source --component clang --component lld 18.1.8
-
-# 5. Build and set as default
-llvmup install --from-source --profile full --default 18.1.8
-```
-
-### Expression Workflows
-```bash
-# 1. Version selection
-cd /my/cpp/project
-
-# Always use latest prebuilt version
-echo '[version]
-default = "latest-prebuilt"
-[project]
-auto_activate = true' > .llvmup-config
-
-# Auto-activation happens when entering this directory (or a subdirectory)
-
-# 2. Range-based version management
-# Use any version >= 18.0.0
-llvm-activate $(llvm-match-versions ">=18.0.0")
-
-# 3. Conditional version selection with fallback
-if llvm-match-versions "latest-prebuilt" >/dev/null 2>&1; then
-    version=$(llvm-match-versions "latest-prebuilt")
-else
-    version=$(llvm-match-versions "latest")
-fi
-llvm-activate "$version"
-
-# 4. Project-specific version constraints
-# Configure project to use specific version range
-echo '[version]
-default = "~19.1"              # Only 19.1.x versions
-[project]
-auto_activate = true' > .llvmup-config
-
-# 5. Debug version selection process
-EXPRESSION_DEBUG=1 llvm-match-versions "latest-source"
-# Shows detailed logs of version selection process
-```
-
-### Project Configuration Workflow
-```bash
-# 1. Initialize configuration in project
-cd /my/cpp/project
-llvmup config init
-
-# 2. Edit .llvmup-config file as needed
-# Configure build settings, profiles, cmake flags, etc.
-
-# 3. Install and activate based on config
-llvmup config load
-
-# 4. Verify installation
-llvm-status
-```
-
-### Default Version Management
-```bash
-# 1. Set a version as system default
-llvmup default set 18.1.8
-
-# 2. Check current default
-llvmup default show
-
-# 3. Use default in new terminals (automatic)
-# New terminals will have the default version available
-```
-
-## Advanced Features
-
-### Project Configuration Files
-LLVMUP supports project-specific configuration through `.llvmup-config` files:
-
-```ini
-# .llvmup-config - LLVM project configuration
-
-[version]
-default = "llvmorg-18.1.8"
-
-[build]
-name = "my-custom-llvm"
-cmake_flags = [
-  "-DCMAKE_BUILD_TYPE=Debug",
-  "-DCMAKE_CXX_STANDARD=17"
-]
-disable_libc_wno_error = false
-
-[profile]
-type = "minimal"  # or "full", "custom"
-
-[components]
-include = ["clang", "lld", "lldb"]
-
-[project]
-auto_activate = true
-cmake_preset = "Debug"  # Debug, Release, RelWithDebInfo, MinSizeRel
-```
-
-### Build Customization Options
-
-#### CMake Flags Support
-```bash
-# Single flag
-llvmup install --from-source --cmake-flags "-DCMAKE_BUILD_TYPE=Debug" 18.1.8
-
-# Multiple flags
-llvmup install --from-source \
-  --cmake-flags "-DCMAKE_BUILD_TYPE=Debug" \
-  --cmake-flags "-DCMAKE_CXX_STANDARD=17" \
-  18.1.8
-```
-
-#### Build Profiles
-- **minimal**: `clang;lld` - Compiler and linker only
-- **full**: `all` - All available LLVM projects
-- **custom**: User-defined via `--component` flags or config file
-
-#### Component Selection
-```bash
-# Install specific components
-llvmup install --from-source --component clang --component lld --component lldb 18.1.8
-```
-
-#### Advanced Build Options
-```bash
-# Disable LIBC_WNO_ERROR flag for compatibility
-llvmup install --from-source --disable-libc-wno-error 18.1.8
-
-# Force CMake reconfiguration (clean rebuild)
-llvmup install --from-source --reconfigure 18.1.8
-
-# Combine multiple options
-llvmup install --from-source \
-  --cmake-flags "-DCMAKE_BUILD_TYPE=Debug" \
-  --profile minimal \
-  --name "llvm-18-debug-min" \
-  --reconfigure \
-  --verbose \
-  18.1.8
-```
-
-### Default Version System
-LLVMUP can manage system-wide default versions:
-
-```bash
-# Set default (creates symlinks)
-llvmup default set 18.1.8
-
-# Check current default
-llvmup default show
-
-# New terminals automatically have default available
-```
-
-### Windows PowerShell Support
-Windows support with equivalent PowerShell scripts:
-
-```powershell
-# Configuration management
-.\Llvm-Config.ps1 -Command init
-.\Llvm-Config.ps1 -Command load
-
-# Default version management
-.\Llvm-Default.ps1 -Command set -Version "18.1.8"
-.\Llvm-Default.ps1 -Command show
-
-# Disk usage
-Get-LlvmDiskUsage
-Get-LlvmDiskUsage -HumanReadable
-
-# Resolve or install a stable prebuilt release
-.\Download-Llvm.ps1 -Version latest -ResolveOnly
-.\Download-Llvm.ps1 -Version 22.1.8 -VerifyPolicy Strict -ArchiveOnly
-```
-
-### TAB Auto-completion
-```bash
-llvm-activate <TAB><TAB>     # List installed versions
-llvmup --<TAB><TAB>         # List available options
-llvmup install <TAB><TAB>   # Expressions, local installs and remote versions
-llvmup config <TAB><TAB>    # Guided config actions based on .llvmup-config
-llvmup disk-usage --<TAB><TAB>  # Disk usage flags
-```
-
-### Disk Usage Verification
-Use `llvmup disk-usage` to inspect the space consumed by each installation:
-
-```bash
-llvmup disk-usage
-# 8343552	llvmorg-19.1.7
-# 10493952	llvmorg-20.1.0
-# total	18837504	~/.llvm/toolchains
-
-llvmup disk-usage -h
-# 8.0 MiB	llvmorg-19.1.7
-# 10.0 MiB	llvmorg-20.1.0
-# total	18.0 MiB	~/.llvm/toolchains
-```
-
-### Detailed Status Verification
-The `llvm-status` command provides detailed information about the active environment:
-
-```bash
-llvm-status
-# ╭─ LLVM Environment Status ──────────────────────────────────╮
-# │ Status: ACTIVE                                            │
-# │ Version: 18.1.8                                          │
-# │ Path: ~/.llvm/toolchains/18.1.8                          │
-# │                                                           │
-# │ Available tools:                                          │
-# │   • clang (C compiler)                                    │
-# │   • clang++ (C++ compiler)                                │
-# │   • clangd (Language Server)                              │
-# │   • lldb (Debugger)                                       │
-# │                                                           │
-# │ To deactivate: llvm-deactivate                           │
-# ╰───────────────────────────────────────────────────────────╯
-```
-
-## How It Works
-
-### Download & Install (Pre-built Versions)
-- **Entrypoint**: `llvmup install [VERSION_EXPRESSION]`
-- Resolves stable LLVM releases through the GitHub API using the shared version parser
-- **Linux**: Downloads the matching X64 or ARM64 archive, extracts and installs to `~/.llvm/toolchains/<version>`
-- **Windows**: Downloads a matching LLVM installer or archive and installs to `%USERPROFILE%\.llvm\toolchains\<version>`; the reusable Action uses archives for cacheable, non-administrative installs
-- Treats an existing valid toolchain as already installed, including cache restores
-- Validates exact `.sig` and `.jsonl` companions without treating a checksum as proof of release origin
-
-### Build From Source
-- **Subcommand**: `llvmup install --from-source`
-- **Build profiles**: minimal (clang+lld), full (all projects), custom (user-defined)
-- **CMake flags**: `--cmake-flags` for custom build configuration
-- **Component selection**: `--component` for specific LLVM projects
-- **Custom naming**: `--name` for multiple build variants
-- **Auto-default**: `--default` to set as system default after build
-- Shallow clone of LLVM repository for selected release tag to `~/.llvm/sources/<tag>`
-- Configuration, compilation and installation using Ninja to `~/.llvm/toolchains/<name>`
-
-### Project Configuration
-- **Configuration files**: `.llvmup-config` with INI-style format
-- **Array support**: cmake_flags and components as arrays
-- **Subcommands**: `llvmup config init`, `llvmup config load`, `llvmup config apply`, `llvmup config activate`
-- **Profile integration**: Automatic profile selection from config
-- **Override**: Command line options override config file settings
-
-### Logging System
-- **Verbosity**: Logs only appear in verbose mode or test mode
-- **Error handling**: Errors always shown, informational logs controlled
-- **Log functions**: `log_verbose`, `log_info`, `log_error`, `log_config`, etc.
-- **Subcommands**: `llvmup default set <version>` and `llvmup default show`
-- **Symbolic links**: Creates default version links
-- **Cross-platform**: Linux symlinks, Windows junction points
-
-### Version Activation
-- **Linux**: Use `llvm-activate <version>` (no manual sourcing required):
-  - Updates `PATH` to include selected LLVM's `bin` directory
-  - Sets `CC`, `CXX`, and `LD` environment variables
-  - Modifies terminal prompt (`PS1`) to show active LLVM version
-  - Works through shell functions loaded from `llvm-functions.sh`
-- **Windows**: Use PowerShell scripts
-- Prevents activation of new version if one is already active
-
-### Version Deactivation
-- **Linux**: `llvm-deactivate` restores original `PATH`, `CC`, `CXX`, `LD`, and `PS1` values
-- **Windows**: PowerShell scripts restore original environment variables
-
-### VSCode Integration
-- **Linux**: `llvm-vscode-activate <version>` merges LLVM-specific settings into `.vscode/settings.json`:
-  - `cmake.additionalCompilerSearchDirs`
-  - `clangd.path`
-  - `clangd.fallbackFlags`
-  - `cmake.configureEnvironment` (with updated `PATH`)
-  - `cmake.debuggerPath` and debugger environment
-- **Windows**: PowerShell script with equivalent functionality
-- Preserves pre-existing VSCode settings
-
-### Command Auto-completion
-- **Bash**: Contextual completion for:
-  - Available LLVM versions
-  - Expression keywords like `latest`, `latest-prebuilt`, `source`
-  - Range and wildcard templates like `>=18.0.0`, `~19.1`, `18.*`
-  - Subcommands (`install`, `config`, `default`) and command flags
-  - Installed versions for activation
-- **Zsh**: Native completion with grouped suggestions for:
-  - Expressions
-  - Installed local versions
-  - Remote available versions
-  - Config actions and flags
-- **Function completion**: `llvm-activate` and `llvm-vscode-activate` continue completing only installed local versions
-
-### Windows PowerShell Support
-- **Install-Llvm.ps1**: Installation management with build options
-  - Configuration management (`config init`, `config load`, `config apply`, `config activate`)
-  - Build options (`-DisableLibcWnoError`, `-Reconfigure`, `-Verbose`)
-  - Default version management (`default set`, `default show`)
-- **Parameter validation**: PowerShell parameter sets and validation
-- **Canonical facade**: Import `Llvm-Functions.psm1` to use the same `llvmup`
-  subcommands as Bash, including activation in the current PowerShell session
-- **Junction links**: Windows-specific default version management
-- **Version detection**: Detects existing installations during config init
-
-### Wrapper System
-- **Subcommand structure**: `llvmup <command> [options]` format
-- **Commands**: install (default), config, default
-- **Backward compatibility**: Original `llvmup --from-source` still works
-- **Routing**: Commands route to appropriate scripts/functions
-- **Shell-aware activation**: `llvmup config activate` runs through the shell function layer so environment changes persist in the current Linux shell
-
-### Profile Integration
-- Installation script configures your shell profile (`.bashrc` or `.profile`) to load LLVM functions
-- User installs work immediately after reloading the profile; system-wide installs require users to source `llvm-functions.sh` manually in their shell profile
-- Checks if already configured before adding entries
-- Provides warnings instead of errors if scripts are missing
-
-## Installation Script (install.sh)
-
-To facilitate the use of LLVM version manager tools from anywhere, an installation script (`install.sh`) is provided. This script copies the project commands to a directory (by default, `$HOME/.local/bin`) that is typically included in your PATH.
-
-### How to Use the Installation Script
-
-1. **Run the Installer:**
-   ```bash
-   ./install.sh
-   ```
-   This will:
-   - Create the installation directory (`$HOME/.local/bin`) if it doesn't exist
-   - Copy the following scripts to that directory:
-     - `llvm-prebuilt`
-     - `llvm-activate`
-     - `llvm-deactivate`
-     - `llvm-vscode-activate`
-     - `llvm-build` (for source code compilation)
-     - `llvmup` (wrapper command)
-     - `llvm-functions.sh` (bash functions)
-   - Install bash completion script to `$HOME/.local/share/bash-completion/completions`
-   - Set appropriate executable permissions on these scripts
-   - **Automatically configure your shell profile** (`.bashrc` or `.profile`) to load LLVM bash functions
-
-2. **Check PATH:**
-   The installer checks if `$HOME/.local/bin` is in your PATH. If not, you'll receive a warning along with instructions to add it:
-   ```bash
-   export PATH="$HOME/.local/bin:$PATH"
-   ```
-   You can add this line to your shell's startup file (e.g., `~/.bashrc` or `~/.profile`) for persistence.
-
-3. **Using the Commands:**
-   After installation, you can run the commands from anywhere in your terminal:
-   - Use `llvmup` to install LLVM versions
-   - Use `llvm-activate <version>` to activate a specific version
-   - Use `llvm-deactivate` to revert activation
-   - Use `llvm-vscode-activate <version>` to configure VSCode integration
-   - Use `llvm-status` to check active version
-   - Use `llvm-list` to see all installed versions
-   - Use `llvm-help` for detailed usage guide
-
-## Uninstallation
-
-For complete removal of the LLVM manager, an uninstallation script (`uninstall.sh`) is provided. This script removes all installed components and cleans up profile configurations.
-
-### Standard Uninstallation
 ```bash
 ./uninstall.sh
 ```
 
-### Custom Uninstallation
-If you used custom installation paths, use the same environment variables:
-```bash
-# Uninstall from custom prefix
-LLVMUP_PREFIX=/opt/llvmup ./uninstall.sh
+Use the same installation variables that were used with `install.sh` when the
+prefix was customized. The uninstaller preserves installed LLVM toolchains. Use
+`llvmup remove <version>` to remove toolchains individually.
 
-# System-wide uninstallation (requires sudo)
-sudo LLVMUP_SYSTEM_INSTALL=1 ./uninstall.sh
+## Documentation
 
-# Custom installation directory
-LLVMUP_INSTALL_DIR=/usr/local/bin ./uninstall.sh
-```
-
-### What Gets Removed
-The uninstaller will:
-- Remove all LLVM manager scripts from the installation directory
-- Remove bash completion files
-- Clean up shell profile configuration (with backup)
-- Provide instructions for manual cleanup if needed
-
-**Note:** The uninstaller preserves your LLVM toolchain installations in `~/.llvm/toolchains/`. To completely remove all LLVM installations:
-```bash
-rm -rf ~/.llvm
-```
-
-## Windows Scripts
-
-For Windows users, PowerShell scripts are provided to manage LLVM toolchains:
-
-- **Download-Llvm.ps1**: Fetches LLVM releases and installs Windows versions
-- **Activate-Llvm.ps1**: Activates specific LLVM version in PowerShell (must be sourced)
-- **Deactivate-Llvm.ps1**: Reverts changes made by Activate-Llvm.ps1
-- **Activate-LlvmVsCode.ps1**: PowerShell script for VSCode integration
-
-## Additional Features
-
-### Bash Functions
-- **No manual sourcing**: Use `llvm-activate <version>` directly
-- **Automatic loading**: Functions available in new terminals
-- **Additional functions**: `llvmup`, `llvm-status`, `llvm-list`, and `llvm-help`
-- **TAB completion**: Auto-completion for version names
-- **Fallbacks**: Shows warnings if scripts are missing
-
-### Installation Process
-- **Profile configuration**: Shell profile configured automatically during installation
-- **Detection**: Installer chooses the best profile file or creates one if needed
-- **Safe installation**: Checks existing configuration before making changes
-- **Uninstallation**: Uninstaller removes all traces including profile configuration
-
-### User Interface
-- **Consistent**: All operations use simple function calls
-- **Status**: `llvm-status` shows current active version and path
-- **Version listing**: `llvm-list` shows installed versions with active indicator
-- **Error handling**: Clear error messages and guidance
-- **Visual feedback**: Color-coded output for status and errors
+- [Installation](docs/INSTALL.md)
+- [Custom directories](docs/CUSTOM_DIRECTORIES.md)
+- [Build examples](docs/BUILD_EXAMPLE.md)
+- [Maintenance roadmap](docs/ROADMAP.md)
+- [Changelog](CHANGELOG.md)
 
 ## Contributing
 
-Feel free to contribute to this project:
-1. Reporting bugs
-2. Suggesting new features
-3. Submitting pull requests
-4. Improving documentation
+Bug reports should include a minimal reproducer, platform details, and the
+relevant command output. Focused fixes should add a regression test when
+practical. Please discuss feature proposals in an issue before implementing
+them; the current priority is reliability of existing behavior.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Project Organization
-
-### Directory Structure
-```
-llvmup/
-├── docs/              # Extensive documentation
-├── examples/          # Demos and test scripts
-├── tests/             # Automated test suite
-├── scripts/          # Development utilities
-└── Core scripts       # Main functionality
-```
-
-### Documentation (`docs/`)
-- **[INSTALL.md](docs/INSTALL.md)**: Detailed installation guide
-- **[FEATURE_SUMMARY.md](docs/FEATURE_SUMMARY.md)**: All features overview
-- **[COMPLETION_UX_REPORT.md](docs/COMPLETION_UX_REPORT.md)**: Auto-completion system
-- **[BUILD_EXAMPLE.md](docs/BUILD_EXAMPLE.md)**: Build system examples
-- **[test-powershell-features.md](docs/test-powershell-features.md)**: PowerShell feature documentation
-
-### Examples & Demos (`examples/`)
-- **Demo scripts**: Interactive completion and feature demonstrations
-- **Test scripts**: Real activation and compatibility testing
-- **Config examples**: Sample configuration files with LIBC_WNO_ERROR control
-- **[examples/demo-libc-wno-error.sh](examples/demo-libc-wno-error.sh)**: LIBC warning flag demonstration
-- **[examples/README.md](examples/README.md)**: Detailed examples guide
-
-### Testing (`tests/`)
-- **Unit tests**: 90+ automated tests (BATS framework)
-- **Integration tests**: Full workflow validation and cross-platform compatibility
-- **PowerShell tests**: Windows-specific functionality validation
-- **LIBC_WNO_ERROR tests**: Warning flag control system validation
-- **Performance tests**: Speed and efficiency benchmarks
-
-## Useful Links
-
-- [GitHub Repository](https://github.com/Fabio3rs/llvmup)
-- [LLVM Project](https://llvm.org/)
-- [LLVM Documentation](https://llvm.org/docs/)
-- [Clang Documentation](https://clang.llvm.org/docs/)
-
----
-
-## Project Status
-
-**Current Development Features:**
-- Version Expression System with selectors, ranges, and auto-activation
-- 90+ comprehensive automated tests (BATS + Pester)
-- Cross-platform support (Linux Bash + Windows PowerShell)
-- Advanced build customization and configuration management
-- Remote version fetching with intelligent caching
-- Comprehensive documentation in `docs/` folder
-
-**In Development:**
-- Preparing the v0.5.0 release
-- See [CHANGELOG.md](CHANGELOG.md) for complete feature list and development status
-
-**Note**: This is experimental software in active development. Features and APIs may change.
-
----
-
-**Tip**: For help on available commands, run `llvm-help` after installation.
+LLVMUP is licensed under the [MIT License](LICENSE).

@@ -322,21 +322,11 @@ clang++ -o app main.cpp
 - 📋 **Listagem**: < 5ms formato simples
 - 🎯 **Auto-ativação**: < 50ms total
 
-## 🎯 **Próximos Passos e Extensibilidade**
+## Manutenção
 
-O sistema de expressões compreensivas foi projetado para ser extensível:
-
-### Possíveis Futuras Expansões:
-- **Expressões complexas**: `(latest-prebuilt OR >=19.0.0) AND !source`
-- **Filtros avançados**: `debug`, `release`, `with-lldb`
-- **Expressões condicionais**: `if-exists(llvmorg-18.1.8, latest)`
-- **Aliases personalizados**: `stable`, `beta`, `dev`
-
-### Integração com Outras Funcionalidades:
-- ✅ **Auto-ativação**: Já integrado
-- 🔄 **llvmup wrapper**: Pronto para integração
-- 📝 **VSCode integration**: Compatível
-- 🪟 **PowerShell**: Arquitetura preparada para porting
+Não há expansões planejadas para a linguagem de expressões. Alterações devem
+se limitar a corrigir parsing ou seleção incorretos, reduzir divergências entre
+Bash e PowerShell e adicionar testes de regressão para bugs confirmados.
 
 ## 📖 **Referência Rápida**
 

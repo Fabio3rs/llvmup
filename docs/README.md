@@ -7,6 +7,7 @@ This directory contains comprehensive documentation for the LLVMUP project.
 ### Core Documentation
 - **[`INSTALL.md`](INSTALL.md)**: Complete installation guide and setup instructions
 - **[`FEATURE_SUMMARY.md`](FEATURE_SUMMARY.md)**: Comprehensive overview of all features and capabilities
+- **[`ROADMAP.md`](ROADMAP.md)**: Maintenance priorities and feature acceptance policy
 
 ### Technical Documentation
 - **[`COMPLETION_UX_REPORT.md`](COMPLETION_UX_REPORT.md)**: Detailed technical documentation of the auto-completion system

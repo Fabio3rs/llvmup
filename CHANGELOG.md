@@ -111,7 +111,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/VERSION_FUNCTIONS.md` - Version management functions
 - `docs/COMPLETION_UX_REPORT.md` - Auto-completion system
 - `docs/CUSTOM_DIRECTORIES.md` - Custom directory configuration
-- `docs/commit-sha-support.md` - Git commit SHA support
 - `CLAUDE.md` - AI assistant guidance for working with codebase
 
 #### Windows PowerShell Support
@@ -168,21 +167,21 @@ This project is currently in **active development**. Version `0.5.0` is the firs
 
 Because the project remains pre-1.0, interfaces may continue to evolve between minor releases.
 
-### Roadmap after v0.5.0
-- [ ] Comprehensive documentation review
-- [ ] Full test coverage verification
-- [ ] Performance benchmarking
-- [ ] Installation script hardening
-- [ ] Windows installer improvements
+### Maintenance roadmap
 
-### Future Considerations
-- Enhanced Windows PowerShell completion
-- Configuration file validation
-- Plugin system for extensions
-- GUI interface (optional)
-- Docker integration
-- Multi-platform binary distribution
-- Integration with more IDEs
+Until the existing command set is stable, development is focused on:
+
+- Fixing reproducible installation, activation, version resolution, and removal bugs
+- Preventing regressions with focused Bash and PowerShell tests
+- Keeping existing behavior consistent across supported platforms
+- Hardening download verification and failure recovery
+- Correcting documentation that does not match the implemented behavior
+
+New features are not currently planned. A feature request should only enter the
+roadmap when it addresses a demonstrated, recurring problem that cannot be solved
+by the existing commands without adding disproportionate maintenance cost.
+
+See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the maintenance policy.
 
 ---
 
