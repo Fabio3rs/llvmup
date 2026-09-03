@@ -20,10 +20,10 @@ Describe 'Windows LLVM source installation' {
         $result = Get-LlvmSourceBuildTools
 
         $result | Should -BeNullOrEmpty
-        Assert-MockCalled Write-ErrorLog -Times 1 -ParameterFilter {
+        Should -Invoke Write-ErrorLog -Times 1 -Exactly -ParameterFilter {
             $Message -match 'git, cmake, ninja'
         }
-        Assert-MockCalled Write-Host -ParameterFilter {
+        Should -Invoke Write-Host -Times 1 -Exactly -ParameterFilter {
             $Object -match 'git --version; cmake --version; ninja --version'
         }
     }
@@ -39,10 +39,10 @@ Describe 'Windows LLVM source installation' {
         $result = Get-LlvmSourceBuildTools
 
         $result | Should -BeNullOrEmpty
-        Assert-MockCalled Write-ErrorLog -Times 1 -ParameterFilter {
+        Should -Invoke Write-ErrorLog -Times 1 -Exactly -ParameterFilter {
             $Message -match 'bootstrap toolchain'
         }
-        Assert-MockCalled Write-Host -ParameterFilter {
+        Should -Invoke Write-Host -Times 1 -Exactly -ParameterFilter {
             $Object -match 'Developer PowerShell for VS'
         }
     }
@@ -52,7 +52,7 @@ Describe 'Windows LLVM source installation' {
 
         Resolve-LlvmSourceVersion -Expression '22.1.8' -GitCommand 'git' |
             Should -Be 'llvmorg-22.1.8'
-        Assert-MockCalled Invoke-LlvmNativeCommand -Times 0
+        Should -Invoke Invoke-LlvmNativeCommand -Times 0 -Exactly
     }
 
     It 'resolves latest from stable upstream tags' {
@@ -98,17 +98,17 @@ Describe 'Windows LLVM source installation' {
             -SetDefault $false -Profile 'minimal' -Components @()
 
         $result | Should -BeTrue
-        Assert-MockCalled Invoke-LlvmNativeCommand -Times 1 -ParameterFilter {
+        Should -Invoke Invoke-LlvmNativeCommand -Times 1 -Exactly -ParameterFilter {
             $Description -eq 'CMake configuration' -and $Arguments -contains '-G' -and
             $Arguments -contains 'Ninja' -and $Arguments -contains '-DLLVM_ENABLE_PROJECTS=clang;lld'
         }
-        Assert-MockCalled Invoke-LlvmNativeCommand -Times 1 -ParameterFilter {
+        Should -Invoke Invoke-LlvmNativeCommand -Times 1 -Exactly -ParameterFilter {
             $Description -eq 'LLVM build' -and $Arguments -contains '--parallel'
         }
-        Assert-MockCalled Invoke-LlvmNativeCommand -Times 1 -ParameterFilter {
+        Should -Invoke Invoke-LlvmNativeCommand -Times 1 -Exactly -ParameterFilter {
             $Description -eq 'LLVM installation' -and $Arguments -contains 'install'
         }
-        Assert-MockCalled Test-LlvmBuiltToolchain -Times 1
-        Assert-MockCalled Move-Item -Times 1
+        Should -Invoke Test-LlvmBuiltToolchain -Times 1 -Exactly
+        Should -Invoke Move-Item -Times 1 -Exactly
     }
 }
