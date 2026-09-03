@@ -5,12 +5,16 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   test-linux:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
     - name: Install dependencies
       run: |
@@ -94,7 +98,7 @@ jobs:
 
     - name: Upload test results
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: bats-test-results
         path: |
@@ -104,13 +108,13 @@ jobs:
   test-windows:
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
     - name: Install Pester
       shell: pwsh
       run: |
-        Install-Module -Name Pester -Force -SkipPublisherCheck
-        Import-Module Pester
+        Install-Module -Name Pester -RequiredVersion 6.1.0 -Force -SkipPublisherCheck
+        Import-Module Pester -RequiredVersion 6.1.0
 
     - name: Run Pester tests
       shell: pwsh

@@ -3,7 +3,7 @@ description: Install and configure a stable LLVM toolchain with authenticated re
 author: Fabio3rs
 
 branding:
-  icon: tool
+  icon: terminal
   color: blue
 
 inputs:
@@ -133,7 +133,7 @@ runs:
     - name: Restore LLVM toolchain cache
       if: inputs.cache == 'true'
       id: cache
-      uses: actions/cache@v6
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
       with:
         path: ${{ runner.temp }}/llvmup-data/toolchains/${{ steps.resolve-linux.outputs.version || steps.resolve-windows.outputs.version }}
         key: llvmup-v0.5.0-auth-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.verify }}-${{ steps.resolve-linux.outputs.version || steps.resolve-windows.outputs.version }}-${{ steps.resolve-linux.outputs.asset-key || steps.resolve-windows.outputs.asset-key }}

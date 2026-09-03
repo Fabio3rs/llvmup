@@ -1,0 +1,104 @@
+name: Action E2E
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact LLVM release to install on Linux and Windows
+        required: true
+        default: 22.1.8
+        type: string
+      verify:
+        description: Release verification policy
+        required: true
+        default: warn
+        type: choice
+        options:
+          - warn
+          - strict
+          - skip
+
+permissions:
+  contents: read
+
+concurrency:
+  group: action-e2e-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  install:
+    name: Install (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Install LLVM through the local Action
+        id: setup
+        uses: ./
+        with:
+          version: ${{ inputs.version }}
+          verify: ${{ inputs.verify }}
+          cache: true
+
+      - name: Verify Linux installation
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          RESOLVED_VERSION: ${{ steps.setup.outputs.version }}
+          LLVM_PATH: ${{ steps.setup.outputs.llvm-path }}
+        run: |
+          set -euo pipefail
+          test -n "$RESOLVED_VERSION"
+          test -x "$LLVM_PATH/bin/clang"
+          test "$CC" = "$LLVM_PATH/bin/clang"
+          clang --version
+
+      - name: Verify Windows installation
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          RESOLVED_VERSION: ${{ steps.setup.outputs.version }}
+          LLVM_PATH: ${{ steps.setup.outputs.llvm-path }}
+        run: |
+          if (-not $env:RESOLVED_VERSION) { throw 'The version output is empty.' }
+          if (-not (Test-Path (Join-Path $env:LLVM_PATH 'bin\clang.exe'))) { throw 'clang.exe is missing.' }
+          if ($env:CC -ne (Join-Path $env:LLVM_PATH 'bin\clang.exe')) { throw "Unexpected CC: $env:CC" }
+          clang --version
+
+  restore:
+    name: Restore cache (${{ matrix.os }})
+    needs: install
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Restore LLVM through the local Action
+        id: setup
+        uses: ./
+        with:
+          version: ${{ inputs.version }}
+          verify: ${{ inputs.verify }}
+          cache: true
+
+      - name: Require an exact cache hit
+        shell: bash
+        env:
+          CACHE_HIT: ${{ steps.setup.outputs.cache-hit }}
+        run: test "$CACHE_HIT" = true
+
+      - name: Verify restored compiler
+        run: clang --version
