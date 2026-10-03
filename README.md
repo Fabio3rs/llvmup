@@ -266,6 +266,18 @@ relevant command output. Focused fixes should add a regression test when
 practical. Please discuss feature proposals in an issue before implementing
 them; the current priority is reliability of existing behavior.
 
+Run `./tests/run_tests.sh` for the Bash suites (Bats) and, when PowerShell is
+available, the PowerShell suites (Pester). The runner lists unit suites explicitly
+and discovers `tests/integration/*.bats` automatically. GitHub Actions runs Bats
+on Linux and Pester on Windows.
+
+The download-size regression test requires Python 3 and uses its standard-library
+HTTP server on `127.0.0.1` with an automatically assigned port. It exercises real
+HEAD requests, redirects, downloads, checksum verification, and installation using
+a small generated archive, without contacting GitHub. Run it with
+`bats --verbose-run tests/integration/test_prebuilt_http.bats`; when using an agent,
+run this network test through NativeLab MCP.
+
 ## License
 
 LLVMUP is licensed under the [MIT License](LICENSE).

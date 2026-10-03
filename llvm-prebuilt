@@ -217,7 +217,14 @@ DEST_FILE="$TEMP_DIR/$ASSET_NAME"
 # Get file size for progress indication
 log_info "Getting file information..."
 log_verbose "Checking file size at URL: $ASSET_URL"
-FILE_SIZE=$(curl -sI "$ASSET_URL" 2>/dev/null | grep -i content-length | awk '{print $2}' | tr -d '\r')
+FILE_HEADERS=$(curl -fsIL --connect-timeout 10 --max-time 30 "$ASSET_URL" 2>/dev/null) || FILE_HEADERS=""
+# Redirects (and proxy responses) have their own headers. Only use the final
+# response, including when it omits Content-Length entirely.
+FILE_SIZE=$(awk '
+    /^HTTP\// { size = "" }
+    tolower($1) == "content-length:" { size = $2; sub(/\r$/, "", size) }
+    END { if (size ~ /^[0-9]+$/) print size }
+' <<< "$FILE_HEADERS")
 if [ -n "$FILE_SIZE" ]; then
     FILE_SIZE_MB=$((FILE_SIZE / 1024 / 1024))
     log_info "File size: ${FILE_SIZE_MB}MB"

@@ -40,7 +40,7 @@ print_verbose() {
 
 # Check for required commands
 print_status "Checking dependencies..."
-print_verbose "Looking for required tools: bats, jq"
+print_verbose "Looking for required tools: bats, jq, python3"
 
 if ! command_exists bats; then
     print_error "BATS is not installed"
@@ -56,6 +56,11 @@ if ! command_exists jq; then
     exit 1
 else
     print_verbose "jq found: $(which jq)"
+fi
+
+if ! command_exists python3; then
+    print_error "Python 3 is required for the HTTP integration tests"
+    exit 1
 fi
 
 print_info "All dependencies are available"
