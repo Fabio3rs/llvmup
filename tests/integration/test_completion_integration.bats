@@ -99,6 +99,36 @@ teardown() {
     rm -rf "$TEST_DIR"
 }
 
+@test "installed completion finds helpers when the llvmup shell function shadows the executable" {
+    local repo_dir="$BATS_TEST_DIRNAME/../.."
+    local completion_dir="$TEST_DIR/share/bash-completion/completions"
+    mkdir -p "$completion_dir" "$TEST_DIR/work"
+    cp "$repo_dir/llvmup-completion.sh" "$completion_dir/llvmup"
+    cp "$repo_dir/llvmup-completion-common.sh" "$TEST_DIR/bin/"
+    cp "$repo_dir/llvm-functions.sh" "$TEST_DIR/bin/"
+    cp "$repo_dir/llvmup" "$TEST_DIR/bin/llvmup"
+    chmod +x "$TEST_DIR/bin/llvmup"
+
+    # Start a fresh shell so helpers sourced by setup cannot mask the failure.
+    run bash --noprofile --norc -c '
+        unset LLVMUP_INSTALL_DIR
+        cd "$TEST_DIR/work" || exit 1
+        source "$TEST_DIR/bin/llvm-functions.sh"
+        [[ "$(type -t llvmup)" == function ]] || exit 1
+        source "$TEST_DIR/share/bash-completion/completions/llvmup"
+        [[ "$LLVMUP_COMPLETION_COMMON_HELPER" == "$TEST_DIR/bin/llvmup-completion-common.sh" ]] || exit 1
+        COMP_WORDS=(llvmup "")
+        COMP_CWORD=1
+        _llvmup_completions
+        [[ " ${COMPREPLY[*]} " == *" install "* ]] || exit 1
+        [[ " ${COMPREPLY[*]} " == *" latest "* ]] || exit 1
+        [[ " ${COMPREPLY[*]} " == *" llvmorg-21.1.0 "* ]] || exit 1
+    '
+
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
 @test "user workflow: fresh system completion shows latest versions" {
     # Simulate first-time user running: llvmup <TAB>
     COMP_WORDS=("llvmup" "")

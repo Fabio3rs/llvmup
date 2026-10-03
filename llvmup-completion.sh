@@ -15,7 +15,9 @@ _llvmup_completion_resolve_helper() {
         fi
     done
 
-    llvm_path="$(command -v llvmup 2>/dev/null)"
+    # llvm-functions.sh defines a wrapper named llvmup. Search PATH for the
+    # executable even when that function (or an alias) shadows it.
+    llvm_path="$(type -P llvmup 2>/dev/null)"
     if [ -n "$llvm_path" ] && [ -f "$(dirname "$llvm_path")/llvmup-completion-common.sh" ]; then
         echo "$(dirname "$llvm_path")/llvmup-completion-common.sh"
         return 0
