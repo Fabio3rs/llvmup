@@ -248,7 +248,7 @@ $installSB = {
 $llvmupSB = {
     param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
     $elements = @($commandAst.CommandElements | ForEach-Object { $_.Extent.Text.Trim([char[]]@([char]39, [char]34)) })
-    $commands = @('install','activate','deactivate','env','resolve','vscode-activate','status','list','remove','disk-usage','default','config','help')
+    $commands = @('doctor','install','activate','deactivate','env','resolve','vscode-activate','status','list','remove','disk-usage','default','config','help')
     $values = @()
     if ($elements.Count -le 2) {
         $values = $commands
@@ -264,6 +264,7 @@ $llvmupSB = {
                 elseif ($elements[2] -eq 'set') { $values = Get-LlvmLocalVersions }
             }
             'config' { $values = @('init','load','apply','activate') }
+            'doctor' { $values = @('--verbose','--deep','--network','--json','--help') }
             'disk-usage' { $values = @('-h','--human-readable') }
             'install' { $values = @('--from-source','--verify','--name','--default','--profile','--component','--reconfigure','--list-only') + @(Get-LlvmRemoteVersions) }
             default { $values = @() }

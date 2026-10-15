@@ -315,6 +315,7 @@ function Initialize-LlvmConfig {
 }
 
 function Show-LlvmHelp {
+    Write-Output "  llvmup doctor [--verbose] [--deep] [--network] [--json] : Read-only diagnostics"
     @'
 LLVMUP for PowerShell
 
@@ -530,7 +531,7 @@ function llvmup {
     $tokens = @()
     if ($null -ne $First -and [string]$First -ne '') { $tokens += [string]$First }
     $tokens += @($args | ForEach-Object { [string]$_ })
-    $knownCommands = @('install', 'activate', 'deactivate', 'env', 'resolve', 'vscode-activate', 'status', 'list', 'remove', 'disk-usage', 'default', 'config', 'help')
+    $knownCommands = @('doctor', 'install', 'activate', 'deactivate', 'env', 'resolve', 'vscode-activate', 'status', 'list', 'remove', 'disk-usage', 'default', 'config', 'help')
     $command = 'install'
     if ($tokens.Count -and $knownCommands -contains $tokens[0].ToLowerInvariant()) {
         $command = $tokens[0].ToLowerInvariant()
@@ -539,6 +540,11 @@ function llvmup {
 
     try {
         switch ($command) {
+            'doctor' {
+                Import-Module (Join-Path $PSScriptRoot 'Llvm-Doctor.psm1') -DisableNameChecking -ErrorAction Stop
+                Invoke-LlvmDoctor -Tokens $tokens
+                return
+            }
             'install' { return Invoke-LlvmUpInstall -Tokens $tokens }
             'activate' { if (-not $tokens.Count) { throw "Missing version argument for 'activate'" }; return Activate-Llvm $tokens[0] }
             'deactivate' { return Deactivate-Llvm }

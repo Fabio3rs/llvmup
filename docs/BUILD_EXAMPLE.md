@@ -1,8 +1,6 @@
 # LLVM Build Example
 
-## ✅ Funcionalidade Real Restaurada
-
-O `llvm-build` agora está funcionando em modo real completo, mas mantém o modo de teste para automação.
+O `llvm-build` compila e instala LLVM a partir do código-fonte. O modo de teste é reservado para desenvolvimento.
 
 ## Como Usar
 
@@ -33,6 +31,9 @@ llvmup config init
 
 # Exemplo de configuração para desabilitar LIBC_WNO_ERROR
 cat > .llvmup-config << 'EOF'
+[version]
+default = "llvmorg-18.1.8"
+
 [build]
 name = "custom-llvm-18"
 disable_libc_wno_error = true

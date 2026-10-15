@@ -110,7 +110,7 @@ _llvmup_completions() {
     local command="install"
     if [ ${#words[@]} -gt 1 ]; then
         case "${words[1]}" in
-            install|activate|deactivate|env|resolve|vscode-activate|status|list|remove|disk-usage|default|config|help)
+            doctor|install|activate|deactivate|env|resolve|vscode-activate|status|list|remove|disk-usage|default|config|help)
                 command="${words[1]}"
                 ;;
         esac
@@ -168,6 +168,10 @@ _llvmup_completions() {
                     _llvmup_get_range_template_items \
                     _llvmup_get_remote_version_items
             fi
+            return 0
+            ;;
+        doctor)
+            COMPREPLY=( $(compgen -W "--verbose --deep --network --json --help" -- "$cur") )
             return 0
             ;;
         deactivate|status|help)

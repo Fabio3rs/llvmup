@@ -27,6 +27,9 @@
 
 set -e
 
+# Locate packaged files independently of the caller working directory.
+INSTALL_SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
 # Color output functions
 print_info() {
     echo -e "\033[1;34m[INFO]\033[0m $1"
@@ -159,27 +162,32 @@ install_files() {
         ["llvmup-completion-common.sh"]="llvmup-completion-common.sh"
     )
 
+    local component
+    for component in llvmup-doctor.sh llvmup-doctor-filesystem.sh llvmup-doctor-environment.sh llvmup-doctor-project.sh llvmup-doctor-probes.sh llvmup-completion.sh _llvmup; do
+        scripts["$component"]="$component"
+    done
+
     create_install_directories
 
     print_info "Copying scripts to $INSTALL_DIR..."
     for src in "${!scripts[@]}"; do
-        if [ ! -f "$src" ]; then
-            print_error "Script '$src' not found in the current directory."
+        if [ ! -f "$INSTALL_SOURCE_DIR/$src" ]; then
+            print_error "Script '$src' not found in $INSTALL_SOURCE_DIR."
             exit 1
         fi
-        $SUDO_CMD cp "$src" "$INSTALL_DIR/${scripts[$src]}"
+        $SUDO_CMD cp "$INSTALL_SOURCE_DIR/$src" "$INSTALL_DIR/${scripts[$src]}"
         print_info "  Installed: ${scripts[$src]}"
     done
 
     print_info "Installing bash completion..."
-    if [ -f "llvmup-completion.sh" ]; then
-        $SUDO_CMD cp "llvmup-completion.sh" "$COMPLETION_DIR/llvmup"
+    if [ -f "$INSTALL_SOURCE_DIR/llvmup-completion.sh" ]; then
+        $SUDO_CMD cp "$INSTALL_SOURCE_DIR/llvmup-completion.sh" "$COMPLETION_DIR/llvmup"
         print_success "Bash completion installed to $COMPLETION_DIR/llvmup"
     fi
 
     print_info "Installing zsh completion..."
-    if [ -f "_llvmup" ]; then
-        $SUDO_CMD cp "_llvmup" "$ZSH_COMPLETION_DIR/_llvmup"
+    if [ -f "$INSTALL_SOURCE_DIR/_llvmup" ]; then
+        $SUDO_CMD cp "$INSTALL_SOURCE_DIR/_llvmup" "$ZSH_COMPLETION_DIR/_llvmup"
         print_success "Zsh completion installed to $ZSH_COMPLETION_DIR/_llvmup"
     fi
 

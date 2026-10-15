@@ -45,7 +45,13 @@
 
 set -e
 
-SCRIPT_DIR="$(dirname "$0")"
+SCRIPT_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
+
+# Dispatch before loading optional runtime modules, even in a damaged installation.
+if [ "${1:-}" = doctor ]; then
+    shift
+    exec bash "$SCRIPT_DIR/llvmup-doctor.sh" "$@"
+fi
 
 # Default values
 COMMAND=""
@@ -471,6 +477,7 @@ Commands:
   env              Print shell exports for CI/non-interactive usage
   resolve          Resolve a stable remote LLVM release without installing it
   vscode-activate  Configure VSCode for an installed LLVM version
+  doctor           Diagnose installation [--verbose] [--deep] [--network] [--json]
   status           Show the current LLVM environment status
   list             List installed LLVM versions
   remove           Remove one installed LLVM version

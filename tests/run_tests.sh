@@ -83,6 +83,7 @@ print_info "Each test will show detailed progress and timing information"
 
 # Run tests individually for better error reporting
 test_files=(
+    "tests/unit/test_doctor.bats"
     "tests/unit/test_llvm_functions.bats"
     "tests/unit/test_llvm_activate.bats"
     "tests/unit/test_llvm_deactivate.bats"

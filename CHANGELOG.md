@@ -110,10 +110,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `examples/` directory with interactive demos and test scripts
 - README files for both `docs/` and `examples/` directories
 - `docs/INSTALL.md` - Detailed installation guide
-- `docs/FEATURE_SUMMARY.md` - Complete feature list
+- Feature overview (now maintained in `README.md`)
 - `docs/BUILD_EXAMPLE.md` - Build system examples
 - `docs/VERSION_FUNCTIONS.md` - Version management functions
-- `docs/COMPLETION_UX_REPORT.md` - Auto-completion system
+- Completion report (removed after consolidation into current documentation)
 - `docs/CUSTOM_DIRECTORIES.md` - Custom directory configuration
 - `CLAUDE.md` - AI assistant guidance for working with codebase
 

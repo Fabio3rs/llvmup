@@ -76,6 +76,7 @@ llvmup resolve <expression>       Resolve a stable release without installing it
 llvmup activate <version>         Activate an installed version in this shell
 llvmup deactivate                 Restore the previous shell environment
 llvmup status                     Show the active version and paths
+llvmup doctor [options]           Diagnose installation and environment
 llvmup list                       List installed versions
 llvmup list --remote              List stable remote releases
 llvmup remove <version>           Remove one installed toolchain
@@ -91,6 +92,44 @@ llvmup help                       Show command help
 
 `llvmup` also accepts the legacy short form `llvmup 22.1.8` for a prebuilt
 install. Prefer the explicit `llvmup install` form in scripts.
+
+## Diagnose problems
+
+```bash
+llvmup doctor
+llvmup doctor --verbose
+llvmup doctor --deep
+llvmup doctor --network
+llvmup doctor --json
+```
+
+Doctor is offline and read-only by default. It checks runtime files, dependency
+availability, installed compiler files, default links, activation variables,
+project configuration and shell integration. No installed LLVM is required.
+It never repairs profiles or removes toolchains. Custom compiler overrides are
+warnings, not definite errors; dependency warnings explain which operation needs
+the tool.
+
+`--deep` runs lifecycle, environment restoration, version matching and completion
+checks using temporary fixtures and isolated processes. `--network` explicitly
+checks GitHub release metadata and redirects with short timeouts; it does not
+download LLVM archives. Options can be combined.
+
+PASS means the stated check succeeded; WARN calls for review; FAIL identifies a
+broken condition; SKIP means optional, unavailable or inapplicable. Exit codes
+are 0 for no failures (warnings allowed), 1 for failures and 2 for invalid options.
+The PowerShell function sets `$LASTEXITCODE`; `Llvm-Doctor.ps1` also exits with it.
+`--json` emits a single schema-versioned object with check IDs and recommendations.
+Paths and environment overrides can appear in diagnostics; review before sharing.
+
+For missing runtime files, reinstall LLVMUP from a complete checkout. For an
+incomplete toolchain, inspect permissions and reinstall that version. For a broken
+default link, use `llvmup default unset` and select an installed version. For PATH
+or profile warnings, check for duplicate initialization and reload the intended
+shell integration. See [doctor details and regression history](docs/DOCTOR.md).
+
+If the shell facade cannot load, run `bash /path/to/llvmup-doctor.sh` or
+`pwsh -NoProfile -File /path/to/Llvm-Doctor.ps1` directly.
 
 ## Version expressions
 

@@ -77,6 +77,13 @@ scripts=(
     "llvmup"
     "llvm-functions.sh"
     "llvmup-completion-common.sh"
+    "llvmup-completion.sh"
+    "_llvmup"
+    "llvmup-doctor.sh"
+    "llvmup-doctor-filesystem.sh"
+    "llvmup-doctor-environment.sh"
+    "llvmup-doctor-project.sh"
+    "llvmup-doctor-probes.sh"
 )
 
 for script in "${scripts[@]}"; do

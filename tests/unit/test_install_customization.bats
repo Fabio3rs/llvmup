@@ -16,6 +16,7 @@ setup() {
     cp "$BATS_TEST_DIRNAME/../../uninstall.sh" .
     cp -r "$BATS_TEST_DIRNAME/../../"llvm-* .
     cp "$BATS_TEST_DIRNAME/../../llvmup" .
+    cp "$BATS_TEST_DIRNAME/../../"llvmup-doctor*.sh .
     cp "$BATS_TEST_DIRNAME/../../llvmup-completion.sh" .
     cp "$BATS_TEST_DIRNAME/../../llvmup-completion-common.sh" .
     cp "$BATS_TEST_DIRNAME/../../_llvmup" .
@@ -56,6 +57,8 @@ teardown() {
     [ -f "$LLVMUP_PREFIX/bin/llvm-functions.sh" ]
     [ -f "$LLVMUP_PREFIX/bin/llvmup-completion-common.sh" ]
     [ -x "$LLVMUP_PREFIX/bin/llvmup" ]
+    [ -r "$LLVMUP_PREFIX/bin/llvmup-doctor.sh" ]
+    [ -r "$LLVMUP_PREFIX/bin/llvmup-doctor-project.sh" ]
 }
 
 @test "install.sh respects LLVMUP_INSTALL_DIR environment variable" {
@@ -234,7 +237,7 @@ EOF
 
     run ./install.sh
     assert_failure
-    assert_output --partial "not found in the current directory"
+    assert_output --partial "Script 'llvmup' not found in $TEST_INSTALL_DIR"
 }
 
 @test "install.sh shows helpful output messages" {

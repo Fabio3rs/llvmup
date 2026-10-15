@@ -32,7 +32,7 @@ _llvmup_get_remote_versions() {
 
     local versions
     if command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
-        versions=$(timeout 5 curl -s "https://api.github.com/repos/llvm/llvm-project/releases" 2>/dev/null | \
+        versions=$(curl -fsSL --connect-timeout 3 --max-time 5 "https://api.github.com/repos/llvm/llvm-project/releases" 2>/dev/null | \
             jq -r '.[].tag_name' 2>/dev/null | \
             grep -E '^llvmorg-[0-9]+\.[0-9]+\.[0-9]+$' | \
             head -20)
@@ -94,6 +94,7 @@ _llvmup_get_major_minor_templates() {
 
 _llvmup_get_main_command_items() {
     cat <<'EOF'
+doctor	command	Diagnose installation and environment
 install	command	Install an LLVM version
 activate	command	Activate an installed LLVM version in the current shell
 deactivate	command	Deactivate the current LLVM version in the current shell

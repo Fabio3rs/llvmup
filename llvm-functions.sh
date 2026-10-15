@@ -7,6 +7,11 @@
 #   llvm-deactivate           - Deactivate current LLVM version
 #   llvm-vscode-activate <version> - Activate LLVM for VSCode
 
+# Capture Zsh's source path while loading: inside a function %N is its name.
+if [ -n "${ZSH_VERSION:-}" ]; then
+    _LLVMUP_FUNCTIONS_DIR="${${(%):-%x}:A:h}"
+fi
+
 # =============================================================================
 # LOGGING FUNCTIONS
 # =============================================================================
@@ -176,6 +181,11 @@ llvm-expression-debug-off() {
 llvm-get-install-dir() {
     if [ -n "$LLVMUP_INSTALL_DIR" ]; then
         echo "$LLVMUP_INSTALL_DIR"
+        return 0
+    fi
+
+    if [ -n "${ZSH_VERSION:-}" ] && [ -n "${_LLVMUP_FUNCTIONS_DIR:-}" ]; then
+        printf '%s\n' "$_LLVMUP_FUNCTIONS_DIR"
         return 0
     fi
 
@@ -566,6 +576,20 @@ llvmup() {
     runtime_script="$(llvm-find-runtime-script llvmup)" || runtime_script=""
 
     case "${1:-}" in
+        doctor)
+            shift
+            local doctor_script
+            doctor_script="$(llvm-find-runtime-script llvmup-doctor.sh)" || return 1
+            local doctor_completion=0
+            if command -v _llvmup_completions >/dev/null 2>&1 || command -v _llvmup >/dev/null 2>&1; then
+                doctor_completion=1
+            fi
+            LLVMUP_DOCTOR_SHELL_FUNCTION=1 LLVMUP_DOCTOR_COMPLETION="$doctor_completion" \
+                LLVMUP_DOCTOR_CLANG="$(command -v clang 2>/dev/null)" \
+                LLVMUP_DOCTOR_CLANGXX="$(command -v clang++ 2>/dev/null)" \
+                bash "$doctor_script" "$@"
+            return $?
+            ;;
         activate)
             shift
             llvm-activate "$@"
@@ -1023,6 +1047,7 @@ fi
 
 # Function to show comprehensive help for LLVM manager
 llvm-help() {
+    echo "  llvmup doctor [--verbose] [--deep] [--network] [--json] : Read-only diagnostics"
     echo "╭─ LLVM Manager - Complete Usage Guide ──────────────────────╮"
     echo "│                                                            │"
     echo -e "│ ${GREEN}INSTALLATION COMMANDS:${NC}                                  │"

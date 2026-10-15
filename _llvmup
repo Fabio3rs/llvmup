@@ -175,6 +175,10 @@ _llvmup() {
             fi
             return 0
             ;;
+        doctor)
+            compadd -- --verbose --deep --network --json --help
+            return 0
+            ;;
         deactivate|status|help)
             return 0
             ;;
