@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Selectable binary inspection, symbolization, LLVM IR, XRay and Clang analysis
+  tools; clang-tidy and clang-format include their helpers, with cache invalidation
+  for older selections that omitted them
 - Selective prebuilt extraction and source distribution targets with shared
   `minimal`, `compiler`, `custom`, and `full` profiles on Bash and PowerShell
 - Optional Linux ELF executable stripping, selection manifests, and cache keys

@@ -254,11 +254,42 @@ llvm-ar	component	LLVM archiver
 llvm-ranlib	component	Archive index tool
 llvm-cov	component	Coverage reports
 llvm-profdata	component	Profile data processing
+llvm-xray	component	XRay instrumentation analysis
 libc++	component	Unix C++ headers, ABI and unwind runtimes
 clangd	component	Clang language server
 clang-format	component	Code formatting
 clang-tidy	component	Static analysis
 lldb	component	Source-only legacy debugger project
+llvm-nm	component	LLVM nm tool
+llvm-objcopy	component	LLVM objcopy tool
+llvm-strip	component	LLVM strip tool
+llvm-objdump	component	LLVM objdump tool
+llvm-readobj	component	LLVM readobj tool
+llvm-readelf	component	LLVM readelf tool
+llvm-size	component	LLVM size tool
+llvm-strings	component	LLVM strings tool
+llvm-symbolizer	component	LLVM symbolizer tool
+llvm-addr2line	component	LLVM addr2line tool
+llvm-cxxfilt	component	LLVM cxxfilt tool
+llvm-dwarfdump	component	LLVM dwarfdump tool
+llvm-dwp	component	LLVM dwp tool
+llvm-pdbutil	component	LLVM pdbutil tool
+llvm-profgen	component	LLVM profgen tool
+llvm-as	component	LLVM as tool
+llvm-dis	component	LLVM dis tool
+llvm-link	component	LLVM link tool
+llvm-extract	component	LLVM extract tool
+llvm-bcanalyzer	component	LLVM bcanalyzer tool
+llvm-diff	component	LLVM diff tool
+llvm-mc	component	LLVM mc tool
+llvm-mca	component	LLVM mca tool
+llc	component	LLVM llc tool
+lli	component	LLVM lli tool
+opt	component	LLVM opt tool
+clang-apply-replacements	component	LLVM clang-apply-replacements tool
+clang-query	component	LLVM clang-query tool
+clang-scan-deps	component	LLVM clang-scan-deps tool
+clang-check	component	LLVM clang-check tool
 EOF
 }
 

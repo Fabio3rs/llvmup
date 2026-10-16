@@ -304,12 +304,53 @@ configure an rpath to the installed library directory (which may be under
 `lib/<target-triple>`), or configure your runtime loader accordingly.
 The available C++23/experimental features depend on the selected LLVM release.
 
-`--component` accepts `clang`, `lld`, `llvm-ar`, `llvm-ranlib`, `llvm-cov`,
-`llvm-profdata`, `libc++` (Unix only), `clangd`, `clang-format`, and `clang-tidy`. Repeat the option or
+Selectable components include:
+
+| Purpose | Components |
+| --- | --- |
+| Compiler and linker | `clang`, `lld`, `llvm-ar`, `llvm-ranlib`, `libc++` (Unix) |
+| Coverage and profiling | `llvm-cov`, `llvm-profdata`, `llvm-profgen`, `llvm-xray` |
+| Analysis and formatting | `clangd`, `clang-format`, `clang-tidy`, `clang-apply-replacements`, `clang-scan-deps`, `clang-query`, `clang-check` |
+| Binary inspection | `llvm-nm`, `llvm-objdump`, `llvm-readobj`, `llvm-readelf`, `llvm-size`, `llvm-strings` |
+| Binary editing | `llvm-objcopy`, `llvm-strip` |
+| Debug information | `llvm-symbolizer`, `llvm-addr2line`, `llvm-cxxfilt`, `llvm-dwarfdump`, `llvm-dwp`, `llvm-pdbutil` |
+| LLVM IR and code generation | `llvm-as`, `llvm-dis`, `llvm-link`, `llvm-extract`, `llvm-bcanalyzer`, `llvm-diff`, `llvm-mc`, `llvm-mca`, `llc`, `lli`, `opt` |
+
+Repeat the option or
 pass a comma-separated list. Without a profile, components select `custom` with
 Clang as its base. With a profile, they extend that profile. Explicit CLI lists
 replace `[components] include` from `.llvmup-config`; an explicit profile
 overrides `[profile] type`. `custom` requires at least one component.
+
+`clang-format` includes `clang-format-diff.py`, `git-clang-format`, and its
+available editor integration scripts. `clang-tidy` also selects
+`clang-apply-replacements` for applying fixes with `run-clang-tidy`.
+
+`clang-tidy` includes `share/clang/clang-tidy-diff.py` and `bin/run-clang-tidy`
+(or the corresponding alternate paths provided by the archive). Missing helpers
+cause an error. These scripts use Python; they are not executed as native tools
+during validation. `llvm-xray` can be selected independently without LLD.
+
+These additions do not expand `minimal` or `compiler` automatically. Support is
+limited to the catalog; specialized project suites such as MLIR, Flang and LLDB
+are not selectable prebuilt components. Use `full` for the complete archive.
+A selected tool must exist in the chosen release; no external package fallback
+is performed. The selection preserves bundled dependencies but does not install
+missing system libraries such as ICU.
+
+For a CI toolchain with XRay and clang-tidy, without LLD:
+
+```yaml
+profile: custom
+components: llvm-ar llvm-ranlib clang-tidy llvm-cov llvm-profdata llvm-xray
+strip: true # Linux
+verbose: true
+```
+
+Clang is included by the custom profile; clang-tidy pulls in its helpers and
+`clang-apply-replacements`. On Linux, the XRay runtime/tool combination can be
+checked with `python3 tests/integration/xray_smoke.py /path/to/toolchain`.
+This smoke test uses GNU BFD and explicitly initializes and flushes FDR logging.
 
 Python 3.9+ is required for selective modes and optional stripping. Plain `full`
 installs do not require Python. On PowerShell the direct entry points expose

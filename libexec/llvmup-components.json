@@ -98,7 +98,25 @@
       ],
       "targets": [
         "clang-format"
-      ]
+      ],
+      "helpers": [
+        [
+          "share/clang/clang-format-diff.py",
+          "bin/clang-format-diff.py"
+        ],
+        [
+          "bin/git-clang-format",
+          "bin/git-clang-format.py"
+        ]
+      ],
+      "optional_files": [
+        "bin/git-clang-format.bat",
+        "share/clang/clang-format.py",
+        "share/clang/clang-format.el",
+        "share/clang/clang-format-sublime.py",
+        "share/clang/clang-format-bbedit.applescript"
+      ],
+      "revision": 2
     },
     "clang-tidy": {
       "project": "clang-tools-extra",
@@ -107,6 +125,22 @@
       ],
       "targets": [
         "clang-tidy"
+      ],
+      "helpers": [
+        [
+          "share/clang/clang-tidy-diff.py",
+          "bin/clang-tidy-diff.py",
+          "bin/clang-tidy-diff"
+        ],
+        [
+          "bin/run-clang-tidy",
+          "bin/run-clang-tidy.py",
+          "share/clang/run-clang-tidy.py"
+        ]
+      ],
+      "revision": 2,
+      "requires": [
+        "clang-apply-replacements"
       ]
     },
     "libc++": {
@@ -117,6 +151,288 @@
         "libunwind",
         "libcxxabi",
         "libcxx"
+      ]
+    },
+    "llvm-xray": {
+      "project": "",
+      "tools": [
+        "llvm-xray"
+      ],
+      "targets": [
+        "llvm-xray"
+      ]
+    },
+    "llvm-nm": {
+      "project": "",
+      "tools": [
+        "llvm-nm"
+      ],
+      "targets": [
+        "llvm-nm"
+      ]
+    },
+    "llvm-objcopy": {
+      "project": "",
+      "tools": [
+        "llvm-objcopy"
+      ],
+      "targets": [
+        "llvm-objcopy"
+      ]
+    },
+    "llvm-strip": {
+      "project": "",
+      "tools": [
+        "llvm-strip"
+      ],
+      "targets": [
+        "llvm-objcopy",
+        "llvm-strip"
+      ]
+    },
+    "llvm-objdump": {
+      "project": "",
+      "tools": [
+        "llvm-objdump"
+      ],
+      "targets": [
+        "llvm-objdump"
+      ]
+    },
+    "llvm-readobj": {
+      "project": "",
+      "tools": [
+        "llvm-readobj"
+      ],
+      "targets": [
+        "llvm-readobj"
+      ]
+    },
+    "llvm-readelf": {
+      "project": "",
+      "tools": [
+        "llvm-readelf"
+      ],
+      "targets": [
+        "llvm-readobj",
+        "llvm-readelf"
+      ]
+    },
+    "llvm-size": {
+      "project": "",
+      "tools": [
+        "llvm-size"
+      ],
+      "targets": [
+        "llvm-size"
+      ]
+    },
+    "llvm-strings": {
+      "project": "",
+      "tools": [
+        "llvm-strings"
+      ],
+      "targets": [
+        "llvm-strings"
+      ]
+    },
+    "llvm-symbolizer": {
+      "project": "",
+      "tools": [
+        "llvm-symbolizer"
+      ],
+      "targets": [
+        "llvm-symbolizer"
+      ]
+    },
+    "llvm-addr2line": {
+      "project": "",
+      "tools": [
+        "llvm-addr2line"
+      ],
+      "targets": [
+        "llvm-symbolizer",
+        "llvm-addr2line"
+      ]
+    },
+    "llvm-cxxfilt": {
+      "project": "",
+      "tools": [
+        "llvm-cxxfilt"
+      ],
+      "targets": [
+        "llvm-cxxfilt"
+      ]
+    },
+    "llvm-dwarfdump": {
+      "project": "",
+      "tools": [
+        "llvm-dwarfdump"
+      ],
+      "targets": [
+        "llvm-dwarfdump"
+      ]
+    },
+    "llvm-dwp": {
+      "project": "",
+      "tools": [
+        "llvm-dwp"
+      ],
+      "targets": [
+        "llvm-dwp"
+      ]
+    },
+    "llvm-pdbutil": {
+      "project": "",
+      "tools": [
+        "llvm-pdbutil"
+      ],
+      "targets": [
+        "llvm-pdbutil"
+      ]
+    },
+    "llvm-profgen": {
+      "project": "",
+      "tools": [
+        "llvm-profgen"
+      ],
+      "targets": [
+        "llvm-profgen"
+      ]
+    },
+    "llvm-as": {
+      "project": "",
+      "tools": [
+        "llvm-as"
+      ],
+      "targets": [
+        "llvm-as"
+      ]
+    },
+    "llvm-dis": {
+      "project": "",
+      "tools": [
+        "llvm-dis"
+      ],
+      "targets": [
+        "llvm-dis"
+      ]
+    },
+    "llvm-link": {
+      "project": "",
+      "tools": [
+        "llvm-link"
+      ],
+      "targets": [
+        "llvm-link"
+      ]
+    },
+    "llvm-extract": {
+      "project": "",
+      "tools": [
+        "llvm-extract"
+      ],
+      "targets": [
+        "llvm-extract"
+      ]
+    },
+    "llvm-bcanalyzer": {
+      "project": "",
+      "tools": [
+        "llvm-bcanalyzer"
+      ],
+      "targets": [
+        "llvm-bcanalyzer"
+      ]
+    },
+    "llvm-diff": {
+      "project": "",
+      "tools": [
+        "llvm-diff"
+      ],
+      "targets": [
+        "llvm-diff"
+      ]
+    },
+    "llvm-mc": {
+      "project": "",
+      "tools": [
+        "llvm-mc"
+      ],
+      "targets": [
+        "llvm-mc"
+      ]
+    },
+    "llvm-mca": {
+      "project": "",
+      "tools": [
+        "llvm-mca"
+      ],
+      "targets": [
+        "llvm-mca"
+      ]
+    },
+    "llc": {
+      "project": "",
+      "tools": [
+        "llc"
+      ],
+      "targets": [
+        "llc"
+      ]
+    },
+    "lli": {
+      "project": "",
+      "tools": [
+        "lli"
+      ],
+      "targets": [
+        "lli"
+      ]
+    },
+    "opt": {
+      "project": "",
+      "tools": [
+        "opt"
+      ],
+      "targets": [
+        "opt"
+      ]
+    },
+    "clang-apply-replacements": {
+      "project": "clang-tools-extra",
+      "tools": [
+        "clang-apply-replacements"
+      ],
+      "targets": [
+        "clang-apply-replacements"
+      ]
+    },
+    "clang-query": {
+      "project": "clang-tools-extra",
+      "tools": [
+        "clang-query"
+      ],
+      "targets": [
+        "clang-query"
+      ]
+    },
+    "clang-scan-deps": {
+      "project": "clang",
+      "tools": [
+        "clang-scan-deps"
+      ],
+      "targets": [
+        "clang-scan-deps"
+      ]
+    },
+    "clang-check": {
+      "project": "clang",
+      "tools": [
+        "clang-check"
+      ],
+      "targets": [
+        "clang-check"
       ]
     }
   }

@@ -36,6 +36,11 @@ class SelectionTests(unittest.TestCase):
                 ('bin/ld.lld', None, 'lld'),
                 ('lib/clang/23/include/stddef.h', b'/* fixture */', None),
                 ('lib/clang/23/lib/linux/libclang_rt.profile.a', b'fixture runtime', None),
+                ('bin/clang-apply-replacements', b'#!/bin/sh\nexit 0\n', None),
+                ('share/clang/clang-format-diff.py', b'# helper fixture', None),
+                ('bin/git-clang-format', b'# helper fixture', None),
+                ('share/clang/clang-tidy-diff.py', b'# helper fixture', None),
+                ('bin/run-clang-tidy', b'# helper fixture', None),
                 ('bin/mlir-opt', b'excluded tool', None),
                 ('lib/libLLVM.a', b'excluded static library', None),
             ] + list(extra)
@@ -89,6 +94,49 @@ class SelectionTests(unittest.TestCase):
         self.assertFalse((minimal/'include/c++').exists())
         (destination/'include/c++/v1/vector').unlink()
         with self.assertRaisesRegex(ValueError, 'headers'): selection.validate(destination, selected)
+
+    def test_catalog_tools_helpers_and_completions_stay_in_sync(self):
+        components = [name for name in selection.CATALOG['components'] if name != 'libc++']
+        spec = selection.selection('custom', components)
+        names = {tool for name in components for tool in selection.CATALOG['components'][name]['tools']}
+        for name in components:
+            self.assertIn(name + '\tcomponent\t', (ROOT/'llvmup-completion-common.sh').read_text())
+            self.assertIn("'" + name + "'", (ROOT/'Llvm-Completion.psm1').read_text())
+        existing = {'clang', 'clang++', 'lld', 'ld.lld', 'clang-apply-replacements'}
+        archive = self.archive([('bin/'+name, b'#!/bin/sh\nexit 0\n', None) for name in sorted(names-existing)])
+        destination = self.root/'catalog'
+        selection.extract(archive, destination, spec)
+        selection.finalize(destination, spec)
+        selection.check(destination, spec)
+        self.assertTrue((destination/'share/clang/clang-format-diff.py').is_file())
+        self.assertTrue((destination/'bin/git-clang-format').is_file())
+        self.assertIn('llvm-objcopy', selection.selection(components=['llvm-strip'])['targets'])
+        self.assertIn('llvm-readobj', selection.selection(components=['llvm-readelf'])['targets'])
+        self.assertIn('llvm-symbolizer', selection.selection(components=['llvm-addr2line'])['targets'])
+
+    def test_xray_and_tidy_helpers_in_custom_selection(self):
+        spec = selection.selection('custom', ['llvm-xray', 'clang-tidy'])
+        self.assertNotIn('lld', spec['components'])
+        self.assertIn('llvm-xray', spec['targets'])
+        self.assertIn('clang-apply-replacements', spec['targets'])
+        self.assertIn('clang-tools-extra', spec['checkout'])
+        old_identity = {k: spec[k] for k in ('schema', 'components', 'strip', 'legacy')}
+        import hashlib
+        old_key = hashlib.sha256(json.dumps(old_identity, sort_keys=True).encode()).hexdigest()[:24]
+        self.assertNotEqual(old_key, spec['key'])
+        archive = self.archive([(name, b'#!/bin/sh\nexit 0\n', None) for name in ('bin/llvm-xray', 'bin/clang-tidy')])
+        destination = self.root/'custom'
+        selection.extract(archive, destination, spec)
+        selection.finalize(destination, spec)
+        for name in ('bin/llvm-xray', 'share/clang/clang-tidy-diff.py', 'bin/run-clang-tidy'):
+            self.assertTrue((destination/name).is_file())
+        self.assertFalse((destination/'bin/lld').exists())
+        (destination/'share/clang/clang-tidy-diff.py').unlink()
+        with self.assertRaisesRegex(ValueError, 'Missing selected helper'): selection.validate(destination, spec)
+        minimal = self.root/'minimal'
+        selection.extract(archive, minimal, selection.selection('minimal'))
+        self.assertFalse((minimal/'bin/llvm-xray').exists())
+        self.assertFalse((minimal/'share/clang/clang-tidy-diff.py').exists())
 
     def test_only_selected_files_and_transitive_aliases_are_written(self):
         destination = self.root/'installed'

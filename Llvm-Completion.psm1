@@ -269,7 +269,7 @@ $llvmupSB = {
             'install' {
                 $previous = if ($wordToComplete) { $elements[$elements.Count-2] } else { $elements[-1] }
                 if ($previous -in @('--profile','-p')) { $values = @('minimal','compiler','full','custom') }
-                elseif ($previous -eq '--component') { $values = @('clang','lld','llvm-ar','llvm-ranlib','llvm-cov','llvm-profdata','libc++','clangd','clang-format','clang-tidy') }
+                elseif ($previous -eq '--component') { $values = @('clang','lld','llvm-ar','llvm-ranlib','llvm-cov','llvm-profdata','clangd','clang-format','clang-tidy','libc++','llvm-xray','llvm-nm','llvm-objcopy','llvm-strip','llvm-objdump','llvm-readobj','llvm-readelf','llvm-size','llvm-strings','llvm-symbolizer','llvm-addr2line','llvm-cxxfilt','llvm-dwarfdump','llvm-dwp','llvm-pdbutil','llvm-profgen','llvm-as','llvm-dis','llvm-link','llvm-extract','llvm-bcanalyzer','llvm-diff','llvm-mc','llvm-mca','llc','lli','opt','clang-apply-replacements','clang-query','clang-scan-deps','clang-check') }
                 else { $values = @('--from-source','--verify','--name','--default','--profile','--component','--strip','--verbose','--reconfigure','--list-only') + @(Get-LlvmRemoteVersions) }
             }
             default { $values = @() }

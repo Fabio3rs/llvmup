@@ -47,6 +47,13 @@ def selection(profile='', components=(), strip=False, source=False):
         targets = []
     else:
         chosen = sorted(set(CATALOG['profiles'][profile]) | set(components))
+        pending = list(chosen)
+        while pending:
+            for required in CATALOG['components'][pending.pop()].get('requires', []):
+                if required not in chosen:
+                    chosen.append(required)
+                    pending.append(required)
+        chosen.sort()
         projects = sorted({CATALOG['components'][c]['project'] for c in chosen} - {''})
         targets = sorted({t for c in chosen for t in CATALOG['components'][c]['targets']})
     if platform.system() == 'Windows' and 'libc++' in chosen:
@@ -55,6 +62,8 @@ def selection(profile='', components=(), strip=False, source=False):
         chosen.remove('libc++')
     runtimes = sorted({'compiler-rt'} | {r for c in chosen if c in CATALOG['components'] for r in CATALOG['components'][c].get('runtimes', [])})
     identity = {'schema': CATALOG['schema'], 'components': chosen, 'strip': bool(strip), 'legacy': legacy}
+    revisions = {c: CATALOG['components'][c]['revision'] for c in chosen if c in CATALOG['components'] and 'revision' in CATALOG['components'][c]}
+    if revisions: identity['component_revisions'] = revisions
     key = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:24]
     if chosen == ['*'] and not strip and not legacy:
         key = 'full'
@@ -211,13 +220,15 @@ def extract(archive_path, root, spec):
     if any(root.iterdir()): raise ValueError('Extraction destination must be empty')
     try:
         tools = {t for c in spec['components'] for t in CATALOG['components'][c]['tools']}
+        helpers = {path for c in spec['components'] for group in CATALOG['components'][c].get('helpers', []) for path in group}
+        helpers.update(path for c in spec['components'] for path in CATALOG['components'][c].get('optional_files', []))
         selected = set()
         for name, member in archive.members.items():
             kind = archive.kind(member)
             if kind == 'dir': continue
             p = PurePosixPath(name)
             stem = re.sub(r'(?:-\d+(?:\.\d+)*)?(?:\.exe)?$', '', p.name)
-            if (p.parent == PurePosixPath('bin') and stem in tools) or name.startswith('lib/clang/') or ('libc++' in spec['components'] and libcxx_member(name)) or p.name.upper().startswith(('LICENSE', 'NOTICE')):
+            if (p.parent == PurePosixPath('bin') and stem in tools) or name in helpers or name.startswith('lib/clang/') or ('libc++' in spec['components'] and libcxx_member(name)) or p.name.upper().startswith(('LICENSE', 'NOTICE')):
                 selected.add(name)
         installed = set()
         def materialize(name, chain=()):
@@ -270,6 +281,9 @@ def validate(root, spec):
             if not any(p.is_file() and libcxx_member(p.relative_to(root).as_posix()) for p in root.glob('lib*/**/' + library + '.*')):
                 raise ValueError('Selected library is missing: ' + library)
     for component in spec['components']:
+        for group in CATALOG['components'][component].get('helpers', []):
+            if not any((root/path).is_file() for path in group):
+                raise ValueError('Missing selected helper: ' + group[0])
         if component == 'libc++': continue
         names = ['clang', 'clang++'] if component == 'clang' else (['lld-link' if os.name == 'nt' else 'ld.lld'] if component == 'lld' else [component])
         for name in names:

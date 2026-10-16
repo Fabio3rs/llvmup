@@ -204,7 +204,9 @@ llvmup install --from-source --profile compiler 22.1.8
 | `full` | Complete distribution; the default without selection options |
 
 Components without a profile imply `custom`; components with a profile add to it.
-The initial catalog also supports `clangd`, `clang-format`, and `clang-tidy`.
+The catalog also supports binary inspection, symbolization, LLVM IR tools,
+`llvm-xray`, and Clang analysis/formatting tools, including their helpers.
+See the [component list](docs/INSTALL.md#selective-installations).
 Selective installation and optional strip require Python 3.9+; plain `full`
 installs retain their existing dependencies. Strip additionally requires
 `llvm-strip` or `strip` on PATH and applies only to Linux ELF executables.
