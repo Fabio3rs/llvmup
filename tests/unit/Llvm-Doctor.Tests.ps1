@@ -2,6 +2,31 @@ Describe 'Read-only LLVMUP doctor' {
     BeforeAll {
         $script:root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
         Import-Module (Join-Path $script:root 'Llvm-Doctor.psm1') -Force -DisableNameChecking
+
+        function Get-DoctorFixtureSnapshot {
+            param([string]$Path)
+
+            # Directory timestamps are not a reliable read-only invariant on
+            # Windows immediately after fixture creation. Compare every entry
+            # (including hidden files), its type/attributes, and file contents.
+            # Retain file timestamps to catch rewrites even with identical bytes.
+            $entries = @(Get-ChildItem -LiteralPath $Path -Recurse -Force -ErrorAction Stop |
+                Sort-Object FullName | ForEach-Object {
+                    $_.Refresh()
+                    $entry = [ordered]@{
+                        Path = $_.FullName
+                        IsDirectory = $_.PSIsContainer
+                        Attributes = [string]$_.Attributes
+                    }
+                    if (-not $_.PSIsContainer) {
+                        $entry.Length = $_.Length
+                        $entry.LastWriteTimeUtc = $_.LastWriteTimeUtc.Ticks
+                        $entry.SHA256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256 -ErrorAction Stop).Hash
+                    }
+                    [pscustomobject]$entry
+                })
+            ConvertTo-Json -InputObject $entries -Depth 4 -Compress
+        }
     }
     BeforeEach {
         $script:saved = @{}
@@ -56,14 +81,36 @@ Describe 'Read-only LLVMUP doctor' {
         $bin = Join-Path $env:LLVM_TOOLCHAINS_DIR 'llvmorg-18.1.8/bin'
         $null = New-Item -ItemType Directory -Path $bin -Force
         foreach ($name in @('clang.exe','clang++.exe')) { [IO.File]::WriteAllText((Join-Path $bin $name), 'not executable') }
-        $before = @(Get-ChildItem -Recurse $env:LLVM_HOME | Select-Object FullName,Length,LastWriteTimeUtc) | ConvertTo-Json
+        $before = Get-DoctorFixtureSnapshot $script:caseRoot
         $data = Invoke-LlvmDoctor -Tokens @('--json') | ConvertFrom-Json
         $data.exit_code | Should -Be 0 -Because (@($data.checks | Where-Object status -eq FAIL) | ConvertTo-Json -Depth 6 -Compress)
         ($data.checks | Where-Object id -eq toolchain.compilers).status | Should -Be PASS
         @($data.checks | Where-Object id -eq toolchain.compilers).Count | Should -Be 1
         ($data.checks | Where-Object id -eq toolchain.default).status | Should -Be SKIP
-        $after = @(Get-ChildItem -Recurse $env:LLVM_HOME | Select-Object FullName,Length,LastWriteTimeUtc) | ConvertTo-Json
+        $after = Get-DoctorFixtureSnapshot $script:caseRoot
         $after | Should -BeExactly $before
+    }
+    It 'read-only snapshot detects content changes and directory additions or removals' {
+        $file = Join-Path $script:caseRoot 'snapshot-fixture'
+        [IO.File]::WriteAllText($file, 'before')
+        $timestamp = [IO.File]::GetLastWriteTimeUtc($file)
+        $before = Get-DoctorFixtureSnapshot $script:caseRoot
+
+        # Equal length and restored timestamp must not hide a content mutation.
+        [IO.File]::WriteAllText($file, 'after!')
+        [IO.File]::SetLastWriteTimeUtc($file, $timestamp)
+        Get-DoctorFixtureSnapshot $script:caseRoot | Should -Not -BeExactly $before
+
+        [IO.File]::WriteAllText($file, 'before')
+        [IO.File]::SetLastWriteTimeUtc($file, $timestamp)
+        Get-DoctorFixtureSnapshot $script:caseRoot | Should -BeExactly $before
+        $directory = Join-Path $script:caseRoot 'unexpected directory'
+        $null = New-Item -ItemType Directory -Path $directory
+        $withDirectory = Get-DoctorFixtureSnapshot $script:caseRoot
+        $withDirectory | Should -Not -BeExactly $before
+        Remove-Item -LiteralPath $directory
+        Get-DoctorFixtureSnapshot $script:caseRoot | Should -Not -BeExactly $withDirectory
+        Get-DoctorFixtureSnapshot $script:caseRoot | Should -BeExactly $before
     }
     It 'reports missing optional source dependencies as warnings' {
         # Exercise actual command discovery without mocking the cmdlet Pester
