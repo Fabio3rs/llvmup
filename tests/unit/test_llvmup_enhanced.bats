@@ -48,7 +48,7 @@ teardown() {
 }
 
 @test "llvmup rejects source build options for a prebuilt install" {
-    run bash "$ORIGINAL_DIR/llvmup" install --profile minimal 22.1.8
+    run bash "$ORIGINAL_DIR/llvmup" install --cmake-flags -DCMAKE_BUILD_TYPE=Release 22.1.8
 
     assert_failure
     assert_output --partial "Build options require --from-source"

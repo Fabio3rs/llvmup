@@ -22,7 +22,7 @@ function Get-DoctorInstallation {
             foreach ($line in Get-Content -LiteralPath $manifest -ErrorAction Stop) {
                 $parts = $line -split '\s+'
                 if ($parts[0] -notin @('common', 'powershell')) { continue }
-                if ($parts.Count -ne 3 -or $parts[2] -notmatch '^[A-Za-z0-9_.-]+$') { throw 'Invalid manifest entry' }
+                if ($parts.Count -ne 3 -or $parts[2] -notmatch '^(libexec/)?[A-Za-z0-9_][A-Za-z0-9_.-]*$') { throw 'Invalid manifest entry' }
                 if ($parts[2] -notin $files) { $files += $parts[2] }
             }
         } catch { Add-DoctorCheck $Checks installation.manifest installation FAIL 'Cannot read runtime inventory.' 'Reinstall a complete LLVMUP package.' $manifest }
@@ -164,7 +164,7 @@ function Get-DoctorProject {
         if (-not $expression) { throw 'No version specified' }
         $auto = if ($values['project.auto_activate']) { $values['project.auto_activate'] } else { $values['.auto_activate'] }
         if ($auto -and $auto -notin @('true','false')) { throw 'Invalid auto_activate value' }
-        if ($values['profile.type'] -and $values['profile.type'] -notin @('minimal','full','custom')) { throw 'Invalid profile' }
+        if ($values['profile.type'] -and $values['profile.type'] -notin @('minimal','compiler','full','custom')) { throw 'Invalid profile' }
         $core = Join-Path $Root 'Llvm-Functions-Core.psm1'
         if (-not (Test-Path -LiteralPath $core)) { Add-DoctorCheck $Checks project.version project SKIP 'Version matcher missing.' 'Restore the core module.'; return }
         Import-Module $core -DisableNameChecking -ErrorAction Stop

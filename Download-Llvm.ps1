@@ -22,6 +22,12 @@ param (
     [Parameter(Mandatory = $false)]
     [switch]$Force,
 
+    [ValidateSet("", "minimal", "compiler", "full", "custom")]
+    [string]$Profile,
+    [string[]]$Component = @(),
+    [switch]$Strip,
+    [switch]$VerboseMode,
+
     [Parameter(Mandatory = $false)]
     [switch]$TestMode,
 
@@ -61,6 +67,16 @@ param (
     [switch]$Help
 )
 
+Import-Module (Join-Path $PSScriptRoot 'libexec/Llvm-Selection.psm1') -Force
+if ($ResolveOnly -or $ListOnly -or $Help) {
+    $script:Selection = Get-LlvmSelection
+} else {
+    $selectionConfig = Get-LlvmSelectionConfig
+    if (-not $PSBoundParameters.ContainsKey('Profile')) { $Profile = $selectionConfig.Profile }
+    if (-not $PSBoundParameters.ContainsKey('Component')) { $Component = $selectionConfig.Components }
+    $script:Selection = Get-LlvmSelection -Profile $Profile -Components $Component -Strip:$Strip
+}
+if ($script:Selection.selective) { $ArchiveOnly = $true }
 $modulePath = Join-Path $PSScriptRoot 'Get-UserHome.psm1'
 if (Test-Path $modulePath) { Import-Module $modulePath -Force } else { . "$PSScriptRoot\Get-UserHome.ps1" }
 $coreModulePath = Join-Path $PSScriptRoot 'Llvm-Functions-Core.psm1'
@@ -77,7 +93,7 @@ $script:TEMP_DIR = if ($env:RUNNER_TEMP) { Join-Path $env:RUNNER_TEMP "llvmup" }
 
 function Write-VerboseLog {
     param([string]$Message)
-    if ($VerbosePreference -ne 'SilentlyContinue') {
+    if ($VerboseMode -or $VerbosePreference -ne 'SilentlyContinue') {
         Write-Host "VERBOSE: $Message" -ForegroundColor Gray
     }
 }
@@ -311,6 +327,7 @@ function Select-LlvmAssetForPlatform {
                     $score += 80
                     if (-not $PreferInstaller) { $score += 20 }
                 } elseif ($assetName -match "LLVM-.*-woa64\.exe" -and $normalizedArch -eq "arm64") {
+                    if ($ArchiveOnly) { continue }
                     $score += 90
                 }
             }
@@ -862,6 +879,7 @@ function Install-PrebuiltLlvm {
         if (-not (Test-LlvmToolchainPath -Path $installPath)) {
             throw "Incomplete LLVM installation already exists at $installPath"
         }
+        Invoke-LlvmSelection -Operation check -Root $installPath -Selection $script:Selection
         Test-LlvmVerificationMarker -TargetPath $installPath -Version $Version -Digest $SelectedAsset.Digest -Policy $Policy | Out-Null
         Write-WarningLog "LLVM $installName is already installed at $installPath"
         return $installPath
@@ -874,53 +892,54 @@ function Install-PrebuiltLlvm {
     }
     New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
 
+    $stagingPath = "$installPath.installing-$([guid]::NewGuid().ToString('N'))"
+    $backupPath = "$installPath.backup-$([guid]::NewGuid().ToString('N'))"
+    $published = $false
     try {
+        Write-LlvmSpaceSnapshot -Label 'before download' -Paths @($tempDir, $script:TOOLCHAINS_DIR) -Enabled ([bool]$VerboseMode)
         # Download the asset
         $downloadPath = Join-Path $tempDir $SelectedAsset.Name
         Download-File -Url $SelectedAsset.Url -OutPath $downloadPath -TimeoutSec $TimeoutSec -MaxRetries $MaxRetries | Out-Null
         Invoke-LlvmReleaseVerification -ArtifactPath $downloadPath -SelectedAsset $SelectedAsset -TempPath $tempDir -Policy $Policy
 
-        # Handle installation based on file type
+        Write-LlvmSpaceSnapshot -Label 'after download' -Paths @($tempDir) -Enabled ([bool]$VerboseMode)
+        # Install to a sibling staging path, never over the current toolchain.
         if ($SelectedAsset.Name -match '\.exe$') {
-            # Windows installer
-            Write-ProgressLog "Installing LLVM using Windows installer..."
-
-            if (Test-Path $installPath) {
-                Remove-Item -Path $installPath -Recurse -Force
-            }
-
-            $arguments = @("/S", "/D=$installPath")
-            $process = Start-Process -FilePath $downloadPath -ArgumentList $arguments -Wait -PassThru
-
-            if ($process.ExitCode -ne 0) {
-                throw "Installer failed with exit code $($process.ExitCode)"
-            }
+            $process = Start-Process -FilePath $downloadPath -ArgumentList @('/S', "/D=$stagingPath") -Wait -PassThru
+            if ($process.ExitCode -ne 0) { throw "Installer failed with exit code $($process.ExitCode)" }
+        } elseif ($script:Selection.selective) {
+            Invoke-LlvmSelection -Operation extract -Root $stagingPath -Archive $downloadPath -Selection $script:Selection
         } else {
-            # Archive extraction
-            Write-ProgressLog "Extracting LLVM archive..."
-
-            if (Test-Path $installPath) {
-                Remove-Item -Path $installPath -Recurse -Force
-            }
-
-            Extract-Archive -ArchivePath $downloadPath -DestinationPath $installPath
+            Extract-Archive -ArchivePath $downloadPath -DestinationPath $stagingPath
         }
+        Write-LlvmSpaceSnapshot -Label 'after extraction' -Paths @($tempDir, $stagingPath) -Enabled ([bool]$VerboseMode)
+        Invoke-LlvmSelection -Operation finalize -Root $stagingPath -Selection $script:Selection
 
         # Verify installation
-        $binPath = Join-Path $installPath "bin"
+        $binPath = Join-Path $stagingPath "bin"
         if (-not (Test-Path $binPath)) {
             throw "Installation verification failed: bin directory not found"
         }
-        if (-not (Test-LlvmToolchainPath -Path $installPath)) {
+        if (-not (Test-LlvmToolchainPath -Path $stagingPath)) {
             throw "Installation verification failed: clang and clang++ are not usable"
         }
 
-        Write-LlvmVerificationMarker -TargetPath $installPath -Version $Version -SelectedAsset $SelectedAsset -Policy $Policy
+        Write-LlvmVerificationMarker -TargetPath $stagingPath -Version $Version -SelectedAsset $SelectedAsset -Policy $Policy
 
+        if (Test-Path -LiteralPath $installPath) { Move-Item -LiteralPath $installPath -Destination $backupPath -ErrorAction Stop }
+        try { Move-Item -LiteralPath $stagingPath -Destination $installPath -ErrorAction Stop }
+        catch {
+            if (Test-Path -LiteralPath $backupPath) { Move-Item -LiteralPath $backupPath -Destination $installPath -ErrorAction Stop }
+            throw
+        }
+        $published = $true
         Write-SuccessLog "LLVM $installName installed successfully at $installPath"
         return $installPath
 
     } finally {
+        Write-LlvmSpaceSnapshot -Label 'before cleanup' -Paths @($tempDir, $stagingPath, $installPath) -Enabled ([bool]$VerboseMode)
+        if (Test-Path -LiteralPath $stagingPath) { Remove-Item -LiteralPath $stagingPath -Recurse -Force -ErrorAction SilentlyContinue }
+        if ($published -and (Test-Path -LiteralPath $backupPath)) { Remove-Item -LiteralPath $backupPath -Recurse -Force }
         # Cleanup temp directory
         if (Test-Path $tempDir) {
             Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -940,6 +959,10 @@ LLVM Prebuilt Download and Installation Manager
 Usage: Download-Llvm.ps1 [options] [version]
 
 Options:
+  -Profile <name>       minimal, compiler, full, or custom
+  -Component <names>    Selected components (Clang is always included)
+  -Strip                Strip Linux ELF executables
+  -VerboseMode          Report progress and disk usage
   -Version <version>    LLVM version to download (e.g., llvmorg-21.1.0)
   -Platform <platform>  Target platform: Windows, Linux, macOS (auto-detected)
   -Arch <arch>         Target architecture: x64, x86, arm64, armv7a (auto-detected)
@@ -1043,6 +1066,8 @@ try {
     Write-InfoLog "Selected version: $Version"
     Write-VerboseLog "Release assets: $($selectedRelease.assets.Count)"
 
+    if ($script:Selection.selective -and $Platform -notin @('Linux', 'Windows')) { throw 'Selective installation supports Linux and Windows' }
+    if ($Strip -and $Platform -ne 'Linux') { throw 'Strip is supported only for Linux ELF executables' }
     # Select appropriate asset
     $selectedAsset = Select-LlvmAssetForPlatform -Assets $selectedRelease.assets -Platform $Platform -Architecture $Arch -PreferInstaller:(-not $ArchiveOnly) -ArchiveOnly:$ArchiveOnly
 

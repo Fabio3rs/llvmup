@@ -3,7 +3,7 @@
 #
 # This script builds LLVM from source with customizable options including:
 # - Custom CMake flags
-# - Build profiles (minimal, full, custom)
+# - Build profiles (minimal, compiler, full, custom)
 # - Component selection
 # - Custom naming
 #
@@ -36,6 +36,9 @@ CUSTOM_NAME=""
 SET_DEFAULT=0
 PROFILE=""
 COMPONENTS=()
+STRIP=0
+COMPONENTS_CLI=0
+source "$SCRIPT_DIR/libexec/llvmup-selection.sh"
 DISABLE_LIBC_WNO_ERROR=0
 
 CMAKE_FORCE_RECONFIGURE=0
@@ -153,22 +156,24 @@ while [[ $# -gt 0 ]]; do
             fi
             # Validate profile value
             case "$2" in
-                minimal|full|custom)
+                minimal|compiler|full|custom)
                     PROFILE="$2"
                     log_verbose "Profile set: $2"
                     ;;
                 *)
-                    log_error "Invalid profile: $2 (must be: minimal, full, custom)"
+                    log_error "Invalid profile: $2 (must be: minimal, compiler, full, custom)"
                     exit 1
                     ;;
             esac
             shift 2
             ;;
+        --strip) STRIP=1; shift ;;
         --component)
             if [ $# -lt 2 ]; then
                 log_error "Option --component requires an argument"
                 exit 1
             fi
+            if [ "$COMPONENTS_CLI" -eq 0 ]; then COMPONENTS=(); COMPONENTS_CLI=1; fi
             COMPONENTS+=("$2")
             log_verbose "Component added: $2"
             shift 2
@@ -197,7 +202,8 @@ while [[ $# -gt 0 ]]; do
             echo "  --cmake-flags '<FLAGS>'         Pass additional CMake flags"
             echo "  --name <NAME>                   Custom installation name"
             echo "  --default                       Set as global default"
-            echo "  --profile <minimal|full|custom> Build profile"
+            echo "  --profile <minimal|compiler|full|custom> Build profile"
+            echo "  --strip                         Strip Linux ELF executables"
             echo "  --component <COMPONENT>         Install specific component"
             echo "  --disable-libc-wno-error        Disable LIBC_WNO_ERROR=ON flag"
             echo "  --list-only                     List available versions and exit"
@@ -305,18 +311,26 @@ build_name="$selectedTag"
 if [ -n "$CUSTOM_NAME" ]; then
     build_name="$CUSTOM_NAME"
 fi
+case "$build_name" in .|..|*/*|*\\*) log_error "Invalid installation name: $build_name"; exit 1 ;; esac
 
 # Extract major version number for version-specific configuration
 major_version=$(echo "$selectedTag" | sed 's/llvmorg-\([0-9]*\).*/\1/')
 
-# Determine projects to build
-projects_to_build=""
-if [ -n "$PROFILE" ]; then
-    projects_to_build=$(get_profile_projects "$PROFILE" "$selectedTag")
-elif [ "${#COMPONENTS[@]}" -gt 0 ]; then
-    projects_to_build=$(IFS=';'; echo "${COMPONENTS[*]}")
+# Resolve the same catalog used by prebuilt installations.
+llvm_selection_init source || exit 1
+selective=$(jq -r '.selective' <<< "$LLVM_SELECTION_JSON")
+if [ "$LLVM_SELECTION_ENABLED" -eq 1 ]; then
+    projects_to_build=$(jq -r '.projects | join(";")' <<< "$LLVM_SELECTION_JSON")
 else
-    projects_to_build=$(get_profile_projects "" "$selectedTag")
+    projects_to_build=all
+fi
+if [ "$selective" = true ]; then
+    for flag in "${CMAKE_FLAGS[@]}"; do
+        case "$flag" in
+            -DLLVM_ENABLE_PROJECTS*|-DLLVM_ENABLE_RUNTIMES*|-DLLVM_DISTRIBUTION_COMPONENTS*|-DLLVM_RUNTIME_DISTRIBUTION_COMPONENTS*)
+                log_error "CMake flag conflicts with component selection: $flag"; exit 1 ;;
+        esac
+    done
 fi
 
 log_info "Build Configuration:"
@@ -358,7 +372,18 @@ if [ -d "$target_source_dir" ]; then
     log_info "Source for version $selectedTag already exists at $target_source_dir"
 else
     log_info "Cloning LLVM project (tag: $selectedTag) with depth 1..."
-    git clone --depth 1 --branch "$selectedTag" "$REPO_URL" "$target_source_dir"
+    if [ "$selective" = true ]; then
+        git clone --depth 1 --filter=blob:none --sparse --branch "$selectedTag" "$REPO_URL" "$target_source_dir"
+    else
+        git clone --depth 1 --branch "$selectedTag" "$REPO_URL" "$target_source_dir"
+    fi
+fi
+
+if [ "$selective" = true ] && [ "$(git -C "$target_source_dir" config --get core.sparseCheckout || true)" = true ]; then
+    mapfile -t checkout_dirs < <(jq -r '.checkout[]' <<< "$LLVM_SELECTION_JSON")
+    git -C "$target_source_dir" sparse-checkout add "${checkout_dirs[@]}"
+elif [ "$(git -C "$target_source_dir" config --get core.sparseCheckout || true)" = true ]; then
+    git -C "$target_source_dir" sparse-checkout disable
 fi
 
 # Optional: verify git tag signature for the checked-out source (if available)
@@ -396,11 +421,30 @@ fi
 
 # Create build directory
 build_dir="$target_source_dir/build"
+if [ "$LLVM_SELECTION_ENABLED" -eq 1 ]; then
+    build_dir="$target_source_dir/build-$(jq -r '.key' <<< "$LLVM_SELECTION_JSON")"
+fi
 install_dir="$TOOLCHAINS_DIR/$build_name"
 
 log_info "Creating build directory: $build_dir"
 mkdir -p "$build_dir"
 mkdir -p "$TOOLCHAINS_DIR"
+if [ -e "$install_dir" ]; then
+    llvm_selection_check "$install_dir" || exit 1
+    llvm-validate-toolchain-path "$install_dir" || exit 1
+    log_info "LLVM is already installed at $install_dir"
+    exit 0
+fi
+staging_root=$(mktemp -d "$TOOLCHAINS_DIR/.llvmup-${build_name}.installing.XXXXXX")
+staging_install="$staging_root/toolchain"
+cleanup_source_install() {
+    local result=$?
+    llvm_space_snapshot "source completion (status=$result)" "$build_dir" "$staging_root" "$install_dir"
+    rm -rf -- "$staging_root"
+    return "$result"
+}
+trap cleanup_source_install EXIT
+llvm_space_snapshot "before configure" "$target_source_dir" "$TOOLCHAINS_DIR"
 
 # Prepare CMake arguments
 cmake_args=(
@@ -410,7 +454,7 @@ cmake_args=(
     -DCMAKE_BUILD_TYPE=Release
     -DCMAKE_C_FLAGS="-march=native -mtune=native"
     -DCMAKE_CXX_FLAGS="-march=native -mtune=native"
-    -DCMAKE_INSTALL_PREFIX="$install_dir"
+    -DCMAKE_INSTALL_PREFIX="$staging_install"
 )
 
 # Add LIBC_WNO_ERROR flag if not disabled
@@ -427,6 +471,11 @@ if [ -n "$projects_to_build" ]; then
 else
     # Default: build all available projects
     cmake_args+=(-DLLVM_ENABLE_PROJECTS="all")
+fi
+
+if [ "$selective" = true ]; then
+    distribution_targets=$(jq -r '.targets | join(";")' <<< "$LLVM_SELECTION_JSON")
+    cmake_args+=("-DLLVM_ENABLE_RUNTIMES=$(jq -r '.runtimes | join(";")' <<< "$LLVM_SELECTION_JSON")" "-DLLVM_DISTRIBUTION_COMPONENTS=$distribution_targets;builtins;runtimes")
 fi
 
 # Add custom CMake flags
@@ -460,10 +509,22 @@ else
 fi
 
 log_info "Using $jobs parallel build jobs"
-cmake --build "$build_dir" -- -j "$jobs"
+if [ "$selective" = true ]; then
+    cmake --build "$build_dir" --target distribution --parallel "$jobs"
+else
+    cmake --build "$build_dir" --parallel "$jobs"
+fi
+llvm_space_snapshot "after build" "$build_dir"
 
 log_info "Installing LLVM to $install_dir..."
-cmake --build "$build_dir" --target install
+if [ "$selective" = true ]; then
+    cmake --build "$build_dir" --target install-distribution
+else
+    cmake --build "$build_dir" --target install
+fi
+llvm_selection_finalize "$staging_install"
+llvm-validate-toolchain-path "$staging_install"
+mv "$staging_install" "$install_dir"
 
 log_success "Build and installation complete!"
 log_info "LLVM version $selectedTag has been installed in $install_dir"

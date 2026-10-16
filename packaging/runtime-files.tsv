@@ -1,6 +1,9 @@
 # platform mode filename (flat runtime layout preserves public entrypoints)
 common 644 LICENSE
 common 644 githubreleases.json
+common 644 libexec/llvmup-components.json
+common 644 libexec/llvmup-selection.py
+bash 644 libexec/llvmup-selection.sh
 bash 755 llvmup
 bash 755 llvm-prebuilt
 bash 755 llvm-build
@@ -21,6 +24,7 @@ powershell 644 Activate-Llvm.ps1
 powershell 644 Activate-LlvmVsCode.ps1
 powershell 644 Deactivate-Llvm.ps1
 powershell 644 Download-Llvm.ps1
+powershell 644 libexec/Llvm-Selection.psm1
 powershell 644 Download-Llvm-Enhanced.ps1
 powershell 644 Get-UserHome.psm1
 powershell 644 Install-Llvm.ps1

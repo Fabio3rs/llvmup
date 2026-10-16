@@ -15,7 +15,7 @@ foreach ($line in Get-Content -LiteralPath $manifest) {
     if ($line -match '^\s*(#|$)') { continue }
     $parts = $line -split '\s+'
     if ($parts[0] -notin @('common', 'powershell')) { continue }
-    if ($parts.Count -ne 3 -or $parts[2] -notmatch '^[A-Za-z0-9_.-]+$') { throw 'Invalid runtime manifest' }
+    if ($parts.Count -ne 3 -or $parts[2] -notmatch '^(libexec/)?[A-Za-z0-9_][A-Za-z0-9_.-]*$') { throw 'Invalid runtime manifest' }
     $source = Join-Path $root $parts[2]
     if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Missing runtime file: $source" }
     $files += @{ Source = $source; Name = $parts[2] }
@@ -32,6 +32,11 @@ while ($ancestor) {
     }
     $ancestor = Split-Path $ancestor -Parent
 }
+$support = Join-Path $InstallDir 'libexec'
+if (Test-Path -LiteralPath $support) {
+    $item = Get-Item -LiteralPath $support -Force
+    if (-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Unsafe libexec directory' }
+}
 foreach ($file in $files) {
     $target = Join-Path $InstallDir $file.Name
     if (Test-Path -LiteralPath $target) {
@@ -41,12 +46,14 @@ foreach ($file in $files) {
 }
 $work = Join-Path ([IO.Path]::GetTempPath()) ('llvmup-install-' + [guid]::NewGuid().ToString('N'))
 $null = New-Item -ItemType Directory -Path $work
+$null = New-Item -ItemType Directory -Path (Join-Path $work 'libexec')
 $touched = @()
 $committed = $false
 $lock = $null
 try {
     foreach ($file in $files) { Copy-Item -LiteralPath $file.Source -Destination (Join-Path $work $file.Name) }
     $null = New-Item -ItemType Directory -Path $InstallDir -Force
+    $null = New-Item -ItemType Directory -Path $support -Force
     $lockPath = Join-Path $InstallDir '.llvmup-install.lock'
     $lock = [IO.File]::Open($lockPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
     foreach ($file in $files) {

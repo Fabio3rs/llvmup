@@ -11,7 +11,11 @@ Describe 'LLVMUP package installation' {
         Copy-Item -LiteralPath (Join-Path $repo 'packaging') -Destination $package -Recurse
         foreach ($line in Get-Content (Join-Path $repo 'packaging/runtime-files.tsv')) {
             $parts = $line -split '\s+'
-            if ($parts[0] -in @('common','powershell')) { Copy-Item -LiteralPath (Join-Path $repo $parts[2]) -Destination $package }
+            if ($parts[0] -in @('common','powershell')) {
+                $target = Join-Path $package $parts[2]
+                $null = New-Item -ItemType Directory -Path (Split-Path $target -Parent) -Force
+                Copy-Item -LiteralPath (Join-Path $repo $parts[2]) -Destination $target
+            }
         }
         'v0.0.0-test' | Set-Content (Join-Path $package 'VERSION')
         '# existing profile' | Set-Content $profileFile

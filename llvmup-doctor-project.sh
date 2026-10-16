@@ -55,7 +55,7 @@ doctor_project() {
             [[ $LLVM_CONFIG_VERSION =~ ^([~\<\>]=?|=)?[[:space:]]*[0-9]+(\.[0-9]+)*(\.\*)?$ || $LLVM_CONFIG_VERSION =~ ^[0-9]+\*$ ]] || exit 1
         fi
         case "$LLVM_CONFIG_AUTO_ACTIVATE" in true|false) ;; *) exit 1 ;; esac
-        case "$LLVM_CONFIG_PROFILE" in ''|minimal|full|custom) ;; *) exit 1 ;; esac
+        case "$LLVM_CONFIG_PROFILE" in ''|minimal|compiler|full|custom) ;; *) exit 1 ;; esac
         # Exact custom installation names remain supported.
         if [[ ! -d "$(llvm-get-toolchains-dir)/$LLVM_CONFIG_VERSION" ]]; then
             llvm-parse-version-expression "$LLVM_CONFIG_VERSION" >/dev/null 2>&1 || exit 1

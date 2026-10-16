@@ -183,12 +183,48 @@ include = ["clang", "lld"]
 Use `llvmup config apply` to install from the file or `llvmup config activate`
 when the matching toolchain is already installed.
 
+## Selecting installation components
+
+Complete installations remain the default. Linux and Windows can install smaller
+toolchains using the same profiles and component names:
+
+```bash
+llvmup install --profile compiler 22.1.8
+llvmup install --profile minimal --component clang-tidy 22.1.8
+llvmup install --component llvm-cov --component llvm-profdata --name coverage 22.1.8
+llvmup install --profile compiler --strip --verbose --name ci-llvm 22.1.8 # Linux
+llvmup install --from-source --profile compiler 22.1.8
+```
+
+| Profile | Installed content |
+| --- | --- |
+| `minimal` | Clang and aliases, LLD, Clang headers and runtimes |
+| `compiler` | `minimal` plus `llvm-ar`, `llvm-ranlib`, `llvm-cov`, `llvm-profdata`, plus libc++ headers/runtime, libc++abi and libunwind on Unix |
+| `custom` | Clang, headers and runtimes, plus explicit components |
+| `full` | Complete distribution; the default without selection options |
+
+Components without a profile imply `custom`; components with a profile add to it.
+The initial catalog also supports `clangd`, `clang-format`, and `clang-tidy`.
+Selective installation and optional strip require Python 3.9+; plain `full`
+installs retain their existing dependencies. Strip additionally requires
+`llvm-strip` or `strip` on PATH and applies only to Linux ELF executables.
+
+Prebuilt archives are downloaded and verified in full, then only selected files
+are extracted. Symbolic links, hardlinks, Clang resources, and required bundled
+shared libraries are retained. Changing the selection of an existing installation
+requires another `--name` or explicit removal. See [installation details](docs/INSTALL.md#selective-installations)
+for configuration, source builds, and disk diagnostics.
+
 ## Building from source
 
 Source builds clone the selected LLVM release, configure it with CMake, build
 with Ninja, and install it alongside prebuilt toolchains.
 
 On Windows, run the command from **Developer PowerShell for Visual Studio**.
+`compiler` bundles libc++ on Unix; select it with `-stdlib=libc++` and configure
+the runtime library search path for your executables. Windows MSVC uses the Visual
+Studio standard library. `minimal` continues to use the system C++ library.
+
 Source builds require Git, CMake, Ninja, and an existing C/C++ compiler such as
 MSVC (`cl.exe`) or Clang. Installing CMake and Ninja alone is not enough because
 LLVM needs a bootstrap compiler.

@@ -61,6 +61,9 @@ jobs:
         chmod +x install.sh
         ./install.sh
 
+    - name: Test selective installation engine
+      run: python3 tests/unit/test_selection.py
+
     - name: Run BATS tests
       run: |
         # Ensure PATH is updated in this step
@@ -94,6 +97,7 @@ jobs:
         version: 20.1.8
         # Never persist the lightweight fake compiler under a production cache key.
         cache: false
+        verbose: true
 
     - name: Verify action outputs and environment
       env:
@@ -166,6 +170,7 @@ jobs:
       with:
         version: 20.1.8
         cache: false
+        verbose: true
 
     - name: Verify Windows action outputs and environment
       shell: pwsh

@@ -8,7 +8,7 @@ install_files() (
     while read -r platform mode name extra; do
         [[ -z $platform || $platform == \#* ]] && continue
         [[ $platform == common || $platform == bash ]] || continue
-        [[ $name =~ ^[a-zA-Z0-9_.-]+$ && $mode =~ ^(644|755)$ && -z $extra ]] || { print_error 'Invalid runtime manifest'; exit 1; }
+        [[ $name =~ ^(libexec/)?[a-zA-Z0-9_][a-zA-Z0-9_.-]*$ && $mode =~ ^(644|755)$ && -z $extra ]] || { print_error 'Invalid runtime manifest'; exit 1; }
         [[ -f $INSTALL_SOURCE_DIR/$name && ! -L $INSTALL_SOURCE_DIR/$name ]] || { print_error "Script '$name' not found in $INSTALL_SOURCE_DIR."; exit 1; }
         sources+=("$INSTALL_SOURCE_DIR/$name"); targets+=("$INSTALL_DIR/$name"); modes+=("$mode")
     done < "$manifest"
@@ -23,6 +23,7 @@ install_files() (
     done
     target="$INSTALL_DIR/llvmup-install-paths"
     [[ ! -L $target && ( ! -e $target || -f $target ) ]] || { print_error "Refusing non-regular destination: $target"; exit 1; }
+    [[ ! -L $INSTALL_DIR/libexec && ( ! -e $INSTALL_DIR/libexec || -d $INSTALL_DIR/libexec ) ]] || { print_error 'Unsafe libexec directory'; exit 1; }
     # Validate the entire destination set before copying anything.
     local -A seen=()
     for target in "${targets[@]}"; do
@@ -63,6 +64,7 @@ install_files() (
     sources+=("$work/paths"); targets+=("$INSTALL_DIR/llvmup-install-paths"); modes+=(644)
     cp "$work/paths" "$work/new-$((${#sources[@]}-1))"
     create_install_directories
+    $SUDO_CMD mkdir -p -- "$INSTALL_DIR/libexec"
     $SUDO_CMD mkdir -- "$INSTALL_DIR/.llvmup-install.lock" || { print_error 'Another installation is running (or a stale .llvmup-install.lock remains).'; exit 1; }
     locked=1
     for i in "${!targets[@]}"; do

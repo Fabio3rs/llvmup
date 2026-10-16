@@ -37,7 +37,8 @@
 #   -c, --cmake-flags    Pass additional CMake flags (can be repeated)
 #   -n, --name           Custom name for installation
 #   -d, --default        Set as default version
-#   -p, --profile        Build profile: minimal, full, custom
+#   -p, --profile        Build profile: minimal, compiler, full, custom
+#   --strip              Strip Linux ELF executables after installation
 #   --component          Install specific components (can be repeated)
 #
 # All scripts (llvm-prebuilt, llvm-build, llvm-activate, llvm-deactivate, llvm-vscode-activate)
@@ -62,6 +63,7 @@ CMAKE_FLAGS=()
 CUSTOM_NAME=""
 SET_DEFAULT=0
 PROFILE=""
+STRIP=0
 COMPONENTS=()
 DISABLE_LIBC_WNO_ERROR=0
 RECONFIGURE=0
@@ -491,8 +493,9 @@ Install Options:
   -c, --cmake-flags "<FLAGS>"  Pass additional CMake flags (can be repeated)
   -n, --name <NAME>           Custom name for installation (e.g., 21.1.0-debug)
   -d, --default               Set as global default version
-  -p, --profile <PROFILE>     Build profile: minimal, full, custom
-  --component <COMPONENT>     Install specific components (can be repeated)
+  -p, --profile <PROFILE>     Build profile: minimal, compiler, full, custom
+  --component <COMPONENT>     Add an installation component (repeatable)
+  --strip                     Strip Linux ELF executables (opt-in)
   --disable-libc-wno-error    Disable LIBC_WNO_ERROR=ON flag
   --reconfigure               Force CMake to reconfigure the build (removes CMakeCache.txt)
   --list-only                 List available source releases and exit
@@ -513,7 +516,7 @@ Examples:
     -c "-DLLVM_ENABLE_PROJECTS=clang;lld" \\
     -n "21.1.0-debug" --default                   # Custom build with name
   llvmup install --profile minimal 18.1.8        # Install minimal profile
-  llvmup install --component clang --component lldb  # Specific components
+  llvmup install --component llvm-cov --component llvm-profdata # Clang + coverage
   llvmup activate 18.1.8                         # Activate in the current shell
   llvmup deactivate                              # Deactivate the current shell
   eval "$(llvmup env 18.1.8)"                    # Export env vars in current shell
@@ -660,16 +663,20 @@ while [[ $# -gt 0 ]]; do
                 exit 1
             fi
             case "$2" in
-                minimal|full|custom)
+                minimal|compiler|full|custom)
                     PROFILE="$2"
                     log_verbose "Option: Profile set: $2"
                     ;;
                 *)
-                    log_error "Invalid profile: $2 (must be: minimal, full, custom)"
+                    log_error "Invalid profile: $2 (must be: minimal, compiler, full, custom)"
                     exit 1
                     ;;
             esac
             shift 2
+            ;;
+        --strip)
+            STRIP=1
+            shift
             ;;
         --component)
             if [ $# -lt 2 ]; then
@@ -741,7 +748,7 @@ done
 log_verbose "Parsed ${#remaining_args[@]} remaining arguments: ${remaining_args[*]}"
 
 if [ "$FROM_SOURCE" -ne 1 ]; then
-    if [ -n "$PROFILE" ] || [ "${#CMAKE_FLAGS[@]}" -gt 0 ] || [ "${#COMPONENTS[@]}" -gt 0 ] ||
+    if [ "${#CMAKE_FLAGS[@]}" -gt 0 ] ||
         [ "$DISABLE_LIBC_WNO_ERROR" -eq 1 ] || [ "$RECONFIGURE" -eq 1 ]; then
         log_error "Build options require --from-source"
         exit 1
@@ -750,6 +757,7 @@ fi
 
 # Prepare arguments to pass to the target script
 script_args=()
+[ "$STRIP" -eq 0 ] || script_args+=(--strip)
 
 # Add verbosity flags to target script
 if [ "$VERBOSE" -eq 1 ]; then

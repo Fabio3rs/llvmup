@@ -1243,7 +1243,7 @@ llvm-config-init() {
             profile="${LLVM_TEST_PROFILE:-full}"
         else
             read -p "Custom installation name (optional): " custom_name
-            read -p "Build profile [minimal/full/custom]: " profile
+            read -p "Build profile [minimal/compiler/full/custom]: " profile
             if [ -z "$profile" ]; then
                 profile="full"
             fi

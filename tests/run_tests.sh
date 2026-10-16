@@ -195,7 +195,9 @@ echo "==============================================="
 print_status "FINAL TEST RESULTS"
 echo "==============================================="
 
-if [ $BATS_RESULT -ne 0 ] || [ $PESTER_RESULT -ne 0 ]; then
+SELECTION_RESULT=0
+python3 tests/unit/test_selection.py || SELECTION_RESULT=$?
+if [ $BATS_RESULT -ne 0 ] || [ $PESTER_RESULT -ne 0 ] || [ $SELECTION_RESULT -ne 0 ]; then
     print_error "❌ SOME TESTS FAILED"
     if [ $BATS_RESULT -ne 0 ]; then
         print_error "   • BATS tests failed"

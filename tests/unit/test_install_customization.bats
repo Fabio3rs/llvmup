@@ -22,6 +22,7 @@ setup() {
     cp "$BATS_TEST_DIRNAME/../../_llvmup" .
 
     cp -r "$BATS_TEST_DIRNAME/../../packaging" .
+    cp -r "$BATS_TEST_DIRNAME/../../libexec" .
     cp "$BATS_TEST_DIRNAME/../../LICENSE" "$BATS_TEST_DIRNAME/../../githubreleases.json" .
 
     touch "$HOME/.zshrc"

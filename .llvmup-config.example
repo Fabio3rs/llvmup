@@ -12,3 +12,9 @@ default = "latest-prebuilt"
 
 [project]
 auto_activate = true
+
+# Optional selection shared by prebuilt installs and source builds.
+# [profile]
+# type = "compiler"
+# [components]
+# include = ["clang-tidy"]

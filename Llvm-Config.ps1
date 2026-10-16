@@ -87,7 +87,7 @@ cmake_flags = [
 include = ["clang", "lld", "lldb", "compiler-rt"]
 
 [profile]
-# Build profile: minimal, full, custom
+# Build profile: minimal, compiler, full, custom
 type = "full"
 
 # Project-specific settings

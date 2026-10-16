@@ -6,6 +6,7 @@ load '../fixtures/test_helpers.bash'
 setup() {
     setup_test_env
     setup_mocks
+    export LLVM_TEST_MODE=1
 
     # Store original directory - go to project root
     cd "$BATS_TEST_DIRNAME/../.."

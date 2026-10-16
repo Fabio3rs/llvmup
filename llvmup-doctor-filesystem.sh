@@ -8,7 +8,7 @@ doctor_filesystem() {
     if [[ -r $manifest ]]; then
         while read -r platform mode file extra; do
             [[ $platform == bash || $platform == common ]] || continue
-            if [[ ! $file =~ ^[a-zA-Z0-9_.-]+$ || -n $extra ]]; then
+            if [[ ! $file =~ ^(libexec/)?[a-zA-Z0-9_][a-zA-Z0-9_.-]*$ || -n $extra ]]; then
                 doctor_emit installation.manifest installation FAIL 'Invalid runtime inventory.' 'Reinstall a complete LLVMUP package.' "$manifest"
                 continue
             fi

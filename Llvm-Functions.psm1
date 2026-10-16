@@ -327,6 +327,8 @@ Commands:
 
 Examples:
   llvmup install 21.1.0
+  llvmup install --profile compiler --component clang-tidy 21.1.0
+  llvmup install --profile compiler --strip 21.1.0  # Linux only
   llvmup activate llvmorg-21.1.0
   llvmup list --remote
   llvmup remove llvmorg-20.1.8
@@ -341,6 +343,7 @@ function Get-LlvmVersionsJson { Get-LlvmList -Json }
 function Invoke-LlvmUpInstall {
     param([string[]]$Tokens)
 
+    $strip = $false
     $fromSource = $false
     $listOnly = $false
     $setDefault = $false
@@ -358,6 +361,7 @@ function Invoke-LlvmUpInstall {
     for ($i = 0; $i -lt $Tokens.Count; $i++) {
         $token = $Tokens[$i]
         switch ($token) {
+            '--strip' { $strip = $true }
             '--from-source' { $fromSource = $true }
             '--list-only' { $listOnly = $true }
             '--default' { $setDefault = $true }
@@ -393,6 +397,7 @@ function Invoke-LlvmUpInstall {
         if ($verify) { throw '--verify applies only to prebuilt releases' }
         $installScript = Join-Path $PSScriptRoot 'Install-Llvm.ps1'
         $parameters = @{ FromSource = $true }
+        if ($strip) { $parameters.Strip = $true }
         if ($name) { $parameters.Name = $name }
         if ($profile) { $parameters.Profile = $profile }
         if ($cmakeFlags.Count) { $parameters.CmakeFlags = $cmakeFlags }
@@ -405,14 +410,17 @@ function Invoke-LlvmUpInstall {
         return & $installScript install $version @parameters
     }
 
-    if ($profile -or $cmakeFlags.Count -or $components.Count -or $disableLibcWnoError -or $reconfigure) {
+    if ($cmakeFlags.Count -or $disableLibcWnoError -or $reconfigure) {
         throw 'Source build options require --from-source'
     }
     $downloadParameters = @{ Version = $version }
+    if ($profile) { $downloadParameters.Profile = $profile }
+    if ($components.Count) { $downloadParameters.Component = $components }
+    if ($strip) { $downloadParameters.Strip = $true }
     if ($name) { $downloadParameters.Name = $name }
     if ($verify) { $downloadParameters.VerifyPolicy = $verify }
     if ($quiet) { $downloadParameters.Quiet = $true }
-    if ($verboseMode) { $downloadParameters.Verbose = $true }
+    if ($verboseMode) { $downloadParameters.VerboseMode = $true }
 
     $defaultTarget = $name
     if ($setDefault -and -not $defaultTarget) {

@@ -92,6 +92,7 @@ Describe 'Windows LLVM source installation' {
         Mock Resolve-LlvmSourceVersion { $version }
         Mock Invoke-LlvmNativeCommand {}
         Mock Test-LlvmBuiltToolchain { $true }
+        Mock Invoke-LlvmSelection {}
         Mock Move-Item {}
 
         $result = Install-FromSource -Version $version -CmakeFlags @() -Name '' `
@@ -103,10 +104,10 @@ Describe 'Windows LLVM source installation' {
             $Arguments -contains 'Ninja' -and $Arguments -contains '-DLLVM_ENABLE_PROJECTS=clang;lld'
         }
         Should -Invoke Invoke-LlvmNativeCommand -Times 1 -Exactly -ParameterFilter {
-            $Description -eq 'LLVM build' -and $Arguments -contains '--parallel'
+            $Description -eq 'LLVM build' -and $Arguments -contains '--parallel' -and $Arguments -contains 'distribution'
         }
         Should -Invoke Invoke-LlvmNativeCommand -Times 1 -Exactly -ParameterFilter {
-            $Description -eq 'LLVM installation' -and $Arguments -contains 'install'
+            $Description -eq 'LLVM installation' -and $Arguments -contains 'install-distribution'
         }
         Should -Invoke Test-LlvmBuiltToolchain -Times 1 -Exactly
         Should -Invoke Move-Item -Times 1 -Exactly

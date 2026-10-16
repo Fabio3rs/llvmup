@@ -144,7 +144,7 @@ teardown() {
 @test "reusable action isolates caches by verification policy" {
     run grep -F '${{ inputs.verify }}' "$BATS_TEST_DIRNAME/../../action.yml"
     [ "$status" -eq 0 ]
-    run grep -F 'auth-v1' "$BATS_TEST_DIRNAME/../../action.yml"
+    run grep -F 'llvmup-selection-v1' "$BATS_TEST_DIRNAME/../../action.yml"
     [ "$status" -eq 0 ]
 }
 

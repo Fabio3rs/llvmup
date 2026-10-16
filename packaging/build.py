@@ -24,7 +24,7 @@ def build(version, output):
         platform, mode, name = line.split()
         if platform not in ("common", "bash", "powershell") or mode not in ("644", "755"):
             raise ValueError(f"Invalid manifest entry: {line}")
-        if not re.fullmatch(r"[A-Za-z0-9_.-]+", name) or name in names:
+        if not re.fullmatch(r"(?:libexec/)?[A-Za-z0-9_][A-Za-z0-9_.-]*", name) or name in names:
             raise ValueError(f"Unsafe or duplicate filename: {name}")
         names.add(name)
         if (ROOT / name).is_symlink():

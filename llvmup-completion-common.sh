@@ -171,8 +171,9 @@ _llvmup_get_install_flag_items() {
 --cmake-flags	flag	Pass additional CMake flags
 --name	flag	Use a custom installation name
 --default	flag	Set the installed version as default
---profile	flag	Choose a build profile
---component	flag	Select build components
+--profile	flag	Choose an installation profile
+--component	flag	Select installation components
+--strip	flag	Strip Linux ELF executables
 --disable-libc-wno-error	flag	Disable LIBC_WNO_ERROR
 --reconfigure	flag	Force CMake reconfiguration
 --list-only	flag	List source releases without building
@@ -238,7 +239,8 @@ _llvmup_get_remote_version_items() {
 
 _llvmup_get_profile_items() {
     cat <<'EOF'
-minimal	profile	Build essential LLVM components only
+minimal	profile	Clang, LLD, headers and runtimes
+compiler	profile	Minimal plus libc++ on Unix, archive and coverage tools
 full	profile	Build the full default profile
 custom	profile	Build only explicitly selected components
 EOF
@@ -246,16 +248,17 @@ EOF
 
 _llvmup_get_component_items() {
     cat <<'EOF'
-clang	component	Clang C/C++ compiler front-end
-clang++	component	Clang++ frontend alias
-lld	component	LLVM linker
-lldb	component	LLVM debugger
-compiler-rt	component	Compiler runtime support library
-libcxx	component	C++ standard library
-libcxxabi	component	C++ ABI library
+clang	component	Clang compiler and its aliases
+lld	component	LLVM linker and its aliases
 llvm-ar	component	LLVM archiver
-llvm-nm	component	LLVM symbol table tool
-opt	component	LLVM optimizer
+llvm-ranlib	component	Archive index tool
+llvm-cov	component	Coverage reports
+llvm-profdata	component	Profile data processing
+libc++	component	Unix C++ headers, ABI and unwind runtimes
+clangd	component	Clang language server
+clang-format	component	Code formatting
+clang-tidy	component	Static analysis
+lldb	component	Source-only legacy debugger project
 EOF
 }
 

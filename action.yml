@@ -11,6 +11,22 @@ inputs:
     description: LLVM version expression, such as latest, 22.1.8, llvmorg-22.1.8, or ~22.1
     required: false
     default: latest
+  profile:
+    description: Installation profile (minimal, compiler, full, custom); defaults to full, or custom when components are supplied
+    required: false
+    default: ""
+  components:
+    description: Additional components, separated by commas or whitespace
+    required: false
+    default: ""
+  strip:
+    description: Strip Linux ELF executables after installation
+    required: false
+    default: "false"
+  verbose:
+    description: Log installation progress and disk usage at each stage
+    required: false
+    default: "false"
   cache:
     description: Restore and save the resolved LLVM toolchain with actions/cache
     required: false
@@ -130,37 +146,105 @@ runs:
         "version=$($metadata.version)" | Add-Content -Path $env:GITHUB_OUTPUT
         "asset-key=$assetKey" | Add-Content -Path $env:GITHUB_OUTPUT
 
+    - name: Resolve Linux component selection
+      if: runner.os == 'Linux'
+      id: selection-linux
+      shell: bash
+      env:
+        INPUT_PROFILE: ${{ inputs.profile }}
+        INPUT_COMPONENTS: ${{ inputs.components }}
+        INPUT_STRIP: ${{ inputs.strip }}
+        INPUT_VERBOSE: ${{ inputs.verbose }}
+      run: |
+        set -euo pipefail
+        case "$INPUT_STRIP:$INPUT_VERBOSE" in true:true|true:false|false:true|false:false) ;; *) echo 'strip and verbose must be true or false' >&2; exit 1 ;; esac
+        SCRIPT_DIR="$GITHUB_ACTION_PATH"
+        source "$SCRIPT_DIR/libexec/llvmup-selection.sh"
+        PROFILE="$INPUT_PROFILE"
+        COMPONENTS=()
+        while IFS= read -r component; do [ -z "$component" ] || COMPONENTS+=("$component"); done < <(printf '%s' "$INPUT_COMPONENTS" | tr ',[:space:]' '\n')
+        STRIP=0; [ "$INPUT_STRIP" != true ] || STRIP=1
+        llvm_selection_init
+        printf 'key=%s\n' "$(jq -r '.key' <<< "$LLVM_SELECTION_JSON")" >> "$GITHUB_OUTPUT"
+
+    - name: Resolve Windows component selection
+      if: runner.os == 'Windows'
+      id: selection-windows
+      shell: pwsh
+      env:
+        INPUT_PROFILE: ${{ inputs.profile }}
+        INPUT_COMPONENTS: ${{ inputs.components }}
+        INPUT_STRIP: ${{ inputs.strip }}
+        INPUT_VERBOSE: ${{ inputs.verbose }}
+      run: |
+        if ($env:INPUT_STRIP -notin @('true', 'false') -or $env:INPUT_VERBOSE -notin @('true', 'false')) { throw 'strip and verbose must be true or false' }
+        if ($env:INPUT_STRIP -eq 'true') { throw 'Strip is supported only on Linux' }
+        Import-Module (Join-Path $env:GITHUB_ACTION_PATH 'libexec/Llvm-Selection.psm1') -Force
+        $components = @($env:INPUT_COMPONENTS -split '[,\s]+' | Where-Object { $_ })
+        $selection = Get-LlvmSelection -Profile $env:INPUT_PROFILE -Components $components
+        "key=$($selection.key)" | Add-Content -Path $env:GITHUB_OUTPUT
+
+    - name: Report Linux disk usage before cache restore
+      if: runner.os == 'Linux' && inputs.verbose == 'true'
+      shell: bash
+      run: |
+        source "$GITHUB_ACTION_PATH/libexec/llvmup-selection.sh"
+        VERBOSE=1
+        llvm_space_snapshot 'before cache restore' "$RUNNER_TEMP/llvmup-data"
+
+    - name: Report Windows disk usage before cache restore
+      if: runner.os == 'Windows' && inputs.verbose == 'true'
+      shell: pwsh
+      run: |
+        Import-Module (Join-Path $env:GITHUB_ACTION_PATH 'libexec/Llvm-Selection.psm1') -Force
+        Write-LlvmSpaceSnapshot -Label 'before cache restore' -Paths @((Join-Path $env:RUNNER_TEMP 'llvmup-data')) -Enabled $true
+
     - name: Restore LLVM toolchain cache
       if: inputs.cache == 'true'
       id: cache
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
       with:
         path: ${{ runner.temp }}/llvmup-data/toolchains/${{ steps.resolve-linux.outputs.version || steps.resolve-windows.outputs.version }}
-        key: llvmup-v0.5.0-auth-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.verify }}-${{ steps.resolve-linux.outputs.version || steps.resolve-windows.outputs.version }}-${{ steps.resolve-linux.outputs.asset-key || steps.resolve-windows.outputs.asset-key }}
+        key: llvmup-selection-v1-${{ steps.selection-linux.outputs.key || steps.selection-windows.outputs.key }}-${{ runner.os }}-${{ runner.arch }}-${{ inputs.verify }}-${{ steps.resolve-linux.outputs.version || steps.resolve-windows.outputs.version }}-${{ steps.resolve-linux.outputs.asset-key || steps.resolve-windows.outputs.asset-key }}
 
     - name: Install or validate LLVM toolchain on Linux
       if: runner.os == 'Linux'
       shell: bash
       env:
+        LLVMUP_IGNORE_CONFIG: '1'
+        INPUT_PROFILE: ${{ inputs.profile }}
+        INPUT_COMPONENTS: ${{ inputs.components }}
+        INPUT_STRIP: ${{ inputs.strip }}
+        INPUT_VERBOSE: ${{ inputs.verbose }}
         RESOLVED_VERSION: ${{ steps.resolve-linux.outputs.version }}
         VERIFY_POLICY: ${{ inputs.verify }}
         GITHUB_TOKEN: ${{ inputs.github-token || github.token }}
         GH_TOKEN: ${{ inputs.github-token || github.token }}
       run: |
         set -euo pipefail
-        llvmup install --quiet --verify "$VERIFY_POLICY" "$RESOLVED_VERSION"
+        args=(--verify "$VERIFY_POLICY")
+        [ -z "$INPUT_PROFILE" ] || args+=(--profile "$INPUT_PROFILE")
+        while IFS= read -r component; do [ -z "$component" ] || args+=(--component "$component"); done < <(printf '%s' "$INPUT_COMPONENTS" | tr ',[:space:]' '\n')
+        [ "$INPUT_STRIP" != true ] || args+=(--strip)
+        if [ "$INPUT_VERBOSE" = true ]; then args+=(--verbose); else args+=(--quiet); fi
+        llvmup install "${args[@]}" "$RESOLVED_VERSION"
 
     - name: Install or validate LLVM toolchain on Windows
       if: runner.os == 'Windows'
       shell: pwsh
       env:
+        INPUT_PROFILE: ${{ inputs.profile }}
+        INPUT_COMPONENTS: ${{ inputs.components }}
+        INPUT_STRIP: ${{ inputs.strip }}
+        INPUT_VERBOSE: ${{ inputs.verbose }}
         RESOLVED_VERSION: ${{ steps.resolve-windows.outputs.version }}
         VERIFY_POLICY: ${{ inputs.verify }}
         GITHUB_TOKEN: ${{ inputs.github-token || github.token }}
         GH_TOKEN: ${{ inputs.github-token || github.token }}
       run: |
         $arch = switch ($env:RUNNER_ARCH) { 'ARM64' { 'arm64' } default { 'x64' } }
-        & (Join-Path $env:GITHUB_ACTION_PATH 'Download-Llvm.ps1') -Version $env:RESOLVED_VERSION -Platform Windows -Arch $arch -ArchiveOnly -VerifyPolicy $env:VERIFY_POLICY -Quiet
+        $components = @($env:INPUT_COMPONENTS -split '[,\s]+' | Where-Object { $_ })
+        & (Join-Path $env:GITHUB_ACTION_PATH 'Download-Llvm.ps1') -Version $env:RESOLVED_VERSION -Platform Windows -Arch $arch -ArchiveOnly -VerifyPolicy $env:VERIFY_POLICY -Profile $env:INPUT_PROFILE -Component $components -VerboseMode:($env:INPUT_VERBOSE -eq 'true') -Quiet:($env:INPUT_VERBOSE -ne 'true')
 
     - name: Validate and activate LLVM toolchain on Linux
       if: runner.os == 'Linux'
@@ -207,3 +291,18 @@ runs:
         $verification = if (Test-Path $markerPath) { (Get-Content $markerPath -Raw | ConvertFrom-Json).methods } else { 'unverified' }
         "llvm-path=$llvmPath" | Add-Content -Path $env:GITHUB_OUTPUT
         "verification=$verification" | Add-Content -Path $env:GITHUB_OUTPUT
+
+    - name: Report final Linux disk usage
+      if: always() && runner.os == 'Linux' && inputs.verbose == 'true'
+      shell: bash
+      run: |
+        source "$GITHUB_ACTION_PATH/libexec/llvmup-selection.sh"
+        VERBOSE=1
+        llvm_space_snapshot 'Action completion' "$RUNNER_TEMP/llvmup-data"
+
+    - name: Report final Windows disk usage
+      if: always() && runner.os == 'Windows' && inputs.verbose == 'true'
+      shell: pwsh
+      run: |
+        Import-Module (Join-Path $env:GITHUB_ACTION_PATH 'libexec/Llvm-Selection.psm1') -Force
+        Write-LlvmSpaceSnapshot -Label 'Action completion' -Paths @((Join-Path $env:RUNNER_TEMP 'llvmup-data')) -Enabled $true

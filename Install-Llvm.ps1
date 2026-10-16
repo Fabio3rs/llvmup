@@ -10,10 +10,11 @@ param (
     [string]$Version,
 
     [switch]$FromSource,
+    [switch]$Strip,
     [string[]]$CmakeFlags = @(),
     [string]$Name,
     [switch]$Default,
-    [ValidateSet("minimal", "full", "custom")]
+    [ValidateSet("", "minimal", "compiler", "full", "custom")]
     [string]$Profile,
     [string[]]$Component = @(),
     [switch]$DisableLibcWnoError,
@@ -25,6 +26,8 @@ param (
     [switch]$Quiet,
     [switch]$Help
 )
+
+Import-Module (Join-Path $PSScriptRoot 'libexec/Llvm-Selection.psm1') -Force
 
 # Set global verbose mode
 $script:VERBOSE_MODE = $VerboseMode.IsPresent
@@ -152,8 +155,9 @@ Install Options:
   -CmakeFlags      Pass additional CMake flags (can be repeated)
   -Name           Custom name for installation (e.g., "21.1.0-debug")
   -Default        Set as global default version
-  -Profile        Build profile: minimal, full, custom
-  -Component      Install specific components (can be repeated)
+  -Profile        Build profile: minimal, compiler, full, custom
+  -Component      Add selected components
+  -Strip          Strip Linux ELF executables (opt-in)
   -DisableLibcWnoError  Disable LIBC_WNO_ERROR=ON flag
   -Reconfigure    Force CMake to reconfigure the build if CMakeCache.txt exists
   -VerboseMode    Enable verbose output for debugging
@@ -578,8 +582,8 @@ function Install-LlvmVersion {
 
     # Load config file if it exists
     $config = Read-LlvmConfig
-    if ($config -and -not $VersionToInstall) {
-        $VersionToInstall = $config.Version
+    if ($config) {
+        if (-not $VersionToInstall) { $VersionToInstall = $config.Version }
         if (-not $CustomName) { $CustomName = $config.Name }
         if (-not $BuildProfile) { $BuildProfile = $config.Profile }
         if ($CmakeFlagsArray.Count -eq 0) { $CmakeFlagsArray = $config.CmakeFlags }
@@ -599,7 +603,7 @@ function Install-LlvmVersion {
     if ($BuildFromSource) {
         return Install-FromSource -Version $VersionToInstall -CmakeFlags $CmakeFlagsArray -Name $CustomName -SetDefault $SetAsDefault -Profile $BuildProfile -Components $ComponentsArray -DisableLibcWnoError $DisableLibcWnoErrorFlag -ForceReconfigure $ForceReconfigure
     } else {
-        return Install-PreBuilt -Version $VersionToInstall -Name $CustomName -SetDefault $SetAsDefault
+        return Install-PreBuilt -Version $VersionToInstall -Name $CustomName -SetDefault $SetAsDefault -SelectedProfile $BuildProfile -SelectedComponents $ComponentsArray
     }
 }
 
@@ -607,21 +611,19 @@ function Install-PreBuilt {
     param(
         [string]$Version,
         [string]$Name,
-        [bool]$SetDefault
+        [bool]$SetDefault,
+        [string]$SelectedProfile,
+        [string[]]$SelectedComponents
     )
 
     Write-InfoLog "📥 Installing pre-built LLVM $Version..."
 
-    # Use existing Download-Llvm.ps1 logic here, adapted for new parameters
-    # This is a simplified version - you would integrate the existing download logic
-
-    $installName = if ($Name) { $Name } else { $Version }
-    $targetDir = Join-Path $script:TOOLCHAINS_DIR $installName
-
-    # TODO: Integrate actual download and installation logic from Download-Llvm.ps1
-    Write-SuccessLog "LLVM $Version installed as '$installName'"
-
+    $parameters = @{ Version = $Version; Profile = $SelectedProfile; Component = $SelectedComponents; Strip = [bool]$Strip; Quiet = [bool]$script:Quiet; VerboseMode = [bool]$script:VERBOSE_MODE }
+    if ($Name) { $parameters.Name = $Name }
+    & (Join-Path $PSScriptRoot 'Download-Llvm.ps1') @parameters
+    if ($LASTEXITCODE -ne 0) { return $false }
     if ($SetDefault) {
+        $installName = if ($Name) { $Name } else { $Version }
         Set-DefaultVersion $installName | Out-Null
     }
 
@@ -666,14 +668,14 @@ function Install-FromSource {
         $majorVersion = $matches[1]
     }
 
-    # Determine projects to build
-    $projectsToBuild = ""
-    if ($Profile) {
-        $projectsToBuild = Get-ProfileProjects $Profile
-    } elseif ($Components.Count -gt 0) {
-        $projectsToBuild = $Components -join ';'
-    } else {
-        $projectsToBuild = Get-ProfileProjects "full"
+    $selection = Get-LlvmSelection -Profile $Profile -Components $Components -Strip:$Strip -Source
+    $projectsToBuild = if ($selection.enabled) { $selection.projects -join ';' } else { 'all' }
+    if ($selection.selective) {
+        foreach ($flag in $CmakeFlags) {
+            if ($flag -match '^-DLLVM_(ENABLE_PROJECTS|ENABLE_RUNTIMES|DISTRIBUTION_COMPONENTS|RUNTIME_DISTRIBUTION_COMPONENTS)') {
+                throw "CMake flag conflicts with component selection: $flag"
+            }
+        }
     }
 
     Write-InfoLog "🔧 Build Configuration:"
@@ -696,11 +698,12 @@ function Install-FromSource {
 
     $sourceDir = Join-Path $script:SOURCES_DIR $Version
     $llvmSourceDir = Join-Path $sourceDir 'llvm'
-    $buildDir = Join-Path $sourceDir 'build'
+    $buildDir = Join-Path $sourceDir $(if ($selection.enabled) { "build-$($selection.key)" } else { 'build' })
     $installDir = Join-Path $script:TOOLCHAINS_DIR $buildName
 
     if (Test-Path -LiteralPath $installDir) {
         if (Test-LlvmBuiltToolchain -Path $installDir) {
+            Invoke-LlvmSelection -Operation check -Root $installDir -Selection $selection
             Write-WarningLog "LLVM $buildName is already installed at $installDir"
             if ($SetDefault -and -not (Set-DefaultVersion $buildName)) { return $false }
             return $true
@@ -727,10 +730,13 @@ function Install-FromSource {
         $cloneDir = "$sourceDir.clone-$PID-$([guid]::NewGuid().ToString('N'))"
         try {
             Write-InfoLog "Cloning LLVM $Version (shallow checkout)..."
-            Invoke-LlvmNativeCommand -Command $tools.git -Arguments @(
-                'clone', '--depth', '1', '--branch', $Version,
-                'https://github.com/llvm/llvm-project.git', $cloneDir
-            ) -Description "Cloning LLVM $Version"
+            $cloneArgs = @('clone', '--depth', '1', '--branch', $Version)
+            if ($selection.selective) { $cloneArgs += @('--filter=blob:none', '--sparse') }
+            $cloneArgs += @('https://github.com/llvm/llvm-project.git', $cloneDir)
+            Invoke-LlvmNativeCommand -Command $tools.git -Arguments $cloneArgs -Description "Cloning LLVM $Version"
+            if ($selection.selective) {
+                Invoke-LlvmNativeCommand -Command $tools.git -Arguments (@('-C', $cloneDir, 'sparse-checkout', 'add') + @($selection.checkout)) -Description 'Selecting source projects'
+            }
             if (-not (Test-Path -LiteralPath (Join-Path $cloneDir 'llvm/CMakeLists.txt') -PathType Leaf)) {
                 throw 'The cloned repository does not contain llvm/CMakeLists.txt.'
             }
@@ -746,6 +752,13 @@ function Install-FromSource {
         }
     }
 
+    if (Test-Path -LiteralPath (Join-Path $sourceDir '.git/info/sparse-checkout')) {
+        if ($selection.selective) {
+            Invoke-LlvmNativeCommand -Command $tools.git -Arguments (@('-C', $sourceDir, 'sparse-checkout', 'add') + @($selection.checkout)) -Description 'Expanding source selection'
+        } else {
+            Invoke-LlvmNativeCommand -Command $tools.git -Arguments @('-C', $sourceDir, 'sparse-checkout', 'disable') -Description 'Expanding full source checkout'
+        }
+    }
     New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
     $stagingInstallDir = "$installDir.installing-$PID-$([guid]::NewGuid().ToString('N'))"
 
@@ -774,6 +787,10 @@ function Install-FromSource {
         $cmakeArgs += "-DLLVM_ENABLE_PROJECTS=all"
     }
 
+    if ($selection.selective) {
+        $cmakeArgs += "-DLLVM_ENABLE_RUNTIMES=$($selection.runtimes -join ';')"
+        $cmakeArgs += "-DLLVM_DISTRIBUTION_COMPONENTS=$($selection.targets -join ';');builtins;runtimes"
+    }
     # Add custom CMake flags
     foreach ($flag in $CmakeFlags) {
         $cmakeArgs += $flag
@@ -800,15 +817,17 @@ function Install-FromSource {
         Invoke-LlvmNativeCommand -Command $tools.cmake -Arguments $cmakeArgs -Description 'CMake configuration'
 
         Write-InfoLog "Building LLVM with $jobs parallel jobs. This can take 30 minutes or longer..."
-        Invoke-LlvmNativeCommand -Command $tools.cmake -Arguments @(
-            '--build', $buildDir, '--parallel', [string]$jobs
-        ) -Description 'LLVM build'
+        $buildArgs = @('--build', $buildDir, '--parallel', [string]$jobs)
+        if ($selection.selective) { $buildArgs += @('--target', 'distribution') }
+        Invoke-LlvmNativeCommand -Command $tools.cmake -Arguments $buildArgs -Description 'LLVM build'
+        Write-LlvmSpaceSnapshot -Label 'after build' -Paths @($buildDir) -Enabled ([bool]$script:VERBOSE_MODE)
 
         Write-InfoLog "Installing LLVM into a staging directory..."
         Invoke-LlvmNativeCommand -Command $tools.cmake -Arguments @(
-            '--build', $buildDir, '--target', 'install'
+            '--build', $buildDir, '--target', $(if ($selection.selective) { 'install-distribution' } else { 'install' })
         ) -Description 'LLVM installation'
 
+        Invoke-LlvmSelection -Operation finalize -Root $stagingInstallDir -Selection $selection
         if (-not (Test-LlvmBuiltToolchain -Path $stagingInstallDir)) {
             throw 'Installation validation failed: clang and clang++ are missing or cannot run.'
         }
@@ -819,6 +838,7 @@ function Install-FromSource {
         Write-Host "   If CMake could not find a compiler, retry from 'Developer PowerShell for VS'."
         return $false
     } finally {
+        Write-LlvmSpaceSnapshot -Label 'source cleanup' -Paths @($buildDir, $stagingInstallDir, $installDir) -Enabled ([bool]$script:VERBOSE_MODE)
         if (Test-Path -LiteralPath $stagingInstallDir) {
             Remove-Item -LiteralPath $stagingInstallDir -Recurse -Force -ErrorAction SilentlyContinue
         }
@@ -885,7 +905,7 @@ function Initialize-LlvmConfig {
         }
 
         $customName = Read-Host "Custom installation name (optional)"
-        $profile = Read-Host "Build profile [minimal/full/custom]"
+        $profile = Read-Host "Build profile [minimal/compiler/full/custom]"
         if (-not $profile) { $profile = "full" }
     }
 

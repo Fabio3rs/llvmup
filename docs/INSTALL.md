@@ -289,3 +289,88 @@ Installed uninstallers remain available after deleting the download:
 For custom locations, invoke the uninstaller there. Linux records completion
 locations during installation. PowerShell accepts `-NoProfile` or `-ProfilePath`
 if you used a different profile. Removal does not remove LLVM toolchains.
+
+## Selective installations
+
+Use `llvmup install --profile compiler VERSION` for Clang, LLD, archive tools,
+and coverage/profiling. `minimal` contains Clang and LLD; `full` remains the
+default. Every reduced profile includes Clang resource headers and runtimes.
+`compiler` also includes libc++ headers, libc++abi and libunwind on Unix platforms;
+`minimal` uses the existing C++ standard library. Windows MSVC builds use the
+Visual Studio standard library. All profiles still require the system SDK.
+Use `-std=c++23 -stdlib=libc++` to select the bundled library on Unix; installing
+it does not change Clang's default standard library. For shared-library execution,
+configure an rpath to the installed library directory (which may be under
+`lib/<target-triple>`), or configure your runtime loader accordingly.
+The available C++23/experimental features depend on the selected LLVM release.
+
+`--component` accepts `clang`, `lld`, `llvm-ar`, `llvm-ranlib`, `llvm-cov`,
+`llvm-profdata`, `libc++` (Unix only), `clangd`, `clang-format`, and `clang-tidy`. Repeat the option or
+pass a comma-separated list. Without a profile, components select `custom` with
+Clang as its base. With a profile, they extend that profile. Explicit CLI lists
+replace `[components] include` from `.llvmup-config`; an explicit profile
+overrides `[profile] type`. `custom` requires at least one component.
+
+Python 3.9+ is required for selective modes and optional stripping. Plain `full`
+installs do not require Python. On PowerShell the direct entry points expose
+`-Profile`, `-Component`, `-Strip`, and `-VerboseMode`; the `llvmup` facade accepts
+the same flags as Bash. Selective prebuilts support Linux and Windows archives;
+they cannot use Windows `.exe` installers. An unavailable archive or component
+is reported as an error instead of installing the full distribution.
+
+The full compressed archive is downloaded and authenticated before selection.
+Filtering happens during extraction, so excluded files never occupy staging
+space. Selected executables retain their aliases, versioned targets and bundled
+ELF/PE shared-library dependencies. The complete Clang resource tree is retained;
+selected libc++ headers and libraries are retained as well; unrelated static
+libraries and tools are omitted. Missing selected libc++ files cause an error. Archives containing unsafe
+selected links, traversal paths or duplicate members are rejected.
+The downloaded archive and temporary staging files are cleaned up automatically
+when installation finishes, including failures; no cleanup flag is needed.
+During extraction, disk usage includes the compressed archive and selected files.
+
+Source builds use the same catalog with `distribution`/`install-distribution`
+targets, enabling compiler-rt for runtime support and libcxx/libcxxabi/libunwind
+when libc++ is selected. New selective source clones
+request a shallow partial clone and sparse checkout; Git reports when the server
+does not support filtering. Existing sparse checkouts expand when additional
+projects or a full build are requested. Legacy source project names continue to
+use the previous project-level build path; unsupported mixtures with fine-grained
+tool names are rejected. Explicit CMake flags cannot redefine projects, runtimes,
+or distribution components while a catalog selection is active.
+
+`--strip` is opt-in and supports Linux ELF executables only. It requires
+`llvm-strip` or `strip` on PATH, runs in staging, reports byte savings, and leaves
+libraries and runtimes unchanged. A failure prevents publication. The
+`.llvmup-verification.json` marker authenticates the original downloaded archive;
+`.llvmup-installation.json` records the selection and whether stripping occurred.
+
+Existing installations must match the requested components and strip setting.
+Use `--name` for a separate variant, or explicitly remove the existing toolchain.
+Legacy installations without a selection manifest remain usable through the
+default full-install path.
+
+## GitHub Action disk diagnostics
+
+```yaml
+- uses: Fabio3rs/llvmup@main
+  with:
+    version: 22.1.8
+    profile: compiler
+    components: clang-tidy
+    strip: false # Linux only when true
+    verbose: true
+```
+
+`components` accepts commas, spaces, or multiple lines. Without a profile or
+components, the Action installs `full`; `strip` and `verbose` default to false.
+Cache keys include the normalized selection, manifest schema, strip setting,
+release asset, architecture, OS, and verification policy.
+
+Verbose logs show filesystem free space, download/staging/toolchain sizes and
+the 20 largest files. Snapshots run before and after extraction and before cleanup,
+including failure paths; they are phase measurements, not a continuous peak-space
+measurement. The manually triggered `action-e2e` workflow enables verbose output
+for both installation and cache restoration, then compiles C/C++ and generates
+a coverage report. On Linux it also compiles and runs C++23 `std::println`
+with the bundled libc++. No fixed installed-size guarantee applies across releases.

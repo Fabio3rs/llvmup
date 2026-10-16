@@ -46,6 +46,9 @@ jobs:
           version: ${{ inputs.version }}
           verify: ${{ inputs.verify }}
           cache: true
+          profile: compiler
+          verbose: true
+          strip: ${{ matrix.os == 'ubuntu-latest' }}
 
       - name: Verify Linux installation
         if: runner.os == 'Linux'
@@ -59,6 +62,8 @@ jobs:
           test -x "$LLVM_PATH/bin/clang"
           test "$CC" = "$LLVM_PATH/bin/clang"
           clang --version
+          llvm-cov --version
+          llvm-profdata --version
 
       - name: Verify Windows installation
         if: runner.os == 'Windows'
@@ -71,6 +76,21 @@ jobs:
           if (-not (Test-Path (Join-Path $env:LLVM_PATH 'bin\clang.exe'))) { throw 'clang.exe is missing.' }
           if ($env:CC -ne (Join-Path $env:LLVM_PATH 'bin\clang.exe')) { throw "Unexpected CC: $env:CC" }
           clang --version
+          llvm-cov --version
+          llvm-profdata --version
+
+      - name: Compile C/C++ and generate coverage
+        shell: pwsh
+        env:
+          LLVM_PATH: ${{ steps.setup.outputs.llvm-path }}
+        run: |
+          if ($IsWindows) {
+            $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+            $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+            & (Join-Path $vs 'Common7/Tools/Launch-VsDevShell.ps1') -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
+          }
+          python tests/integration/toolchain_smoke.py "$env:LLVM_PATH"
+          if ($LASTEXITCODE -ne 0) { throw 'Compiler/coverage smoke test failed' }
 
   restore:
     name: Restore cache (${{ matrix.os }})
@@ -93,6 +113,9 @@ jobs:
           version: ${{ inputs.version }}
           verify: ${{ inputs.verify }}
           cache: true
+          profile: compiler
+          verbose: true
+          strip: ${{ matrix.os == 'ubuntu-latest' }}
 
       - name: Require an exact cache hit
         shell: bash
@@ -102,3 +125,16 @@ jobs:
 
       - name: Verify restored compiler
         run: clang --version
+
+      - name: Compile C/C++ and generate coverage
+        shell: pwsh
+        env:
+          LLVM_PATH: ${{ steps.setup.outputs.llvm-path }}
+        run: |
+          if ($IsWindows) {
+            $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+            $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+            & (Join-Path $vs 'Common7/Tools/Launch-VsDevShell.ps1') -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
+          }
+          python tests/integration/toolchain_smoke.py "$env:LLVM_PATH"
+          if ($LASTEXITCODE -ne 0) { throw 'Compiler/coverage smoke test failed' }

@@ -4,11 +4,15 @@ $ErrorActionPreference = 'Stop'
 if ($ProfilePath) { $ProfilePath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ProfilePath) }
 $manifest = Join-Path $PSScriptRoot 'llvmup-files.tsv'
 if (-not (Test-Path -LiteralPath $manifest)) { throw 'Run the installed Uninstall-Llvmup.ps1, not the checkout copy.' }
+$support = Join-Path $PSScriptRoot 'libexec'
+if (Test-Path -LiteralPath $support) {
+    if ((Get-Item -LiteralPath $support -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Unsafe libexec directory' }
+}
 $names = @()
 foreach ($line in Get-Content -LiteralPath $manifest) {
     $parts = $line -split '\s+'
     if ($parts[0] -notin @('common', 'powershell')) { continue }
-    if ($parts.Count -ne 3 -or $parts[2] -notmatch '^[A-Za-z0-9_.-]+$') { throw 'Invalid runtime manifest' }
+    if ($parts.Count -ne 3 -or $parts[2] -notmatch '^(libexec/)?[A-Za-z0-9_][A-Za-z0-9_.-]*$') { throw 'Invalid runtime manifest' }
     $names += $parts[2]
 }
 if (-not $NoProfile -and $ProfilePath -and (Test-Path -LiteralPath $ProfilePath)) {

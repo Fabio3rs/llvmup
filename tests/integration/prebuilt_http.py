@@ -23,7 +23,7 @@ class PrebuiltHTTPTests(unittest.TestCase):
     def setUpClass(cls):
         archive = io.BytesIO()
         with tarfile.open(fileobj=archive, mode="w:xz") as package:
-            for name in ("clang", "clang++", "padding"):
+            for name in ("clang", "clang++", "padding", "lld", "ld.lld", "llvm-ar", "llvm-ranlib", "llvm-cov", "llvm-profdata"):
                 # Keep the compressed archive above 1 MiB so integer rounding
                 # cannot hide the original misleading zero-size result.
                 data = os.urandom(2 * 1024 * 1024) if name == "padding" else b"#!/bin/sh\necho clang version 20.1.8\n"
@@ -31,9 +31,19 @@ class PrebuiltHTTPTests(unittest.TestCase):
                 info.size = len(data)
                 info.mode = 0o755
                 package.addfile(info, io.BytesIO(data))
+            for name in ('include/stddef.h', 'lib/linux/libclang_rt.profile.a'):
+                data = b'fixture resource'
+                info = tarfile.TarInfo('LLVM-20.1.8-Linux-X64/lib/clang/20/' + name)
+                info.size = len(data)
+                package.addfile(info, io.BytesIO(data))
+            for name in ('include/c++/v1/vector', 'include/c++/v1/__config', 'lib/libc++.so', 'lib/libc++abi.so', 'lib/libunwind.so'):
+                data = b'fixture C++ runtime'
+                info = tarfile.TarInfo('LLVM-20.1.8-Linux-X64/' + name)
+                info.size = len(data)
+                package.addfile(info, io.BytesIO(data))
         cls.archive = archive.getvalue()
 
-    def check_install(self, scenario, expected_size):
+    def check_install(self, scenario, expected_size, profile=None):
         requests = []
         archive = self.archive
 
@@ -93,7 +103,7 @@ class PrebuiltHTTPTests(unittest.TestCase):
                         "NO_PROXY": "127.0.0.1", "no_proxy": "127.0.0.1",
                     })
                     result = subprocess.run(
-                        [str(INSTALLER), "--verify", "warn", VERSION],
+                        [str(INSTALLER), "--verify", "warn", VERSION] + (["--profile", profile] if profile else []),
                         cwd=root, env=env, text=True, stdout=subprocess.PIPE,
                         stderr=subprocess.STDOUT, timeout=45,
                     )
@@ -102,12 +112,21 @@ class PrebuiltHTTPTests(unittest.TestCase):
                     self.assertNotIn("File size: 0MB", result.stdout)
                     self.assertIn("SHA256 asset.digest matches the downloaded file", result.stdout)
                     self.assertTrue((root / "toolchains" / VERSION / "bin/clang").is_file())
+                    if profile:
+                        installed = root / 'toolchains' / VERSION
+                        self.assertFalse((installed / 'bin/padding').exists())
+                        marker = json.loads((installed / '.llvmup-installation.json').read_text())
+                        self.assertEqual(marker['profile'], profile)
+                        self.assertTrue((installed / 'lib/clang/20/lib/linux/libclang_rt.profile.a').is_file())
                     for method in ("HEAD", "GET"):
                         for path in ("/release", "/archive"):
                             self.assertIn((method, path), requests)
             finally:
                 server.shutdown()
                 thread.join(timeout=5)
+
+    def test_selective_install_through_real_http(self):
+        self.check_install('length', f'{len(self.archive) // 1024 // 1024}MB', profile='compiler')
 
     def test_final_size_after_zero_length_redirect(self):
         self.check_install("length", f"{len(self.archive) // 1024 // 1024}MB")

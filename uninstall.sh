@@ -101,10 +101,11 @@ UNINSTALL_SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 manifest="$UNINSTALL_SOURCE_DIR/llvmup-files.tsv"
 [[ -f $manifest ]] || manifest="$UNINSTALL_SOURCE_DIR/packaging/runtime-files.tsv"
 if [[ -f $manifest ]]; then
+    [[ ! -L $INSTALL_DIR/libexec ]] || { print_error 'Unsafe libexec directory'; exit 1; }
     scripts=()
     while read -r platform mode name extra; do
         [[ $platform == common || $platform == bash ]] || continue
-        [[ $name =~ ^[a-zA-Z0-9_.-]+$ && -z $extra ]] || { print_error 'Invalid runtime manifest'; exit 1; }
+        [[ $name =~ ^(libexec/)?[a-zA-Z0-9_][a-zA-Z0-9_.-]*$ && -z $extra ]] || { print_error 'Invalid runtime manifest'; exit 1; }
         scripts+=("$name")
     done < "$manifest"
     scripts+=(llvmup-files.tsv llvmup-version llvmup-install-paths)

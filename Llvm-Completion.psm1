@@ -266,7 +266,12 @@ $llvmupSB = {
             'config' { $values = @('init','load','apply','activate') }
             'doctor' { $values = @('--verbose','--deep','--network','--json','--help') }
             'disk-usage' { $values = @('-h','--human-readable') }
-            'install' { $values = @('--from-source','--verify','--name','--default','--profile','--component','--reconfigure','--list-only') + @(Get-LlvmRemoteVersions) }
+            'install' {
+                $previous = if ($wordToComplete) { $elements[$elements.Count-2] } else { $elements[-1] }
+                if ($previous -in @('--profile','-p')) { $values = @('minimal','compiler','full','custom') }
+                elseif ($previous -eq '--component') { $values = @('clang','lld','llvm-ar','llvm-ranlib','llvm-cov','llvm-profdata','libc++','clangd','clang-format','clang-tidy') }
+                else { $values = @('--from-source','--verify','--name','--default','--profile','--component','--strip','--verbose','--reconfigure','--list-only') + @(Get-LlvmRemoteVersions) }
+            }
             default { $values = @() }
         }
     }

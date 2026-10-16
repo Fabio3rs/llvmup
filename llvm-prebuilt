@@ -11,7 +11,7 @@ if [ -f "$SCRIPT_DIR/llvm-functions.sh" ]; then
     source "$SCRIPT_DIR/llvm-functions.sh"
 
     # Load configuration if .llvmup-config exists
-    if [ -f ".llvmup-config" ]; then
+    if [ "${LLVMUP_IGNORE_CONFIG:-0}" != 1 ] && [ -f ".llvmup-config" ]; then
         llvm-config-load >/dev/null 2>&1 || true
     fi
 else
@@ -26,9 +26,23 @@ VERIFY_REQUEST=""
 CUSTOM_NAME=""
 SET_DEFAULT=0
 ARGS=()
+PROFILE="${LLVM_CONFIG_PROFILE:-}"
+COMPONENTS=("${LLVM_CONFIG_COMPONENTS[@]}")
+if [ "${LLVMUP_IGNORE_CONFIG:-0}" = 1 ]; then PROFILE=""; COMPONENTS=(); fi
+STRIP=0
+COMPONENTS_CLI=0
+source "$SCRIPT_DIR/libexec/llvmup-selection.sh"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
+        --profile)
+            [ $# -ge 2 ] || { echo "--profile requires a value" >&2; exit 1; }
+            PROFILE="$2"; shift 2 ;;
+        --component)
+            [ $# -ge 2 ] || { echo "--component requires a value" >&2; exit 1; }
+            if [ "$COMPONENTS_CLI" -eq 0 ]; then COMPONENTS=(); COMPONENTS_CLI=1; fi
+            COMPONENTS+=("$2"); shift 2 ;;
+        --strip) STRIP=1; shift ;;
         -v|--verbose)
             VERBOSE=1
             shift
@@ -61,6 +75,9 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [OPTIONS] [VERSION]"
             echo ""
             echo "Options:"
+            echo "  --profile NAME   minimal, compiler, full, or custom"
+            echo "  --component NAME Add a selected component (repeatable)"
+            echo "  --strip          Strip Linux ELF executables"
             echo "  -v, --verbose    Enable verbose output"
             echo "  -q, --quiet      Suppress non-essential output"
             echo "  --verify POLICY  Verification policy: warn, strict, or skip"
@@ -144,6 +161,11 @@ command -v jq >/dev/null 2>&1 || {
     exit 1
 }
 
+llvm_selection_init || exit 1
+if [ "$LLVM_SELECTION_ENABLED" -eq 1 ] && [ "$(uname -s)" != Linux ]; then
+    log_error "Selective prebuilt installation currently supports Linux and Windows."; exit 1
+fi
+
 VERIFY_POLICY="$(llvm-resolve-verification-policy "$VERIFY_REQUEST")" || exit 1
 
 VERSION_EXPRESSION="${1:-${LLVM_CONFIG_VERSION:-latest}}"
@@ -176,6 +198,7 @@ TARGET_DIR="$LLVM_TOOLCHAINS_DIR/$INSTALL_NAME"
 
 if [ -e "$TARGET_DIR" ]; then
     if llvm-validate-toolchain-path "$TARGET_DIR"; then
+        llvm_selection_check "$TARGET_DIR" || exit 1
         llvm-validate-verification-marker "$TARGET_DIR" "$SELECTED_VERSION" \
             "$ASSET_DIGEST" "$VERIFY_POLICY" || exit 1
         if [ "$SET_DEFAULT" -eq 1 ]; then
@@ -205,14 +228,20 @@ TEMP_DIR="$(mktemp -d "$TEMP_BASE/llvmup-${SELECTED_VERSION}.XXXXXX")" || {
 STAGING_ROOT=""
 log_verbose "Temporary directory: $TEMP_DIR"
 cleanup_prebuilt_install() {
+    local result=$?
+    llvm_space_snapshot "before cleanup (status=$result)" "$TEMP_DIR" "${STAGING_ROOT:-}" "$TARGET_DIR"
     rm -rf -- "$TEMP_DIR"
     if [ -n "$STAGING_ROOT" ]; then
         rm -rf -- "$STAGING_ROOT"
     fi
+    llvm_space_snapshot "after cleanup" "$TEMP_DIR" "$TARGET_DIR"
+    return "$result"
 }
 trap cleanup_prebuilt_install EXIT
 
 DEST_FILE="$TEMP_DIR/$ASSET_NAME"
+
+llvm_space_snapshot "before download" "$TEMP_DIR" "$LLVM_TOOLCHAINS_DIR"
 
 # Get file size for progress indication
 log_info "Getting file information..."
@@ -268,9 +297,17 @@ if ! llvm-verify-release-asset "$DEST_FILE" "$ASSET_DIGEST" "$SHA_URL" \
     exit 1
 fi
 
+llvm_space_snapshot "after download" "$TEMP_DIR"
+
 log_info "Extracting the archive... (this may take a few moments)"
 echo "Extraction progress:"
 
+mkdir -p "$LLVM_TOOLCHAINS_DIR" || exit 1
+STAGING_ROOT="$(mktemp -d "$LLVM_TOOLCHAINS_DIR/.llvmup-${INSTALL_NAME}.installing.XXXXXX")" || exit 1
+STAGED_TOOLCHAIN="$STAGING_ROOT/toolchain"
+if [ "$(jq -r '.selective' <<< "$LLVM_SELECTION_JSON")" = true ]; then
+    python3 "$SCRIPT_DIR/libexec/llvmup-selection.py" extract --archive "$DEST_FILE" --root "$STAGED_TOOLCHAIN" "${LLVM_SELECTION_ARGS[@]}" || exit 1
+else
 ARCHIVE_LIST_FILE="$TEMP_DIR/archive.list"
 if ! tar -tf "$DEST_FILE" >"$ARCHIVE_LIST_FILE" 2>/dev/null; then
     log_error "Failed to inspect the downloaded tarball."
@@ -287,7 +324,7 @@ fi
 if [ "$VERBOSE" -eq 1 ]; then
     log_verbose "Extracting with verbose output (showing first 50 files):"
     EXTRACTION_LOG="$TEMP_DIR/extraction.log"
-    if ! tar -xf "$DEST_FILE" -C "$TEMP_DIR" --verbose >"$EXTRACTION_LOG" 2>&1; then
+    if ! tar -xf "$DEST_FILE" -C "$STAGING_ROOT" --verbose >"$EXTRACTION_LOG" 2>&1; then
         sed -n '1,50p' "$EXTRACTION_LOG" >&2
         log_error "Failed to extract the tarball."
         log_info "The downloaded file might be corrupted. Please try again."
@@ -297,7 +334,7 @@ if [ "$VERBOSE" -eq 1 ]; then
 else
     # Show basic extraction progress with a simple progress indicator
     echo -n "Extracting files... "
-    if ! tar -xf "$DEST_FILE" -C "$TEMP_DIR" 2>&1; then
+    if ! tar -xf "$DEST_FILE" -C "$STAGING_ROOT" 2>&1; then
         echo "FAILED"
         log_error "Failed to extract the tarball."
         log_info "The downloaded file might be corrupted. Please try again."
@@ -306,32 +343,13 @@ else
     echo "DONE"
 fi
 
-log_verbose "Extracted directory: $EXTRACTED_DIR"
 
-log_info "Preparing final installation directory..."
-log_verbose "Target directory: $TARGET_DIR"
-
-# Create the toolchains directory if it doesn't exist
-if ! mkdir -p "$LLVM_TOOLCHAINS_DIR"; then
-    log_error "Failed to create toolchains directory: $LLVM_TOOLCHAINS_DIR"
-    log_info "Please check if you have write permissions in your home directory."
-    log_verbose "Cleaning up temporary directory: $TEMP_DIR"
-    rm -rf "$TEMP_DIR"
-    exit 1
+    if [ "$STAGING_ROOT/$EXTRACTED_DIR" != "$STAGED_TOOLCHAIN" ]; then
+        mv "$STAGING_ROOT/$EXTRACTED_DIR" "$STAGED_TOOLCHAIN" || exit 1
+    fi
 fi
-
-# Move the extracted folder to the final directory
-STAGING_ROOT="$(mktemp -d "$LLVM_TOOLCHAINS_DIR/.llvmup-${INSTALL_NAME}.installing.XXXXXX")" || {
-    log_error "Failed to create an installation staging directory in $LLVM_TOOLCHAINS_DIR"
-    exit 1
-}
-STAGED_TOOLCHAIN="$STAGING_ROOT/toolchain"
-
-if ! mv "$TEMP_DIR/$EXTRACTED_DIR" "$STAGED_TOOLCHAIN"; then
-    log_error "Failed to move the extracted files into the staging directory."
-    log_info "Please check if you have write permissions in your home directory."
-    exit 1
-fi
+llvm_space_snapshot "after extraction" "$STAGED_TOOLCHAIN" "$TEMP_DIR"
+llvm_selection_finalize "$STAGED_TOOLCHAIN" || exit 1
 
 # Verify before publishing the final installation path.
 if ! llvm-validate-toolchain-path "$STAGED_TOOLCHAIN"; then

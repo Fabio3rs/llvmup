@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Selective prebuilt extraction and source distribution targets with shared
+  `minimal`, `compiler`, `custom`, and `full` profiles on Bash and PowerShell
+- Optional Linux ELF executable stripping, selection manifests, and cache keys
+  that distinguish installed components and strip settings
+- Action inputs for profiles, components, strip, and verbose disk diagnostics;
+  The compiler profile includes libc++/libc++abi/libunwind and C++ headers on Unix.
+  Action E2E exercises C++23 libc++, compiler/coverage tools and verbose cache restoration
 - Canonical `llvmup` PowerShell function with install, activation, inspection,
   configuration, default-version, environment, resolution, and VSCode routing
 - `llvmup remove <version> [--force]` with active/default protection

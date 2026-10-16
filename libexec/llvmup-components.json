@@ -1,0 +1,123 @@
+{
+  "schema": 1,
+  "profiles": {
+    "minimal": [
+      "clang",
+      "lld"
+    ],
+    "compiler": [
+      "clang",
+      "lld",
+      "llvm-ar",
+      "llvm-ranlib",
+      "llvm-cov",
+      "llvm-profdata",
+      "libc++"
+    ],
+    "custom": [
+      "clang"
+    ]
+  },
+  "components": {
+    "clang": {
+      "project": "clang",
+      "tools": [
+        "clang",
+        "clang++",
+        "clang-cl",
+        "clang-cpp"
+      ],
+      "targets": [
+        "clang",
+        "clang-resource-headers"
+      ]
+    },
+    "lld": {
+      "project": "lld",
+      "tools": [
+        "lld",
+        "ld.lld",
+        "lld-link",
+        "ld64.lld",
+        "wasm-ld"
+      ],
+      "targets": [
+        "lld"
+      ]
+    },
+    "llvm-ar": {
+      "project": "",
+      "tools": [
+        "llvm-ar"
+      ],
+      "targets": [
+        "llvm-ar"
+      ]
+    },
+    "llvm-ranlib": {
+      "project": "",
+      "tools": [
+        "llvm-ranlib"
+      ],
+      "targets": [
+        "llvm-ar",
+        "llvm-ranlib"
+      ]
+    },
+    "llvm-cov": {
+      "project": "",
+      "tools": [
+        "llvm-cov"
+      ],
+      "targets": [
+        "llvm-cov"
+      ]
+    },
+    "llvm-profdata": {
+      "project": "",
+      "tools": [
+        "llvm-profdata"
+      ],
+      "targets": [
+        "llvm-profdata"
+      ]
+    },
+    "clangd": {
+      "project": "clang-tools-extra",
+      "tools": [
+        "clangd"
+      ],
+      "targets": [
+        "clangd"
+      ]
+    },
+    "clang-format": {
+      "project": "clang",
+      "tools": [
+        "clang-format"
+      ],
+      "targets": [
+        "clang-format"
+      ]
+    },
+    "clang-tidy": {
+      "project": "clang-tools-extra",
+      "tools": [
+        "clang-tidy"
+      ],
+      "targets": [
+        "clang-tidy"
+      ]
+    },
+    "libc++": {
+      "project": "",
+      "tools": [],
+      "targets": [],
+      "runtimes": [
+        "libunwind",
+        "libcxxabi",
+        "libcxx"
+      ]
+    }
+  }
+}
