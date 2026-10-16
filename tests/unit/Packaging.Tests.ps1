@@ -61,8 +61,17 @@ Describe 'LLVMUP package installation' {
         & $installer -InstallDir $destination -NoProfile
         $before = (Get-FileHash (Join-Path $destination 'Activate-Llvm.ps1')).Hash
         'changed' | Set-Content (Join-Path $package 'Activate-Llvm.ps1')
+        # Pester 6 requires an explicit fallback for unmatched calls. Invoke
+        # the CmdletInfo directly so real staging/backup/rollback copies run
+        # without re-entering the mocked Copy-Item function.
+        Mock Copy-Item {
+            $copyCmdlet = Get-Command Microsoft.PowerShell.Management\Copy-Item -CommandType Cmdlet
+            & $copyCmdlet -LiteralPath $LiteralPath -Destination $Destination -Force:$Force
+        }
         Mock Copy-Item { throw 'Simulated replacement failure' } -ParameterFilter { $Destination -like '*custom install*Activate-LlvmVsCode.ps1' -and $LiteralPath -notlike '*.backup' }
         { & $installer -InstallDir $destination -ProfilePath $profileFile } | Should -Throw '*Simulated replacement failure*'
+        Should -Invoke Copy-Item -Times 1 -Exactly -ParameterFilter { $Destination -like '*custom install*Activate-LlvmVsCode.ps1' -and $LiteralPath -notlike '*.backup' }
+        Should -Invoke Copy-Item -Times 1 -Exactly -ParameterFilter { $Destination -like '*custom install*Activate-Llvm.ps1' -and $LiteralPath -like '*.backup' }
         (Get-FileHash (Join-Path $destination 'Activate-Llvm.ps1')).Hash | Should -Be $before
         (Get-Content $profileFile -Raw) | Should -Not -Match '# LLVMUP module - Start'
         Test-Path (Join-Path $destination '.llvmup-install.lock') | Should -BeFalse
