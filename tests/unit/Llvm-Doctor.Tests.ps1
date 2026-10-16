@@ -9,11 +9,14 @@ Describe 'Read-only LLVMUP doctor' {
             $script:saved[$name] = [Environment]::GetEnvironmentVariable($name)
             [Environment]::SetEnvironmentVariable($name, $null)
         }
-        $env:LLVM_HOME = Join-Path $TestDrive 'data with spaces'
+        # Pester's TestDrive is shared by the It blocks in this Describe.
+        # Keep damaged-install fixtures out of subsequent healthy-install checks.
+        $script:caseRoot = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        $env:LLVM_HOME = Join-Path $script:caseRoot 'data with spaces'
         $env:LLVM_TOOLCHAINS_DIR = Join-Path $env:LLVM_HOME custom
         $null = New-Item -ItemType Directory -Path $env:LLVM_TOOLCHAINS_DIR -Force
         $script:oldLocation = Get-Location
-        Set-Location $TestDrive
+        Set-Location $script:caseRoot
         '[version]', 'default = "latest"' | Set-Content .llvmup-config
     }
     AfterEach {
@@ -28,7 +31,7 @@ Describe 'Read-only LLVMUP doctor' {
         $first | Should -BeExactly $second
         $data = $first | ConvertFrom-Json
         $data.schema_version | Should -Be 1
-        $data.exit_code | Should -Be 0
+        $data.exit_code | Should -Be 0 -Because (@($data.checks | Where-Object status -eq FAIL) | ConvertTo-Json -Depth 6 -Compress)
         $global:LASTEXITCODE | Should -Be 0
         ($data.checks | Where-Object id -eq network.github).status | Should -Be SKIP
         Should -Invoke Invoke-RestMethod -ModuleName Llvm-Doctor -Times 0 -Exactly
@@ -55,15 +58,31 @@ Describe 'Read-only LLVMUP doctor' {
         foreach ($name in @('clang.exe','clang++.exe')) { [IO.File]::WriteAllText((Join-Path $bin $name), 'not executable') }
         $before = @(Get-ChildItem -Recurse $env:LLVM_HOME | Select-Object FullName,Length,LastWriteTimeUtc) | ConvertTo-Json
         $data = Invoke-LlvmDoctor -Tokens @('--json') | ConvertFrom-Json
-        $data.exit_code | Should -Be 0
+        $data.exit_code | Should -Be 0 -Because (@($data.checks | Where-Object status -eq FAIL) | ConvertTo-Json -Depth 6 -Compress)
         ($data.checks | Where-Object id -eq toolchain.compilers).status | Should -Be PASS
+        @($data.checks | Where-Object id -eq toolchain.compilers).Count | Should -Be 1
+        ($data.checks | Where-Object id -eq toolchain.default).status | Should -Be SKIP
         $after = @(Get-ChildItem -Recurse $env:LLVM_HOME | Select-Object FullName,Length,LastWriteTimeUtc) | ConvertTo-Json
         $after | Should -BeExactly $before
     }
     It 'reports missing optional source dependencies as warnings' {
-        Mock Get-Command -ModuleName Llvm-Doctor { $null } -ParameterFilter { $Name -eq 'ninja' }
-        $data = Invoke-LlvmDoctor -Tokens @('--json') | ConvertFrom-Json
-        ($data.checks | Where-Object id -eq dependency.ninja).status | Should -Be WARN
+        # Exercise actual command discovery without mocking the cmdlet Pester
+        # itself uses to resolve commands (including on Windows/Pester 6).
+        $emptyPath = Join-Path $script:caseRoot 'empty PATH'
+        $null = New-Item -ItemType Directory -Path $emptyPath
+        $previousPath = $env:PATH
+        $previousPreference = $ErrorActionPreference
+        try {
+            $env:PATH = $emptyPath
+            $ErrorActionPreference = 'Stop'
+            $data = Invoke-LlvmDoctor -Tokens @('--json') | ConvertFrom-Json
+            ($data.checks | Where-Object id -eq dependency.ninja).status | Should -Be WARN -Because (@($data.checks | Where-Object status -eq FAIL) | ConvertTo-Json -Depth 6 -Compress)
+            $data.exit_code | Should -Be 0 -Because (@($data.checks | Where-Object status -eq FAIL) | ConvertTo-Json -Depth 6 -Compress)
+            ($data.checks | Where-Object id -eq toolchain.default).status | Should -Be SKIP
+        } finally {
+            $env:PATH = $previousPath
+            $ErrorActionPreference = $previousPreference
+        }
     }
     It 'rejects invalid project configuration without evaluating it' {
         '[version]', 'default = "$(throw ''must not run'')"' | Set-Content .llvmup-config
