@@ -32,7 +32,17 @@ runs the Linux and Windows test workflow first, builds the assets, and publishes
 them with generated notes using the existing tag. Tags with a suffix, such as
 `v0.6.0-rc.1`, produce prereleases and do not supply the stable `latest` URL.
 A first prerelease is useful for validating the real download path before a
-stable release. The workflow does not overwrite existing releases or assets.
+stable release. If the release already exists (including one created in the
+GitHub UI), the workflow reuses it and uploads the missing assets, preserving
+its title, notes and draft/prerelease status. Identical assets are skipped on
+retries; differing assets cause an error rather than being overwritten.
+
+To complete an existing release after updating this workflow, open **Actions →
+Release LLVMUP → Run workflow**, select `main`, and enter the existing tag (for
+example `v0.6.0`). The workflow uses the updated publishing logic but checks out,
+tests and packages the source from that tag. There is no need to move or recreate
+the tag. Re-running an old failed run uses its old workflow, so use this manual
+entrypoint for recovery instead.
 Repository Actions must have permission to create releases with `GITHUB_TOKEN`.
 No release or tag is created by running the local builder.
 

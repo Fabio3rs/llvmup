@@ -2,11 +2,22 @@ name: Release LLVMUP
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to package (for example v0.6.0)
+        required: true
+        type: string
 permissions:
   contents: read
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
 jobs:
   tests:
     uses: ./.github/workflows/tests.yml
+    with:
+      ref: ${{ inputs.tag || github.ref }}
   publish:
     needs: tests
     runs-on: ubuntu-latest
@@ -14,15 +25,17 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Check out the release source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          path: release-source
       - name: Build release packages
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: python3 packaging/build.py "$RELEASE_TAG"
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: python3 release-source/packaging/build.py "$RELEASE_TAG" --output "$GITHUB_WORKSPACE/dist"
       - name: Publish verified tag
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: |
-          args=(--verify-tag --generate-notes)
-          if [[ "$RELEASE_TAG" == *-* ]]; then args+=(--prerelease); fi
-          gh release create "$RELEASE_TAG" "${args[@]}" dist/llvmup-linux.tar.gz dist/llvmup-windows.zip dist/bootstrap.sh dist/bootstrap.ps1 dist/SHA256SUMS
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: bash packaging/publish.sh "$RELEASE_TAG" "$GITHUB_WORKSPACE/dist"
