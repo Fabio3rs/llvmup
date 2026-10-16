@@ -6,6 +6,7 @@ on:
   pull_request:
     branches: [ main ]
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -125,6 +126,18 @@ jobs:
           exit 1
         }
         Write-Host "All tests passed successfully!"
+
+    - name: Smoke test the distributable Windows package
+      shell: pwsh
+      run: |
+        python packaging/build.py v0.0.0-ci --output "$env:RUNNER_TEMP/packages"
+        if ($LASTEXITCODE -ne 0) { throw 'Package build failed' }
+        Expand-Archive -LiteralPath "$env:RUNNER_TEMP/packages/llvmup-windows.zip" -DestinationPath "$env:RUNNER_TEMP/package-test"
+        & "$env:RUNNER_TEMP/package-test/llvmup/packaging/Install-Llvmup.ps1" -InstallDir "$env:RUNNER_TEMP/installed llvmup" -NoProfile
+        Import-Module "$env:RUNNER_TEMP/installed llvmup/Llvm-Functions.psm1" -Force
+        $result = llvmup doctor --json | ConvertFrom-Json
+        if ($result.exit_code -ne 0) { throw ($result | ConvertTo-Json -Depth 6) }
+        & "$env:RUNNER_TEMP/installed llvmup/Uninstall-Llvmup.ps1" -NoProfile
 
     - name: Prepare lightweight LLVM fixture for Windows action smoke test
       shell: pwsh

@@ -205,3 +205,87 @@ All safety mechanisms are thoroughly tested with:
 - Old format conservative removal
 - Complex user configuration preservation
 - Edge cases and error conditions
+
+## Release bootstrap (no Git checkout)
+
+These URLs become available after the first release containing the packaging
+workflow is published. The bootstrap installs LLVMUP only; install an LLVM
+version afterwards with `llvmup install <version>`.
+
+Linux (Bash installer, Bash/Zsh integration):
+
+```bash
+( t=$(mktemp) && trap 'rm -f "$t"' EXIT && curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --connect-timeout 10 --max-time 120 https://github.com/Fabio3rs/llvmup/releases/latest/download/bootstrap.sh -o "$t" && bash "$t" )
+```
+
+PowerShell 7:
+
+```powershell
+$p = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString() + '.ps1'); try { Invoke-WebRequest https://github.com/Fabio3rs/llvmup/releases/latest/download/bootstrap.ps1 -OutFile $p -TimeoutSec 120 -ErrorAction Stop; & $p } finally { Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue }
+```
+
+Both commands download the complete bootstrap before executing it. To inspect
+it first, save the bootstrap to a named file, read it, then run it. The bootstrap
+is pinned to the release that supplied it. For a particular release (including
+prereleases), replace `latest/download` with `download/vX.Y.Z` in the URL.
+
+The bootstrap verifies the package against the release's `SHA256SUMS` before
+extraction and rejects unsafe archive entries. Checksums detect corruption;
+they are not independent proof of authorship. Bootstrap and package authenticity
+rely on HTTPS and control of the GitHub repository/release. There is no unsigned
+fallback on a checksum failure. No Git, Python, GitHub CLI, or LLVM compiler is
+needed by the bootstrap. Linux requires Bash 4+, curl, tar, gzip, sha256sum and
+standard core utilities. Prebuilt LLVM downloads separately require jq and the
+dependencies listed above.
+
+After saving the bootstrap locally, customization works as follows:
+
+```bash
+LLVMUP_PREFIX="$HOME/tools/llvmup" bash bootstrap.sh --no-profile
+bash bootstrap.sh --version vX.Y.Z --ci
+```
+
+```powershell
+.\bootstrap.ps1 -InstallDir 'D:\Tools\llvmup' -NoProfile
+.\bootstrap.ps1 -Version vX.Y.Z
+```
+
+The Windows installer defaults to `$env:LOCALAPPDATA\llvmup` (or
+`$HOME/.local/share/llvmup` when LOCALAPPDATA is absent), respects
+`LLVMUP_INSTALL_DIR`, and adds a marked import to the current user's all-hosts
+PowerShell profile. `-NoProfile` leaves profiles unchanged. It prints the import
+command for the current session. A PowerShell execution policy may require you
+to unblock a downloaded script according to your machine's policy; the installer
+does not change execution policy. The extracted installer also supports Windows
+PowerShell 5.1; its HTTPS bootstrap requires TLS 1.2.
+
+Linux prints the shell reload instructions. A child Bash process cannot activate
+functions in its parent shell. Both installers preserve custom toolchain paths.
+
+For offline installation, transfer and verify the package and `SHA256SUMS`,
+extract it, then run `bash llvmup/install.sh --no-profile` or
+`& ./llvmup/packaging/Install-Llvmup.ps1 -NoProfile`.
+
+## Reinstallation and removal
+
+Re-run the installer to replace LLVMUP's own files. All required source files are
+validated and staged first. Ordinary copy errors roll back replaced runtime
+files; profiles are configured only after the file installation succeeds.
+Unrelated files and LLVM toolchains are preserved. This is not a transaction
+across power loss or forced process termination. Do not run installs concurrently;
+if an interrupted install leaves `.llvmup-install.lock`, first confirm that no
+installer is running, then remove that lock and reinstall the complete package.
+
+Installed uninstallers remain available after deleting the download:
+
+```bash
+~/.local/bin/uninstall.sh
+```
+
+```powershell
+& "$env:LOCALAPPDATA\llvmup\Uninstall-Llvmup.ps1"
+```
+
+For custom locations, invoke the uninstaller there. Linux records completion
+locations during installation. PowerShell accepts `-NoProfile` or `-ProfilePath`
+if you used a different profile. Removal does not remove LLVM toolchains.

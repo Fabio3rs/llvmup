@@ -31,6 +31,15 @@ print_error() {
     echo -e "\033[1;31m[ERROR]\033[0m $1"
 }
 
+UNINSTALL_SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -r $UNINSTALL_SOURCE_DIR/llvmup-install-paths ]]; then
+    mapfile -t installed_paths < "$UNINSTALL_SOURCE_DIR/llvmup-install-paths"
+    LLVMUP_INSTALL_DIR=${LLVMUP_INSTALL_DIR:-${installed_paths[0]}}
+    LLVMUP_COMPLETION_DIR=${LLVMUP_COMPLETION_DIR:-${installed_paths[1]}}
+    LLVMUP_ZSH_COMPLETION_DIR=${LLVMUP_ZSH_COMPLETION_DIR:-${installed_paths[2]}}
+    LLVMUP_SYSTEM_INSTALL=${LLVMUP_SYSTEM_INSTALL:-${installed_paths[3]}}
+fi
+
 # Determine installation directories (same logic as install.sh)
 if [ -n "$LLVMUP_SYSTEM_INSTALL" ] && [ "$LLVMUP_SYSTEM_INSTALL" = "1" ]; then
     DEFAULT_PREFIX="/usr/local"
@@ -85,6 +94,21 @@ scripts=(
     "llvmup-doctor-project.sh"
     "llvmup-doctor-probes.sh"
 )
+
+# New packages share the installer inventory. Retain the list above only for
+# standalone legacy uninstalls without a manifest.
+UNINSTALL_SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+manifest="$UNINSTALL_SOURCE_DIR/llvmup-files.tsv"
+[[ -f $manifest ]] || manifest="$UNINSTALL_SOURCE_DIR/packaging/runtime-files.tsv"
+if [[ -f $manifest ]]; then
+    scripts=()
+    while read -r platform mode name extra; do
+        [[ $platform == common || $platform == bash ]] || continue
+        [[ $name =~ ^[a-zA-Z0-9_.-]+$ && -z $extra ]] || { print_error 'Invalid runtime manifest'; exit 1; }
+        scripts+=("$name")
+    done < "$manifest"
+    scripts+=(llvmup-files.tsv llvmup-version llvmup-install-paths)
+fi
 
 for script in "${scripts[@]}"; do
     script_path="$INSTALL_DIR/$script"

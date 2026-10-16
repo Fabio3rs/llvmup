@@ -20,6 +20,17 @@ accuracy. New features are not currently a priority; see the
 - Provides Bash, Zsh, PowerShell, and GitHub Actions entrypoints
 - Verifies prebuilt downloads according to a configurable security policy
 
+## Install from a release
+
+Release packages install LLVMUP without a Git checkout on Linux and Windows.
+See the [one-line bootstrap commands](docs/INSTALL.md#release-bootstrap-no-git-checkout)
+for downloads, custom directories and offline installation. These commands become
+available after the first release with packaged assets is published. They install
+the manager; LLVM toolchains are installed separately.
+
+The checkout-based instructions below remain supported. Maintainers can follow
+the [release guide](packaging/README.md) to build packages and publish a tag.
+
 ## Linux quick start
 
 Requirements for prebuilt installs are `curl`, `jq`, and `tar`. Source builds

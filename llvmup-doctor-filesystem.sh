@@ -1,9 +1,24 @@
 doctor_filesystem() {
     local file dir tool count=0
-    for file in llvmup llvm-functions.sh llvm-activate llvm-deactivate llvm-prebuilt llvm-build llvm-vscode-activate llvmup-completion-common.sh; do
+    # Keep a minimal rescue inventory when a partial/legacy install lacks its
+    # manifest. Packaged installations also validate the shared inventory.
+    local -a files=(llvmup llvm-functions.sh llvm-activate llvm-deactivate llvm-prebuilt llvm-build llvm-vscode-activate llvmup-completion-common.sh)
+    local manifest="$doctor_root/llvmup-files.tsv" platform mode extra
+    [[ -r $manifest ]] || manifest="$doctor_root/packaging/runtime-files.tsv"
+    if [[ -r $manifest ]]; then
+        while read -r platform mode file extra; do
+            [[ $platform == bash || $platform == common ]] || continue
+            if [[ ! $file =~ ^[a-zA-Z0-9_.-]+$ || -n $extra ]]; then
+                doctor_emit installation.manifest installation FAIL 'Invalid runtime inventory.' 'Reinstall a complete LLVMUP package.' "$manifest"
+                continue
+            fi
+            case " ${files[*]} " in *" $file "*) ;; *) files+=("$file") ;; esac
+        done < "$manifest"
+    fi
+    for file in "${files[@]}"; do
         if [[ ! -r $doctor_root/$file ]]; then
             doctor_emit installation.file installation FAIL 'Required runtime file is missing or unreadable.' 'Reinstall LLVMUP from a complete checkout.' "$doctor_root/$file"
-        elif [[ $file != *.sh && ! -x $doctor_root/$file ]]; then
+        elif [[ $file == llvmup || $file == llvm-* && $file != *.sh || $file == uninstall.sh ]] && [[ ! -x $doctor_root/$file ]]; then
             doctor_emit installation.permission installation FAIL 'Runtime helper is not executable.' 'Restore executable permission or reinstall LLVMUP.' "$doctor_root/$file"
         else
             doctor_emit installation.file installation PASS 'Runtime file is accessible.' '' "$doctor_root/$file"

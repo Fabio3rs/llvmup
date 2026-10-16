@@ -14,7 +14,20 @@ function Test-DoctorCompiler {
 }
 function Get-DoctorInstallation {
     param($Checks, $Root, $Toolchains, $LlvmHome)
-    foreach ($file in @('Llvm-Functions.psm1','Llvm-Functions-Core.psm1','Get-UserHome.psm1','Llvm-Completion.psm1','Activate-Llvm.ps1','Deactivate-Llvm.ps1','Install-Llvm.ps1','Download-Llvm.ps1','Llvm-Config.ps1','Llvm-Default.ps1','Llvm-Doctor.psm1','Llvm-Doctor.ps1','Llvm-Doctor-Deep.ps1')) {
+    $files = @('Llvm-Functions.psm1','Llvm-Functions-Core.psm1','Get-UserHome.psm1','Llvm-Completion.psm1','Activate-Llvm.ps1','Deactivate-Llvm.ps1','Install-Llvm.ps1','Download-Llvm.ps1','Llvm-Config.ps1','Llvm-Default.ps1','Llvm-Doctor.psm1','Llvm-Doctor.ps1','Llvm-Doctor-Deep.ps1')
+    $manifest = Join-Path $Root 'llvmup-files.tsv'
+    if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) { $manifest = Join-Path $Root 'packaging/runtime-files.tsv' }
+    if (Test-Path -LiteralPath $manifest -PathType Leaf) {
+        try {
+            foreach ($line in Get-Content -LiteralPath $manifest -ErrorAction Stop) {
+                $parts = $line -split '\s+'
+                if ($parts[0] -notin @('common', 'powershell')) { continue }
+                if ($parts.Count -ne 3 -or $parts[2] -notmatch '^[A-Za-z0-9_.-]+$') { throw 'Invalid manifest entry' }
+                if ($parts[2] -notin $files) { $files += $parts[2] }
+            }
+        } catch { Add-DoctorCheck $Checks installation.manifest installation FAIL 'Cannot read runtime inventory.' 'Reinstall a complete LLVMUP package.' $manifest }
+    }
+    foreach ($file in $files) {
         $path = Join-Path $Root $file
         try {
             $stream = [IO.File]::OpenRead($path); $stream.Dispose()
