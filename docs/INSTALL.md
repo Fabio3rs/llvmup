@@ -359,6 +359,10 @@ the same flags as Bash. Selective prebuilts support Linux and Windows archives;
 they cannot use Windows `.exe` installers. An unavailable archive or component
 is reported as an error instead of installing the full distribution.
 
+macOS ARM64 can install complete prebuilt archives from releases that publish a
+`macOS-ARM64.tar.xz` asset. Selective profiles and `--strip` are not supported
+for macOS prebuilts.
+
 The full compressed archive is downloaded and authenticated before selection.
 Filtering happens during extraction, so excluded files never occupy staging
 space. Selected executables retain their aliases, versioned targets and bundled
@@ -439,6 +443,6 @@ Verbose logs show filesystem free space, download/staging/toolchain sizes and
 the 20 largest files. Snapshots run before and after extraction and before cleanup,
 including failure paths; they are phase measurements, not a continuous peak-space
 measurement. The manually triggered `action-e2e` workflow enables verbose output
-for both installation and cache restoration, then compiles C/C++ and generates
-a coverage report. On Linux it also compiles and runs C++23 `std::println`
+for installation and cache restoration on Linux, macOS ARM64, and Windows, then
+compiles C/C++ and generates a coverage report. On Linux it also compiles and runs C++23 `std::println`
 with the bundled libc++. No fixed installed-size guarantee applies across releases.

@@ -1,7 +1,7 @@
 # LLVMUP
 
-LLVMUP installs and switches between LLVM toolchains on Linux and Windows. It
-supports stable prebuilt releases, source builds, project configuration, and a
+LLVMUP installs and switches between LLVM toolchains on Linux, macOS ARM64, and
+Windows. It supports stable prebuilt releases, source builds, project configuration, and a
 reusable GitHub Action.
 
 The current release line is `v0.5.0`. The project is functional but remains
@@ -282,8 +282,10 @@ The equivalent PowerShell option is:
 
 ## GitHub Actions
 
-The reusable Action supports Linux and Windows stable prebuilt releases. Caching
-is enabled by default.
+The reusable Action supports Linux, macOS ARM64, and Windows stable prebuilt
+releases. On macOS, use a release with a `macOS-ARM64.tar.xz` asset and the
+default `full` profile; selective prebuilt installation is not supported there.
+Caching is enabled by default.
 
 ```yaml
 - uses: actions/checkout@v6

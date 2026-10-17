@@ -1174,7 +1174,7 @@ llvm-config-init() {
 
         if [ -d "$toolchains_dir" ]; then
             # Simply list all directories in toolchains (much simpler and more reliable)
-            mapfile -t installed_versions < <(ls -1 "$toolchains_dir" 2>/dev/null | grep -v "^$")
+            while IFS= read -r version; do installed_versions+=("$version"); done < <(ls -1 "$toolchains_dir" 2>/dev/null | grep -v "^$")
         fi
 
         if [ ${#installed_versions[@]} -gt 0 ]; then
@@ -2113,6 +2113,7 @@ llvm-resolve-remote-release() {
     local asset_pattern
     local asset_json
     local asset_name
+    local candidate
     local signature_url
     local checksum_url
     local attestation_url
@@ -2164,8 +2165,8 @@ llvm-resolve-remote-release() {
             releases_json="$(llvm-get-remote-stable-releases)" || return 1
             local remote_versions=()
             local matching_versions=()
-            mapfile -t remote_versions < <(jq -r '.[].tag_name' <<< "$releases_json")
-            mapfile -t matching_versions < <(llvm-match-version-list "$expression" "${remote_versions[@]}" 2>/dev/null)
+            while IFS= read -r candidate; do remote_versions+=("$candidate"); done < <(jq -r '.[].tag_name' <<< "$releases_json")
+            while IFS= read -r candidate; do matching_versions+=("$candidate"); done < <(llvm-match-version-list "$expression" "${remote_versions[@]}" 2>/dev/null)
 
             if [ ${#matching_versions[@]} -eq 0 ]; then
                 log_error "No stable remote LLVM release matches: $expression"
@@ -2174,7 +2175,6 @@ llvm-resolve-remote-release() {
             fi
 
             selected_version="${matching_versions[0]}"
-            local candidate
             for candidate in "${matching_versions[@]:1}"; do
                 if llvm-version-compare "$candidate" "$selected_version" 2>/dev/null; then
                     selected_version="$candidate"
@@ -2599,6 +2599,17 @@ llvm-get-versions() {
 }
 
 # Get versions in simple list format (one per line)
+llvm-version-sort() {
+    local version parsed major minor patch
+    while IFS= read -r version; do
+        [ -n "$version" ] || continue
+        parsed="$(llvm-parse-version "$version" 2>/dev/null)" || parsed=""
+        IFS=. read -r major minor patch <<< "$parsed"
+        major=${major:-0}; minor=${minor:-0}; patch=${patch:-0}
+        printf '%010d.%010d.%010d\t%s\n' "$major" "$minor" "$patch" "$version"
+    done | LC_ALL=C sort | cut -f2-
+}
+
 llvm-get-versions-simple() {
     local toolchains_dir="$(llvm-get-toolchains-dir)"
 
@@ -2606,7 +2617,7 @@ llvm-get-versions-simple() {
         if [ -d "$dir" ]; then
             basename "$dir"
         fi
-    done | sort -V
+    done | llvm-version-sort
 }
 
 # Get versions in detailed list format
@@ -2751,14 +2762,21 @@ llvm-version-compare() {
         return 2
     fi
 
-    # Use sort -V for version comparison
-    local result=$(printf '%s\n%s\n' "$clean_v1" "$clean_v2" | sort -V | head -n1)
-
-    if [ "$result" = "$clean_v2" ]; then
-        return 0  # v1 >= v2
-    else
-        return 1  # v1 < v2
-    fi
+    local v1_major v1_minor v1_patch v2_major v2_minor v2_patch
+    IFS=. read -r v1_major v1_minor v1_patch <<< "$clean_v1"
+    IFS=. read -r v2_major v2_minor v2_patch <<< "$clean_v2"
+    v1_minor=${v1_minor:-0}; v1_patch=${v1_patch:-0}
+    v2_minor=${v2_minor:-0}; v2_patch=${v2_patch:-0}
+    local left right
+    for left in "$v1_major" "$v1_minor" "$v1_patch"; do
+        case "$left" in ''|*[!0-9]*) return 2 ;; esac
+    done
+    for right in "$v2_major" "$v2_minor" "$v2_patch"; do
+        case "$right" in ''|*[!0-9]*) return 2 ;; esac
+    done
+    if [ "$v1_major" -ne "$v2_major" ]; then [ "$v1_major" -gt "$v2_major" ]; return; fi
+    if [ "$v1_minor" -ne "$v2_minor" ]; then [ "$v1_minor" -gt "$v2_minor" ]; return; fi
+    [ "$v1_patch" -ge "$v2_patch" ]
 }
 
 # Find the latest installed version
@@ -2773,7 +2791,7 @@ llvm-get-latest-version() {
     # Get the highest version using version sort
     echo "$versions" | while read -r version; do
         llvm-parse-version "$version"
-    done | sort -V | tail -n1
+    done | llvm-version-sort | tail -n1
 }
 
 # =============================================================================
@@ -3039,7 +3057,7 @@ llvm-match-versions() {
         return 1
     fi
 
-    mapfile -t available_versions < <(llvm-get-versions simple 2>/dev/null)
+    while IFS= read -r version; do available_versions+=("$version"); done < <(llvm-get-versions simple 2>/dev/null)
     llvm-match-version-list "$expression" "${available_versions[@]}"
 }
 
@@ -3151,7 +3169,7 @@ llvm-autoactivate-enhanced() {
         local current_matches=false
         local matched_versions=()
 
-        mapfile -t matched_versions < <(llvm-match-versions "$version_expr" 2>/dev/null)
+        while IFS= read -r version; do matched_versions+=("$version"); done < <(llvm-match-versions "$version_expr" 2>/dev/null)
 
         for matched in "${matched_versions[@]}"; do
             if [ "$matched" = "$_ACTIVE_LLVM" ]; then
@@ -3173,7 +3191,7 @@ llvm-autoactivate-enhanced() {
 
     # Find matching versions
     local matched_versions=()
-    mapfile -t matched_versions < <(llvm-match-versions "$version_expr" 2>/dev/null)
+    while IFS= read -r version; do matched_versions+=("$version"); done < <(llvm-match-versions "$version_expr" 2>/dev/null)
 
     if [ ${#matched_versions[@]} -eq 0 ]; then
         log_expression_debug "No versions match expression '$version_expr'"
@@ -3253,7 +3271,7 @@ llvm-test-expressions() {
         echo "----------------------------------------"
 
         local matches=()
-        mapfile -t matches < <(llvm-match-versions "$expr" 2>/dev/null)
+        while IFS= read -r version; do matches+=("$version"); done < <(llvm-match-versions "$expr" 2>/dev/null)
 
         if [ ${#matches[@]} -gt 0 ]; then
             echo -e "${GREEN}Matches found:${NC}"

@@ -3,6 +3,7 @@ import argparse
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 
 
@@ -16,11 +17,12 @@ def smoke(root):
             return subprocess.run(args, cwd=work, check=True, text=True, **kwargs)
         (work/'test.c').write_text('#include <stddef.h>\nint main(void) { return sizeof(size_t) > 0 ? 0 : 1; }\n')
         (work/'test.cpp').write_text('#include <vector>\nint main() { std::vector<int> v{1,2}; return v.size() == 2 ? 0 : 1; }\n')
-        run([tool('clang'), 'test.c', '-fuse-ld=lld', '-o', 'test'+suffix])
+        linker = [] if sys.platform == 'darwin' else ['-fuse-ld=lld']
+        run([tool('clang'), 'test.c', *linker, '-o', 'test'+suffix])
         run([str(work/('test'+suffix))])
-        run([tool('clang++'), 'test.cpp', '-fuse-ld=lld', '-o', 'test-cxx'+suffix])
+        run([tool('clang++'), 'test.cpp', *linker, '-o', 'test-cxx'+suffix])
         run([str(work/('test-cxx'+suffix))])
-        if os.name != 'nt':
+        if sys.platform == 'linux':
             (work/'cpp23.cpp').write_text('#include <print>\n#include <version>\n#ifndef _LIBCPP_VERSION\n#error Expected bundled libc++\n#endif\nint main() { std::println("libc++ C++23: {}", 23); }\n')
             library_dirs = sorted({p.parent for p in root.glob('lib*/**/libc++.*') if p.is_file()})
             flags = [flag for directory in library_dirs for flag in ('-L'+str(directory), '-Wl,-rpath,'+str(directory))]

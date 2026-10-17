@@ -182,3 +182,52 @@ jobs:
         if (-not (Test-Path (Join-Path $env:LLVM_PATH 'bin\clang.cmd'))) { throw 'clang fixture is missing' }
         if ($env:CC -notmatch 'clang\.cmd$') { throw "Unexpected CC: $env:CC" }
         clang --version
+
+  test-macos:
+    runs-on: macos-15
+    steps:
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      with:
+        ref: ${{ inputs.ref || github.ref }}
+
+    - name: Install dependencies
+      run: command -v jq >/dev/null || brew install jq
+
+    - name: Check macOS entry point syntax
+      run: bash -n llvmup llvm-prebuilt llvm-functions.sh install.sh
+
+    - name: Resolve macOS archive from a version range
+      env:
+        LLVMUP_RELEASES_FILE: ${{ github.workspace }}/githubreleases.json
+      run: |
+        bash -c 'source ./llvm-functions.sh; llvm-resolve-remote-release "~20.1" macOS arm64' |
+          jq -e '.version == "llvmorg-20.1.8" and .asset_name == "LLVM-20.1.8-macOS-ARM64.tar.xz"'
+
+    - name: Prepare lightweight LLVM fixture for macOS action smoke test
+      run: |
+        fixture="$RUNNER_TEMP/llvmup-data/toolchains/llvmorg-20.1.8/bin"
+        mkdir -p "$fixture"
+        printf '#!/bin/sh\necho clang version 20.1.8\n' > "$fixture/clang"
+        printf '#!/bin/sh\necho clang version 20.1.8\n' > "$fixture/clang++"
+        printf '#!/bin/sh\nexit 0\n' > "$fixture/lld"
+        chmod +x "$fixture/clang" "$fixture/clang++" "$fixture/lld"
+
+    - name: Smoke test reusable action on macOS
+      id: setup-llvm-macos
+      uses: ./
+      env:
+        LLVMUP_RELEASES_FILE: ${{ github.workspace }}/githubreleases.json
+      with:
+        version: 20.1.8
+        cache: false
+        verbose: true
+
+    - name: Verify macOS action outputs and environment
+      env:
+        RESOLVED_VERSION: ${{ steps.setup-llvm-macos.outputs.version }}
+        LLVM_PATH: ${{ steps.setup-llvm-macos.outputs.llvm-path }}
+      run: |
+        test "$RESOLVED_VERSION" = "llvmorg-20.1.8"
+        test -x "$LLVM_PATH/bin/clang"
+        test "$CC" = "$LLVM_PATH/bin/clang"
+        clang --version

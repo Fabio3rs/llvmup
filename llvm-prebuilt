@@ -163,7 +163,7 @@ command -v jq >/dev/null 2>&1 || {
 
 llvm_selection_init || exit 1
 if [ "$LLVM_SELECTION_ENABLED" -eq 1 ] && [ "$(uname -s)" != Linux ]; then
-    log_error "Selective prebuilt installation currently supports Linux and Windows."; exit 1
+    log_error "Selective prebuilt installation in Bash supports Linux only; use the full profile on macOS."; exit 1
 fi
 
 VERIFY_POLICY="$(llvm-resolve-verification-policy "$VERIFY_REQUEST")" || exit 1
@@ -174,7 +174,8 @@ VERSION_EXPRESSION="${1:-${LLVM_CONFIG_VERSION:-latest}}"
 # llvmup entrypoint defaults to the latest stable release.
 if [[ "$VERSION_EXPRESSION" =~ ^[0-9]+$ ]]; then
     RELEASES_JSON="$(llvm-get-remote-stable-releases)" || exit 1
-    mapfile -t VERSION_LIST < <(jq -r '.[].tag_name' <<< "$RELEASES_JSON")
+    VERSION_LIST=()
+    while IFS= read -r candidate; do VERSION_LIST+=("$candidate"); done < <(jq -r '.[].tag_name' <<< "$RELEASES_JSON")
     if [ "$VERSION_EXPRESSION" -lt 1 ] || [ "$VERSION_EXPRESSION" -gt "${#VERSION_LIST[@]}" ]; then
         log_error "Invalid release number: $VERSION_EXPRESSION"
         exit 1

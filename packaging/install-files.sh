@@ -2,8 +2,8 @@
 install_files() (
     set -e
     local manifest="$INSTALL_SOURCE_DIR/packaging/runtime-files.tsv"
-    local platform mode name extra target i work committed=0 locked=0 recovery_failed=0 temporary
-    local -a sources=() targets=() modes=() touched=() pending=()
+    local platform mode name extra target previous i work committed=0 locked=0 recovery_failed=0 temporary
+    local -a sources=() targets=() modes=() touched=() pending=() seen=()
     [[ -r $manifest ]] || { print_error "Missing runtime manifest: $manifest"; exit 1; }
     while read -r platform mode name extra; do
         [[ -z $platform || $platform == \#* ]] && continue
@@ -25,10 +25,11 @@ install_files() (
     [[ ! -L $target && ( ! -e $target || -f $target ) ]] || { print_error "Refusing non-regular destination: $target"; exit 1; }
     [[ ! -L $INSTALL_DIR/libexec && ( ! -e $INSTALL_DIR/libexec || -d $INSTALL_DIR/libexec ) ]] || { print_error 'Unsafe libexec directory'; exit 1; }
     # Validate the entire destination set before copying anything.
-    local -A seen=()
     for target in "${targets[@]}"; do
-        [[ -z ${seen[$target]:-} ]] || { print_error "Overlapping installation destinations: $target"; exit 1; }
-        seen[$target]=1
+        for previous in "${seen[@]}"; do
+            [[ $previous != "$target" ]] || { print_error "Overlapping installation destinations: $target"; exit 1; }
+        done
+        seen+=("$target")
         [[ ! -L $target && ( ! -e $target || -f $target ) ]] || { print_error "Refusing non-regular destination: $target"; exit 1; }
     done
     work=$(mktemp -d)

@@ -58,14 +58,14 @@ runs:
   using: composite
   steps:
     - name: Reject unsupported runner
-      if: runner.os != 'Linux' && runner.os != 'Windows'
+      if: runner.os != 'Linux' && runner.os != 'macOS' && runner.os != 'Windows'
       shell: bash
       run: |
-        echo "llvmup's composite action supports Linux and Windows runners." >&2
+        echo "llvmup's composite action supports Linux, macOS ARM64, and Windows runners." >&2
         exit 1
 
-    - name: Validate Linux inputs
-      if: runner.os == 'Linux'
+    - name: Validate Unix inputs
+      if: runner.os == 'Linux' || runner.os == 'macOS'
       shell: bash
       env:
         INPUT_CACHE: ${{ inputs.cache }}
@@ -86,7 +86,7 @@ runs:
         if ($env:INPUT_VERIFY -notin @('warn', 'strict', 'skip')) { throw "verify must be 'warn', 'strict', or 'skip'." }
 
     - name: Install llvmup CLI
-      if: runner.os == 'Linux'
+      if: runner.os == 'Linux' || runner.os == 'macOS'
       shell: bash
       env:
         LLVMUP_CLI_PREFIX: ${{ runner.temp }}/llvmup-cli
@@ -116,8 +116,8 @@ runs:
         "LLVM_TOOLCHAINS_DIR=$(Join-Path $dataHome 'toolchains')" | Add-Content -Path $env:GITHUB_ENV
         "LLVMUP_DISABLE_AUTOACTIVATE=1" | Add-Content -Path $env:GITHUB_ENV
 
-    - name: Resolve stable LLVM release on Linux
-      if: runner.os == 'Linux'
+    - name: Resolve stable LLVM release on Unix
+      if: runner.os == 'Linux' || runner.os == 'macOS'
       id: resolve-linux
       shell: bash
       env:
@@ -146,8 +146,8 @@ runs:
         "version=$($metadata.version)" | Add-Content -Path $env:GITHUB_OUTPUT
         "asset-key=$assetKey" | Add-Content -Path $env:GITHUB_OUTPUT
 
-    - name: Resolve Linux component selection
-      if: runner.os == 'Linux'
+    - name: Resolve Unix component selection
+      if: runner.os == 'Linux' || runner.os == 'macOS'
       id: selection-linux
       shell: bash
       env:
@@ -184,8 +184,8 @@ runs:
         $selection = Get-LlvmSelection -Profile $env:INPUT_PROFILE -Components $components
         "key=$($selection.key)" | Add-Content -Path $env:GITHUB_OUTPUT
 
-    - name: Report Linux disk usage before cache restore
-      if: runner.os == 'Linux' && inputs.verbose == 'true'
+    - name: Report Unix disk usage before cache restore
+      if: (runner.os == 'Linux' || runner.os == 'macOS') && inputs.verbose == 'true'
       shell: bash
       run: |
         source "$GITHUB_ACTION_PATH/libexec/llvmup-selection.sh"
@@ -207,8 +207,8 @@ runs:
         path: ${{ runner.temp }}/llvmup-data/toolchains/${{ steps.resolve-linux.outputs.version || steps.resolve-windows.outputs.version }}
         key: llvmup-selection-v1-${{ steps.selection-linux.outputs.key || steps.selection-windows.outputs.key }}-${{ runner.os }}-${{ runner.arch }}-${{ inputs.verify }}-${{ steps.resolve-linux.outputs.version || steps.resolve-windows.outputs.version }}-${{ steps.resolve-linux.outputs.asset-key || steps.resolve-windows.outputs.asset-key }}
 
-    - name: Install or validate LLVM toolchain on Linux
-      if: runner.os == 'Linux'
+    - name: Install or validate LLVM toolchain on Unix
+      if: runner.os == 'Linux' || runner.os == 'macOS'
       shell: bash
       env:
         LLVMUP_IGNORE_CONFIG: '1'
@@ -246,8 +246,8 @@ runs:
         $components = @($env:INPUT_COMPONENTS -split '[,\s]+' | Where-Object { $_ })
         & (Join-Path $env:GITHUB_ACTION_PATH 'Download-Llvm.ps1') -Version $env:RESOLVED_VERSION -Platform Windows -Arch $arch -ArchiveOnly -VerifyPolicy $env:VERIFY_POLICY -Profile $env:INPUT_PROFILE -Component $components -VerboseMode:($env:INPUT_VERBOSE -eq 'true') -Quiet:($env:INPUT_VERBOSE -ne 'true')
 
-    - name: Validate and activate LLVM toolchain on Linux
-      if: runner.os == 'Linux'
+    - name: Validate and activate LLVM toolchain on Unix
+      if: runner.os == 'Linux' || runner.os == 'macOS'
       id: activate-linux
       shell: bash
       env:
