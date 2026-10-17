@@ -4,7 +4,7 @@ LLVMUP installs and switches between LLVM toolchains on Linux, macOS ARM64, and
 Windows. It supports stable prebuilt releases, source builds, project configuration, and a
 reusable GitHub Action.
 
-The current release line is `v0.5.0`. The project is functional but remains
+The current release line is `v0.8.0`. The project is functional but remains
 pre-1.0, so interfaces may change between minor releases. Development is focused
 on bug fixes, regression tests, cross-platform consistency, and documentation
 accuracy. New features are not currently a priority; see the
@@ -24,9 +24,10 @@ accuracy. New features are not currently a priority; see the
 
 Release packages install LLVMUP without a Git checkout on Linux and Windows.
 See the [one-line bootstrap commands](docs/INSTALL.md#release-bootstrap-no-git-checkout)
-for downloads, custom directories and offline installation. These commands become
-available after the first release with packaged assets is published. They install
-the manager; LLVM toolchains are installed separately.
+for downloads, custom directories and offline installation. The documented
+commands use the packaged `v0.8.0` prerelease. The `latest` URL requires a
+stable release. The commands install the manager; LLVM toolchains are installed
+separately.
 
 The checkout-based instructions below remain supported. Maintainers can follow
 the [release guide](packaging/README.md) to build packages and publish a tag.
@@ -291,7 +292,7 @@ Caching is enabled by default.
 
 ```yaml
 - uses: actions/checkout@v6
-- uses: Fabio3rs/llvmup@v0.5.0
+- uses: Fabio3rs/llvmup@v0.8.0
   with:
     version: 22.1.8
     verify: strict

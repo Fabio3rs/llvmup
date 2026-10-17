@@ -208,26 +208,27 @@ All safety mechanisms are thoroughly tested with:
 
 ## Release bootstrap (no Git checkout)
 
-These URLs become available after the first release containing the packaging
-workflow is published. The bootstrap installs LLVMUP only; install an LLVM
-version afterwards with `llvmup install <version>`.
+The commands below use the packaged `v0.8.0` prerelease. The `latest` URL only
+works once a stable release with packaged assets is available. The bootstrap
+installs LLVMUP only; install an LLVM version afterwards with
+`llvmup install <version>`.
 
 Linux (Bash installer, Bash/Zsh integration):
 
 ```bash
-( t=$(mktemp) && trap 'rm -f "$t"' EXIT && curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --connect-timeout 10 --max-time 120 https://github.com/Fabio3rs/llvmup/releases/latest/download/bootstrap.sh -o "$t" && bash "$t" )
+( t=$(mktemp) && trap 'rm -f "$t"' EXIT && curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --connect-timeout 10 --max-time 120 https://github.com/Fabio3rs/llvmup/releases/download/v0.8.0/bootstrap.sh -o "$t" && bash "$t" )
 ```
 
 PowerShell 7:
 
 ```powershell
-$p = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString() + '.ps1'); try { Invoke-WebRequest https://github.com/Fabio3rs/llvmup/releases/latest/download/bootstrap.ps1 -OutFile $p -TimeoutSec 120 -ErrorAction Stop; & $p } finally { Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue }
+$p = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString() + '.ps1'); try { Invoke-WebRequest https://github.com/Fabio3rs/llvmup/releases/download/v0.8.0/bootstrap.ps1 -OutFile $p -TimeoutSec 120 -ErrorAction Stop; & $p } finally { Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue }
 ```
 
 Both commands download the complete bootstrap before executing it. To inspect
 it first, save the bootstrap to a named file, read it, then run it. The bootstrap
-is pinned to the release that supplied it. For a particular release (including
-prereleases), replace `latest/download` with `download/vX.Y.Z` in the URL.
+is pinned to the release that supplied it. To install a different release,
+replace `v0.8.0` in the URL with its tag.
 
 The bootstrap verifies the package against the release's `SHA256SUMS` before
 extraction and rejects unsafe archive entries. Checksums detect corruption;

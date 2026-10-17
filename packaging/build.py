@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def build(version, output):
     if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?", version):
-        raise ValueError("Expected a release tag such as v0.6.0 or v0.6.0-rc.1")
+        raise ValueError("Expected a release tag in the form vX.Y.Z or vX.Y.Z-rc.1")
     manifest = ROOT / "packaging/runtime-files.tsv"
     rows = []
     names = set()
