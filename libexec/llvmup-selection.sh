@@ -3,12 +3,14 @@ llvm_selection_init() {
     LLVM_SELECTION_ARGS=()
     [ -z "${PROFILE:-}" ] || LLVM_SELECTION_ARGS+=(--profile "$PROFILE")
     local component
-    for component in "${COMPONENTS[@]}"; do LLVM_SELECTION_ARGS+=(--component "$component"); done
+    for component in "${COMPONENTS[@]+"${COMPONENTS[@]}"}"; do
+        LLVM_SELECTION_ARGS+=(--component "$component")
+    done
     [ "${STRIP:-0}" -eq 0 ] || LLVM_SELECTION_ARGS+=(--strip)
     [ "${1:-}" != source ] || LLVM_SELECTION_ARGS+=(--source)
     LLVM_SELECTION_ENABLED=0
     LLVM_SELECTION_JSON='{"selective":false,"legacy":false,"key":"full"}'
-    if { [ -n "${PROFILE:-}" ] && [ "$PROFILE" != full ]; } || [ "${#COMPONENTS[@]}" -gt 0 ] || [ "${STRIP:-0}" -eq 1 ]; then
+    if { [ -n "${PROFILE:-}" ] && [ "$PROFILE" != full ]; } || [ -n "${COMPONENTS[*]-}" ] || [ "${STRIP:-0}" -eq 1 ]; then
         command -v python3 >/dev/null || { echo 'Selective installation requires Python 3.' >&2; return 1; }
         LLVM_SELECTION_JSON=$(python3 "$SCRIPT_DIR/libexec/llvmup-selection.py" selection "${LLVM_SELECTION_ARGS[@]}") || return 1
         LLVM_SELECTION_ENABLED=1

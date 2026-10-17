@@ -20,6 +20,42 @@ setup() {
     fi
 }
 
+@test "selection adapter accepts empty components under nounset" {
+    run bash -c '
+        set -euo pipefail
+        SCRIPT_DIR=$1
+        source "$SCRIPT_DIR/libexec/llvmup-selection.sh"
+        PROFILE=""
+        COMPONENTS=()
+        STRIP=0
+        llvm_selection_init
+        [ "$LLVM_SELECTION_ENABLED" -eq 0 ]
+        [ "$LLVM_SELECTION_JSON" = '\''{"selective":false,"legacy":false,"key":"full"}'\'' ]
+        unset COMPONENTS
+        llvm_selection_init
+        [ "$LLVM_SELECTION_ENABLED" -eq 0 ]
+    ' _ "$BATS_TEST_DIRNAME/../.."
+    [ "$status" -eq 0 ]
+}
+
+@test "selection adapter preserves component arguments under nounset" {
+    run bash -c '
+        set -euo pipefail
+        SCRIPT_DIR=$1
+        source "$SCRIPT_DIR/libexec/llvmup-selection.sh"
+        PROFILE=""
+        COMPONENTS=("clang" "llvm-cov")
+        STRIP=0
+        llvm_selection_init
+        [ "$LLVM_SELECTION_ENABLED" -eq 1 ]
+        [ "${LLVM_SELECTION_ARGS[0]}" = --component ]
+        [ "${LLVM_SELECTION_ARGS[1]}" = clang ]
+        [ "${LLVM_SELECTION_ARGS[2]}" = --component ]
+        [ "${LLVM_SELECTION_ARGS[3]}" = llvm-cov ]
+    ' _ "$BATS_TEST_DIRNAME/../.."
+    [ "$status" -eq 0 ]
+}
+
 create_installed_toolchain() {
     local version="$1"
     local bin_dir="$LLVM_TOOLCHAINS_DIR/$version/bin"
