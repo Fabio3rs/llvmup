@@ -370,6 +370,33 @@ The downloaded archive and temporary staging files are cleaned up automatically
 when installation finishes, including failures; no cleanup flag is needed.
 During extraction, disk usage includes the compressed archive and selected files.
 
+Selective TAR extraction reads forward, writing selected files as they arrive.
+Links are created after their targets; dependencies that appeared earlier in the
+archive are collected for an additional sequential pass. No uncompressed TAR is
+stored on disk. Each pass reports its decompressor, elapsed time and file count.
+
+For `.tar.xz`, llvmup automatically uses native `xz` 5.4+ when available. It uses
+up to four threads (bounded by the available CPUs) and a 256 MiB memory budget for
+multithreaded decompression. XZ can reduce parallelism when blocks or memory do not
+permit it. Other TAR formats, or systems without compatible `xz`, use the Python
+sequential reader. ZIP handling is unchanged. Both TAR readers share selection,
+link and dependency handling.
+
+Environment variables can override the decompressor for selective TAR installs:
+
+```bash
+LLVMUP_EXTRACT_THREADS=2 llvmup install --profile compiler 23.1.2
+LLVMUP_EXTRACTOR=python llvmup install --profile compiler 23.1.2
+LLVMUP_EXTRACTOR=xz LLVMUP_EXTRACT_THREADS=4 llvmup install --profile compiler 23.1.2
+```
+
+`LLVMUP_EXTRACTOR` accepts `auto` (default), `python`, or `xz`; the explicit `xz`
+choice requires an XZ archive and compatible executable. `LLVMUP_EXTRACT_THREADS`
+must be positive and applies only to XZ. The subprocess ignores `XZ_OPT` and
+`XZ_DEFAULTS` so they cannot override its settings. A decompression failure aborts
+installation; it does not silently retry using Python. These settings do not
+change installed content or cache identity, and do not affect the `full` profile.
+
 Source builds use the same catalog with `distribution`/`install-distribution`
 targets, enabling compiler-rt for runtime support and libcxx/libcxxabi/libunwind
 when libc++ is selected. New selective source clones

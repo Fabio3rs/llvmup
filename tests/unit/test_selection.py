@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import struct
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -186,6 +187,198 @@ class SelectionTests(unittest.TestCase):
                 if path.is_file(): zip.write(path, path.relative_to(self.root/'gz').as_posix())
         selection.extract(archive, self.root/'zip', selection.selection('minimal'))
         selection.validate(self.root/'zip', selection.selection('minimal'))
+
+    def stream_archive(self, entries):
+        archive = self.root/'stream.tar.xz'
+        with tarfile.open(archive, 'w:xz') as tar:
+            for name, kind, value in entries:
+                member = tarfile.TarInfo(name)
+                member.type = kind
+                member.mode = 0o755
+                if kind == tarfile.REGTYPE:
+                    member.size = len(value)
+                elif kind in (tarfile.SYMTYPE, tarfile.LNKTYPE):
+                    member.linkname = value
+                tar.addfile(member, io.BytesIO(value) if kind == tarfile.REGTYPE else None)
+        return archive
+
+    def test_stream_writes_before_end_without_index_or_backward_seek(self):
+        destination = self.root/'streamed'
+        archive = self.archive()
+        original_entries = selection.StreamingArchive.entries
+        original_seek = tarfile._Stream.seek
+        def entries(reader):
+            for name, member in original_entries(reader):
+                if name == 'bin/mlir-opt':
+                    self.assertTrue((destination/'bin/clang-23').is_file())
+                    self.assertFalse((destination/'bin/clang').is_symlink())
+                yield name, member
+        def seek(stream, position):
+            self.assertGreaterEqual(position, stream.tell())
+            return original_seek(stream, position)
+        with mock.patch.object(tarfile.TarFile, 'getmembers', side_effect=AssertionError('full index')), \
+             mock.patch.object(tarfile._Stream, 'seek', seek), \
+             mock.patch.object(selection.StreamingArchive, 'entries', entries), \
+             mock.patch.object(tarfile, 'open', wraps=tarfile.open) as opened:
+            selection.extract(archive, destination, selection.selection('minimal'))
+        self.assertEqual(opened.call_count, 1)
+        self.assertEqual(os.readlink(destination/'bin/clang'), 'clang-23')
+
+    def test_stream_forward_and_backward_link_chains(self):
+        archive = self.stream_archive([
+            ('LLVM/bin/clang', tarfile.SYMTYPE, 'clang-alias'),
+            ('LLVM/bin/clang++', tarfile.LNKTYPE, 'LLVM/bin/clang-alias'),
+            ('LLVM/bin/clang-alias', tarfile.LNKTYPE, 'LLVM/bin/private-driver'),
+            ('LLVM/bin/private-driver', tarfile.REGTYPE, b'driver'),
+            ('LLVM/bin/clang-cpp', tarfile.SYMTYPE, 'clang'),
+        ])
+        destination = self.root/'links'
+        with mock.patch.object(tarfile, 'open', wraps=tarfile.open) as opened:
+            selection.extract(archive, destination, selection.selection('minimal'))
+        self.assertEqual(opened.call_count, 1)
+        self.assertEqual((destination/'bin/clang-cpp').read_bytes(), b'driver')
+        self.assertEqual((destination/'bin/clang++').stat().st_ino,
+                         (destination/'bin/private-driver').stat().st_ino)
+        self.assertEqual(os.readlink(destination/'bin/clang'), 'clang-alias')
+
+    def test_stream_batches_earlier_dependencies_and_keeps_all_variants(self):
+        archive = self.stream_archive([
+            ('LLVM/lib/one/libearly.so', tarfile.REGTYPE, b'early'),
+            ('LLVM/lib/two/libearly.so', tarfile.REGTYPE, b'early'),
+            ('LLVM/lib/libunused.so', tarfile.REGTYPE, b'unused'),
+            ('LLVM/lib/target', tarfile.REGTYPE, b'target'),
+            ('LLVM/bin/clang', tarfile.REGTYPE, b'clang'),
+            ('LLVM/lib/libalias.so', tarfile.SYMTYPE, 'target'),
+            ('LLVM/lib/libforward.so', tarfile.REGTYPE, b'forward'),
+        ])
+        destination = self.root/'dependencies'
+        def dependencies(path):
+            return {'clang': ['libearly.so', 'libalias.so', 'libforward.so', 'system.so'],
+                    'early': ['libforward.so']}.get(path.read_text(), [])
+        with mock.patch.object(selection, 'binary_dependencies', dependencies), \
+             mock.patch.object(tarfile, 'open', wraps=tarfile.open) as opened:
+            selection.extract(archive, destination, selection.selection('minimal'))
+        self.assertEqual(opened.call_count, 2)
+        self.assertTrue((destination/'lib/one/libearly.so').is_file())
+        self.assertTrue((destination/'lib/two/libearly.so').is_file())
+        self.assertEqual((destination/'lib/libalias.so').read_bytes(), b'target')
+        self.assertTrue((destination/'lib/libforward.so').is_file())
+        self.assertFalse((destination/'lib/libunused.so').exists())
+
+    def test_stream_rejects_late_invalid_headers_and_link_cycles(self):
+        cases = [
+            [('LLVM/bin/clang', tarfile.REGTYPE, b'first'),
+             ('LLVM/bin/clang', tarfile.REGTYPE, b'duplicate')],
+            [('LLVM/bin/clang', tarfile.REGTYPE, b'first'),
+             ('LLVM/bin', tarfile.SYMTYPE, '../outside')],
+            [('LLVM/bin/clang', tarfile.REGTYPE, b'first'),
+             ('other/bin/ignored', tarfile.REGTYPE, b'other root')],
+            [('LLVM/bin/clang', tarfile.SYMTYPE, 'alias'),
+             ('LLVM/bin/alias', tarfile.SYMTYPE, 'clang')],
+            [('LLVM/bin/clang', tarfile.LNKTYPE, '../outside')],
+            [('LLVM/bin/clang', tarfile.SYMTYPE, '../lib'),
+             ('LLVM/lib', tarfile.DIRTYPE, None)],
+            [('LLVM/bin/clang', tarfile.REGTYPE, b'first'),
+             ('LLVM/ignored', tarfile.FIFOTYPE, None)],
+        ]
+        for index, entries in enumerate(cases):
+            with self.subTest(index=index), self.assertRaises(ValueError):
+                selection.extract(self.stream_archive(entries), self.root/str(index), selection.selection('minimal'))
+
+    def test_stream_flat_tar_with_leading_dot_directory(self):
+        archive = self.stream_archive([
+            ('.', tarfile.DIRTYPE, None),
+            ('./bin', tarfile.DIRTYPE, None),
+            ('./bin/clang', tarfile.REGTYPE, b'driver'),
+            ('./bin/clang++', tarfile.SYMTYPE, 'clang'),
+        ])
+        destination = self.root/'flat'
+        selection.extract(archive, destination, selection.selection('minimal'))
+        self.assertEqual((destination/'bin/clang++').read_bytes(), b'driver')
+
+    def test_tar_backend_selection_and_fallback(self):
+        archive = self.archive()
+        with mock.patch.dict(os.environ, {'LLVMUP_EXTRACTOR': 'auto'}), \
+             mock.patch.object(shutil, 'which', return_value=None):
+            self.assertIs(selection.tar_reader(archive)[0], selection.open_python_tar)
+        for result in (subprocess.CompletedProcess([], 1), subprocess.TimeoutExpired('xz', 5)):
+            with self.subTest(result=result), \
+                 mock.patch.dict(os.environ, {'LLVMUP_EXTRACTOR': 'auto'}), \
+                 mock.patch.object(shutil, 'which', return_value='/xz'), \
+                 mock.patch.object(subprocess, 'run', **({'side_effect': result} if isinstance(result, Exception) else {'return_value': result})):
+                self.assertIs(selection.tar_reader(archive)[0], selection.open_python_tar)
+        with mock.patch.dict(os.environ, {'LLVMUP_EXTRACTOR': 'python'}), \
+             mock.patch.object(subprocess, 'Popen', side_effect=AssertionError('Python must not spawn xz')):
+            selection.extract(archive, self.root/'python-only', selection.selection('minimal'))
+        with mock.patch.dict(os.environ, {'LLVMUP_EXTRACTOR': 'xz'}), \
+             mock.patch.object(shutil, 'which', return_value=None), self.assertRaises(ValueError):
+            selection.tar_reader(archive)
+        for env in ({'LLVMUP_EXTRACTOR': 'invalid'},
+                    {'LLVMUP_EXTRACTOR': 'auto', 'LLVMUP_EXTRACT_THREADS': '0'},
+                    {'LLVMUP_EXTRACTOR': 'auto', 'LLVMUP_EXTRACT_THREADS': 'invalid'}):
+            with self.subTest(env=env), mock.patch.dict(os.environ, env), self.assertRaises(ValueError):
+                selection.tar_reader(archive)
+
+    def fake_xz(self, after):
+        executable = self.root/'fake-xz'
+        executable.write_text('#!'+sys.executable+'\nimport lzma, sys, time\n'
+                              'sys.stdout.buffer.write(lzma.decompress(open(sys.argv[-1], "rb").read()))\n'
+                              'sys.stdout.buffer.flush()\n'+after+'\n')
+        executable.chmod(0o755)
+        return str(executable)
+
+    @unittest.skipIf(os.name == 'nt', 'executable fixture uses a shebang')
+    def test_parallel_reader_drains_trailer_and_checks_exit_status(self):
+        archive = self.archive()
+        executable = self.fake_xz('sys.stdout.buffer.write(b"\\0" * (4*1024*1024))\nsys.stdout.buffer.flush()\nsys.exit(7)')
+        with self.assertRaises(subprocess.CalledProcessError) as failure:
+            with selection.open_parallel_tar(archive, executable, 2) as tar:
+                list(tar)
+        self.assertEqual(failure.exception.returncode, 7)
+
+    @unittest.skipIf(os.name == 'nt', 'executable fixture uses a shebang')
+    def test_parallel_producer_is_reaped_when_selection_fails(self):
+        archive = self.stream_archive([('LLVM/../outside', tarfile.REGTYPE, b'unsafe')])
+        executable = self.fake_xz('sys.stdout.buffer.write(b"\\0" * (4*1024*1024))\nsys.stdout.buffer.flush()\ntime.sleep(60)')
+        processes = []
+        original = subprocess.Popen
+        def spawn(*args, **kwargs):
+            process = original(*args, **kwargs)
+            processes.append(process)
+            return process
+        reader = lambda path: selection.open_parallel_tar(path, executable, 2)
+        with mock.patch.object(selection, 'tar_reader', return_value=(reader, 'test xz')), \
+             mock.patch.object(subprocess, 'Popen', spawn), self.assertRaises(ValueError):
+            selection.extract(archive, self.root/'invalid', selection.selection('minimal'))
+        self.assertEqual(len(processes), 1)
+        self.assertIsNotNone(processes[0].poll())
+        self.assertTrue(processes[0].stdout.closed)
+        self.assertFalse((self.root/'outside').exists())
+
+    @unittest.skipUnless(shutil.which('xz'), 'requires native xz')
+    def test_native_xz_matches_python_and_ignores_xz_presets(self):
+        archive = self.archive()
+        with mock.patch.dict(os.environ, {'LLVMUP_EXTRACTOR': 'auto'}):
+            if selection.tar_reader(archive)[0] is selection.open_python_tar:
+                self.skipTest('requires xz with threaded decompression')
+        installed = []
+        for backend in ('python', 'xz'):
+            destination = self.root/backend
+            with mock.patch.dict(os.environ, {'LLVMUP_EXTRACTOR': backend, 'LLVMUP_EXTRACT_THREADS': '2',
+                                              'XZ_OPT': '--invalid-preset', 'XZ_DEFAULTS': '--invalid-preset'}):
+                installed.append(selection.extract(archive, destination, selection.selection('minimal')))
+        self.assertEqual(installed[0], installed[1])
+        for name in installed[0]:
+            first, second = self.root/'python'/name, self.root/'xz'/name
+            self.assertEqual(first.read_bytes(), second.read_bytes())
+            self.assertEqual(first.lstat().st_mode, second.lstat().st_mode)
+            if first.is_symlink(): self.assertEqual(os.readlink(first), os.readlink(second))
+        damaged = bytearray(archive.read_bytes())
+        damaged[-12] ^= 1  # Corrupt the XZ footer after the valid TAR payload.
+        archive.write_bytes(damaged)
+        with mock.patch.dict(os.environ, {'LLVMUP_EXTRACTOR': 'xz'}), \
+             self.assertRaises((subprocess.CalledProcessError, tarfile.TarError)):
+            selection.extract(archive, self.root/'corrupt', selection.selection('minimal'))
 
     def test_pe_imports_delay_imports_and_bundled_dll_closure(self):
         def pe(imported, delayed=None):

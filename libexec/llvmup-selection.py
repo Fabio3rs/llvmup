@@ -5,6 +5,7 @@ Archive verification belongs to the caller and must precede extraction. This
 module never downloads or executes archive members while resolving dependencies.
 """
 import argparse
+from contextlib import closing, contextmanager
 import hashlib
 import json
 import os
@@ -17,6 +18,7 @@ import struct
 import subprocess
 import sys
 import tarfile
+import time
 import zipfile
 
 CATALOG = json.loads(Path(__file__).with_name('llvmup-components.json').read_text())
@@ -117,7 +119,7 @@ class Archive:
     def open(self, m):
         return self.handle.open(m) if self.zip else self.handle.extractfile(m)
 
-    def link(self, name):
+    def link(self, name, require_target=True):
         m = self.members[name]
         kind = self.kind(m)
         if kind not in ('symlink', 'hardlink'): return None
@@ -139,8 +141,203 @@ class Archive:
         normalized = '/'.join(parts)
         if not normalized.startswith(self.prefix): raise ValueError('Link escapes toolchain')
         resolved = normalized[len(self.prefix):]
-        if resolved not in self.members: raise ValueError('Missing link target: ' + resolved)
+        if require_target and resolved not in self.members: raise ValueError('Missing link target: ' + resolved)
         return resolved
+
+
+@contextmanager
+def open_python_tar(path):
+    """Portable, sequential decompression with the Python standard library."""
+    with tarfile.open(path, 'r|*', bufsize=1024*1024) as archive:
+        yield archive
+
+
+def xz_environment():
+    # Keep user xz presets from changing checks, memory limits or stream handling.
+    return {k: v for k, v in os.environ.items() if k not in ('XZ_DEFAULTS', 'XZ_OPT')}
+
+
+@contextmanager
+def open_parallel_tar(path, executable, threads):
+    """Parallel XZ producer; TAR selection and writes remain forward-only."""
+    command = [executable, '--decompress', '--stdout', f'--threads={threads}',
+               '--memlimit-mt-decompress=256MiB', '--', str(path)]
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, env=xz_environment())
+    try:
+        with tarfile.open(fileobj=process.stdout, mode='r|', bufsize=1024*1024) as archive:
+            yield archive
+        # TAR ends at its zero records, potentially before XZ's checksum/footer.
+        # Drain the pipe so the producer can finish and report late corruption.
+        while process.stdout.read(1024*1024):
+            pass
+        result = process.wait()
+        if result:
+            raise subprocess.CalledProcessError(result, command)
+    finally:
+        # Also reap the producer if selection, validation or TAR parsing fails.
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+        process.stdout.close()
+
+
+def tar_reader(path):
+    backend = os.environ.get('LLVMUP_EXTRACTOR', 'auto')
+    if backend not in ('auto', 'python', 'xz'):
+        raise ValueError('LLVMUP_EXTRACTOR must be auto, python or xz')
+    if backend == 'python': return open_python_tar, 'Python'
+    with open(path, 'rb') as source:
+        is_xz = source.read(6) == b'\xfd7zXZ\x00'
+    if not is_xz:
+        if backend == 'xz': raise ValueError('LLVMUP_EXTRACTOR=xz requires an XZ archive')
+        return open_python_tar, 'Python'
+    try:
+        cpus = len(os.sched_getaffinity(0))
+    except (AttributeError, OSError):
+        cpus = os.cpu_count() or 1
+    threads = int(os.environ.get('LLVMUP_EXTRACT_THREADS', str(min(4, cpus))))
+    if threads < 1: raise ValueError('LLVMUP_EXTRACT_THREADS must be a positive integer')
+    executable = shutil.which('xz')
+    if executable:
+        try:
+            # The MT memory limit option also detects pre-5.4 xz, which lacks
+            # threaded decompression. Probe before creating any output files.
+            probe = subprocess.run([executable, '--threads=2', '--memlimit-mt-decompress=256MiB', '--version'],
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                   env=xz_environment(), timeout=5)
+            if probe.returncode == 0:
+                return lambda path: open_parallel_tar(path, executable, threads), f'xz, up to {threads} threads'
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    if backend == 'xz': raise ValueError('Parallel extraction requires a compatible xz (5.4 or newer)')
+    return open_python_tar, 'Python (compatible xz unavailable)'
+
+
+class StreamingArchive(Archive):
+    """Keep TAR metadata, but only read file contents in archive order."""
+    def __init__(self, path):
+        self.path = path
+        self.zip = False
+        self.prefix = None
+        self.members = {}
+        self.names = {}
+        self.reader, self.reader_label = tar_reader(path)
+
+    def entries(self):
+        seen = set()
+        with self.reader(self.path) as self.handle:
+            for member in self.handle:
+                raw = safe_path(member.name)
+                if raw in ('', '.'): continue
+                if raw in seen: raise ValueError('Duplicate archive member: ' + raw)
+                seen.add(raw)
+                if self.prefix is None:
+                    # Recognize flat toolchains as well as the enclosing directory
+                    # used by official releases. Never guess a new root mid-stream.
+                    top = raw.split('/')[0]
+                    flat = top in ('bin', 'lib', 'lib64', 'include', 'share') or ('/' not in raw and member.isfile())
+                    self.prefix = '' if flat else top+'/'
+                if raw == self.prefix.rstrip('/'):
+                    if not member.isdir(): raise ValueError('Toolchain root is not a directory')
+                    continue
+                if not raw.startswith(self.prefix): raise ValueError('Inconsistent archive root: ' + raw)
+                name = raw[len(self.prefix):]
+                self.kind(member)  # Reject special files even when unselected.
+                previous = self.members.get(name)
+                if previous is not None: self.names.pop(id(previous), None)
+                self.members[name] = member
+                self.names[id(member)] = raw
+                yield name, member
+
+
+def member_selector(spec):
+    tools = {t for c in spec['components'] for t in CATALOG['components'][c]['tools']}
+    helpers = {path for c in spec['components'] for group in CATALOG['components'][c].get('helpers', []) for path in group}
+    helpers.update(path for c in spec['components'] for path in CATALOG['components'][c].get('optional_files', []))
+    def selected(name):
+        p = PurePosixPath(name)
+        stem = re.sub(r'(?:-\d+(?:\.\d+)*)?(?:\.exe)?$', '', p.name)
+        return ((p.parent == PurePosixPath('bin') and stem in tools) or name in helpers
+                or name.startswith('lib/clang/') or ('libc++' in spec['components'] and libcxx_member(name))
+                or p.name.upper().startswith(('LICENSE', 'NOTICE')))
+    return selected
+
+
+def extract_streaming(archive_path, root, spec):
+    archive = StreamingArchive(archive_path)
+    selected = member_selector(spec)
+    wanted, installed, dependencies = set(), set(), set()
+    by_basename = {}
+
+    def request(name, chain=()):
+        if name in chain: raise ValueError('Cyclic archive link: ' + name)
+        wanted.add(name)
+        if name in archive.members:
+            link = archive.link(name, require_target=False)
+            if link is not None: request(link, (*chain, name))
+
+    passes = 0
+    while True:
+        passes += 1
+        started = time.monotonic()
+        before = len(installed)
+        print(f'Extraction pass {passes}: reading archive sequentially ({archive.reader_label})...', file=sys.stderr, flush=True)
+        with closing(archive.entries()) as entries:
+            for name, member in entries:
+                kind = archive.kind(member)
+                if kind == 'dir': continue
+                if name.startswith(('lib/', 'bin/')):
+                    basename = PurePosixPath(name).name.lower()
+                    by_basename.setdefault(basename, set()).add(name)
+                    if basename in dependencies: request(name)
+                if selected(name) or name in wanted: request(name)
+                if name not in wanted or name in installed or kind != 'file': continue
+                target = root/name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(member) as src, target.open('xb') as dst:
+                    shutil.copyfileobj(src, dst, 1024*1024)
+                target.chmod((member.mode & 0o777) or 0o644)
+                installed.add(name)
+                # Discover dependencies immediately so members later in this same
+                # stream can be copied without waiting for another pass.
+                for dependency in binary_dependencies(target):
+                    dependencies.add(dependency.lower())
+                    for match in by_basename.get(dependency.lower(), ()):
+                        request(match)
+
+        # All headers are now known. Resolve forward link chains and validate
+        # parents before creating any links on disk (including late headers).
+        for name in list(wanted): request(name)
+        for name in wanted:
+            if name not in archive.members: raise ValueError('Missing link target: ' + name)
+            for parent in PurePosixPath(name).parents:
+                if str(parent) in archive.members and archive.kind(archive.members[str(parent)]) != 'dir':
+                    raise ValueError('Archive member has a non-directory parent: ' + name)
+            if archive.kind(archive.members[name]) == 'dir':
+                raise ValueError('Selected link target is a directory: ' + name)
+        pending = {name for name in wanted - installed if archive.kind(archive.members[name]) == 'file'}
+        print(f'Extraction pass {passes}: {time.monotonic()-started:.2f}s, '
+              f'{len(installed)-before} files written, {len(pending)} earlier files pending.', file=sys.stderr, flush=True)
+        if not pending: break
+        # A later dependency may have appeared before its consumer. Batch all
+        # such requests into the next forward-only pass, without a temporary TAR.
+
+    def link_file(name):
+        if name in installed: return
+        target_name = archive.link(name)
+        link_file(target_name)
+        target = root/name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if archive.kind(archive.members[name]) == 'hardlink': os.link(root/target_name, target)
+        elif os.name == 'nt': shutil.copy2(root/target_name, target)
+        else: target.symlink_to(os.path.relpath(root/target_name, target.parent))
+        installed.add(name)
+    for name in sorted(wanted): link_file(name)
+    return installed
 
 
 def binary_dependencies(path):
@@ -215,20 +412,18 @@ def libcxx_member(name):
 
 
 def extract(archive_path, root, spec):
-    archive = Archive(archive_path)
     root.mkdir(parents=True, exist_ok=True)
     if any(root.iterdir()): raise ValueError('Extraction destination must be empty')
+    if not zipfile.is_zipfile(archive_path):
+        return extract_streaming(archive_path, root, spec)
+    archive = Archive(archive_path)
     try:
-        tools = {t for c in spec['components'] for t in CATALOG['components'][c]['tools']}
-        helpers = {path for c in spec['components'] for group in CATALOG['components'][c].get('helpers', []) for path in group}
-        helpers.update(path for c in spec['components'] for path in CATALOG['components'][c].get('optional_files', []))
+        select_member = member_selector(spec)
         selected = set()
         for name, member in archive.members.items():
             kind = archive.kind(member)
             if kind == 'dir': continue
-            p = PurePosixPath(name)
-            stem = re.sub(r'(?:-\d+(?:\.\d+)*)?(?:\.exe)?$', '', p.name)
-            if (p.parent == PurePosixPath('bin') and stem in tools) or name in helpers or name.startswith('lib/clang/') or ('libc++' in spec['components'] and libcxx_member(name)) or p.name.upper().startswith(('LICENSE', 'NOTICE')):
+            if select_member(name):
                 selected.add(name)
         installed = set()
         def materialize(name, chain=()):
