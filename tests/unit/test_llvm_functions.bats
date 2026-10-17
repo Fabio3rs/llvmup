@@ -493,6 +493,28 @@ EOF
     grep -Fx "LLVMUP_ACTIVE_VERSION=$TEST_VERSION" "$GITHUB_ENV"
 }
 
+@test "llvm-print-env-exports discovers and exports the macOS SDK" {
+    export GITHUB_PATH="$TEST_DIR/github-path"
+    export GITHUB_ENV="$TEST_DIR/github-env"
+    local sdk_root="$TEST_DIR/MacOSX.sdk"
+    mkdir -p "$sdk_root"
+    export MOCK_SDK_ROOT="$sdk_root"
+    unset SDKROOT
+    uname() { printf 'Darwin\n'; }
+    xcrun() {
+        [ "$1" = --sdk ] && [ "$2" = macosx ] && [ "$3" = --show-sdk-path ]
+        printf '%s\n' "$MOCK_SDK_ROOT"
+    }
+
+    run llvm-print-env-exports "$TEST_VERSION" github
+    [ "$status" -eq 0 ]
+    grep -Fx "SDKROOT=$sdk_root" "$GITHUB_ENV"
+
+    run llvm-print-env-exports "$TEST_VERSION" shell
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"export SDKROOT=$sdk_root"* ]]
+}
+
 @test "warn verification reports unverified when neither integrity nor provenance was checked" {
     local artifact="$TEST_DIR/artifact.tar.xz"
     local verification_temp="$TEST_DIR/verification"

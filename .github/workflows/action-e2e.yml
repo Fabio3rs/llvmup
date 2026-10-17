@@ -85,6 +85,40 @@ jobs:
           llvm-cov --version
           llvm-profdata --version
 
+      - name: Diagnose macOS SDK and linker
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          LLVM_PATH: ${{ steps.setup.outputs.llvm-path }}
+        run: |
+          set -euxo pipefail
+          xcode-select -p
+          sdk_root="$(xcrun --sdk macosx --show-sdk-path)"
+          test -d "$sdk_root"
+          printf 'Configured SDKROOT: %s\n' "${SDKROOT:-<unset>}"
+          printf 'Configured LD: %s\n' "${LD:-<unset>}"
+          xcrun --find ld
+          "$LLVM_PATH/bin/clang" --print-search-dirs
+
+          diagnostic_dir="$(mktemp -d "$RUNNER_TEMP/llvmup-link.XXXXXX")"
+          trap 'rm -rf "$diagnostic_dir"' EXIT
+          printf 'int main(void) { return 0; }\n' > "$diagnostic_dir/test.c"
+
+          (unset SDKROOT; "$LLVM_PATH/bin/clang" -### "$diagnostic_dir/test.c" -o "$diagnostic_dir/no-sdk") || true
+          if (unset SDKROOT; "$LLVM_PATH/bin/clang" "$diagnostic_dir/test.c" -o "$diagnostic_dir/no-sdk"); then
+            echo 'Link without SDKROOT succeeded.'
+          else
+            echo 'Link without SDKROOT failed.'
+          fi
+
+          "$LLVM_PATH/bin/clang" -### -isysroot "$sdk_root" "$diagnostic_dir/test.c" -o "$diagnostic_dir/explicit-sdk" || true
+          "$LLVM_PATH/bin/clang" -isysroot "$sdk_root" "$diagnostic_dir/test.c" -o "$diagnostic_dir/explicit-sdk"
+          "$diagnostic_dir/explicit-sdk"
+
+          "$LLVM_PATH/bin/clang" -### "$diagnostic_dir/test.c" -o "$diagnostic_dir/exported-sdk" || true
+          "$LLVM_PATH/bin/clang" "$diagnostic_dir/test.c" -o "$diagnostic_dir/exported-sdk"
+          "$diagnostic_dir/exported-sdk"
+
       - name: Compile C/C++ and generate coverage
         shell: pwsh
         env:

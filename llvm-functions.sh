@@ -1718,10 +1718,34 @@ llvm-validate-toolchain-path() {
     return 0
 }
 
+llvm-macos-sdk-root() {
+    if [ -n "${SDKROOT:-}" ]; then
+        case "$SDKROOT" in
+            /*) if [ -d "$SDKROOT" ] && [ "$SDKROOT" != / ]; then printf '%s\n' "$SDKROOT"; return 0; fi ;;
+        esac
+    fi
+    if ! command -v xcrun >/dev/null 2>&1; then
+        log_error "xcrun is required to locate the macOS SDK"
+        return 1
+    fi
+    local sdk_root
+    sdk_root="$(xcrun --sdk macosx --show-sdk-path)" || return 1
+    case "$sdk_root" in
+        /*) ;;
+        *) sdk_root="" ;;
+    esac
+    if [ -z "$sdk_root" ] || [ "$sdk_root" = / ] || [ ! -d "$sdk_root" ]; then
+        log_error "xcrun did not return an available macOS SDK"
+        return 1
+    fi
+    printf '%s\n' "$sdk_root"
+}
+
 llvm-print-env-exports() {
     local version="$1"
     local format="${2:-shell}"
     local llvm_dir
+    local sdk_root=""
 
     if [ -z "$version" ]; then
         log_error "Version is required"
@@ -1734,12 +1758,16 @@ llvm-print-env-exports() {
         return 1
     fi
     llvm-validate-toolchain-path "$llvm_dir" || return 1
+    if [ "$(uname -s)" = Darwin ]; then
+        sdk_root="$(llvm-macos-sdk-root)" || return 1
+    fi
 
     case "$format" in
         shell)
             printf 'export PATH=%q\n' "$llvm_dir/bin:$PATH"
             printf 'export CC=%q\n' "$llvm_dir/bin/clang"
             printf 'export CXX=%q\n' "$llvm_dir/bin/clang++"
+            [ -z "$sdk_root" ] || printf 'export SDKROOT=%q\n' "$sdk_root"
             if [ -x "$llvm_dir/bin/lld" ]; then
                 printf 'export LD=%q\n' "$llvm_dir/bin/lld"
             fi
@@ -1756,6 +1784,7 @@ llvm-print-env-exports() {
             {
                 printf 'CC=%s\n' "$llvm_dir/bin/clang"
                 printf 'CXX=%s\n' "$llvm_dir/bin/clang++"
+                [ -z "$sdk_root" ] || printf 'SDKROOT=%s\n' "$sdk_root"
                 if [ -x "$llvm_dir/bin/lld" ]; then
                     printf 'LD=%s\n' "$llvm_dir/bin/lld"
                 fi

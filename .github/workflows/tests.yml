@@ -249,4 +249,5 @@ jobs:
         test "$RESOLVED_VERSION" = "llvmorg-20.1.8"
         test -x "$LLVM_PATH/bin/clang"
         test "$CC" = "$LLVM_PATH/bin/clang"
+        test -d "$SDKROOT"
         clang --version
