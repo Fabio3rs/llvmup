@@ -285,8 +285,9 @@ The equivalent PowerShell option is:
 The reusable Action supports Linux, macOS ARM64, and Windows stable prebuilt
 releases. On macOS, use a release with a `macOS-ARM64.tar.xz` asset and the
 default `full` profile; selective prebuilt installation is not supported there.
-The Action locates the active macOS SDK with `xcrun` and exports `SDKROOT` for
-Clang. Caching is enabled by default.
+The Action uses `xcrun` to export `SDKROOT` when a macOS SDK is available. If
+SDK discovery fails, it warns and still exposes tools that do not need the SDK.
+Caching is enabled by default.
 
 ```yaml
 - uses: actions/checkout@v6

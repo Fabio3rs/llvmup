@@ -1725,18 +1725,21 @@ llvm-macos-sdk-root() {
         esac
     fi
     if ! command -v xcrun >/dev/null 2>&1; then
-        log_error "xcrun is required to locate the macOS SDK"
-        return 1
+        log_warn "macOS SDK not found: xcrun is unavailable; C/C++ linking may fail"
+        return 0
     fi
     local sdk_root
-    sdk_root="$(xcrun --sdk macosx --show-sdk-path)" || return 1
+    sdk_root="$(xcrun --sdk macosx --show-sdk-path)" || {
+        log_warn "macOS SDK discovery failed; C/C++ linking may fail"
+        return 0
+    }
     case "$sdk_root" in
         /*) ;;
         *) sdk_root="" ;;
     esac
     if [ -z "$sdk_root" ] || [ "$sdk_root" = / ] || [ ! -d "$sdk_root" ]; then
-        log_error "xcrun did not return an available macOS SDK"
-        return 1
+        log_warn "xcrun did not return an available macOS SDK; C/C++ linking may fail"
+        return 0
     fi
     printf '%s\n' "$sdk_root"
 }

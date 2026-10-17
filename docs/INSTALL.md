@@ -400,6 +400,8 @@ must be positive and applies only to XZ. The subprocess ignores `XZ_OPT` and
 `XZ_DEFAULTS` so they cannot override its settings. A decompression failure aborts
 installation; it does not silently retry using Python. These settings do not
 change installed content or cache identity, and do not affect the `full` profile.
+Full prebuilt installs use `tar` to extract the archive in one pass. On macOS,
+`tar` handles `.tar.xz`; llvmup does not invoke external `xz` for this profile.
 
 Source builds use the same catalog with `distribution`/`install-distribution`
 targets, enabling compiler-rt for runtime support and libcxx/libcxxabi/libunwind

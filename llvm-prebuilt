@@ -309,17 +309,8 @@ STAGED_TOOLCHAIN="$STAGING_ROOT/toolchain"
 if [ "$(jq -r '.selective' <<< "$LLVM_SELECTION_JSON")" = true ]; then
     python3 "$SCRIPT_DIR/libexec/llvmup-selection.py" extract --archive "$DEST_FILE" --root "$STAGED_TOOLCHAIN" "${LLVM_SELECTION_ARGS[@]}" || exit 1
 else
-ARCHIVE_LIST_FILE="$TEMP_DIR/archive.list"
-if ! tar -tf "$DEST_FILE" >"$ARCHIVE_LIST_FILE" 2>/dev/null; then
-    log_error "Failed to inspect the downloaded tarball."
-    log_info "The downloaded file might be corrupted. Please try again."
-    exit 1
-fi
-EXTRACTED_DIR="$(awk -F/ 'NF && $1 != "." { print $1; exit }' "$ARCHIVE_LIST_FILE")"
-if [ -z "$EXTRACTED_DIR" ] || [ "$EXTRACTED_DIR" = ".." ]; then
-    log_error "Failed to identify a safe top-level directory in the tarball."
-    exit 1
-fi
+log_info "Extraction backend: tar (full archive; xz handled by tar)"
+EXTRACT_STARTED=$SECONDS
 
 # Always show some extraction feedback, even in non-verbose mode
 if [ "$VERBOSE" -eq 1 ]; then
@@ -344,10 +335,19 @@ else
     echo "DONE"
 fi
 
-
-    if [ "$STAGING_ROOT/$EXTRACTED_DIR" != "$STAGED_TOOLCHAIN" ]; then
-        mv "$STAGING_ROOT/$EXTRACTED_DIR" "$STAGED_TOOLCHAIN" || exit 1
+    EXTRACTED_DIRS=()
+    for entry in "$STAGING_ROOT"/* "$STAGING_ROOT"/.[!.]* "$STAGING_ROOT"/..?*; do
+        [ -e "$entry" ] || [ -L "$entry" ] || continue
+        EXTRACTED_DIRS+=("$entry")
+    done
+    if [ "${#EXTRACTED_DIRS[@]}" -ne 1 ] || [ ! -d "${EXTRACTED_DIRS[0]}" ] || [ -L "${EXTRACTED_DIRS[0]}" ]; then
+        log_error "The downloaded tarball must contain one top-level toolchain directory."
+        exit 1
     fi
+    if [ "${EXTRACTED_DIRS[0]}" != "$STAGED_TOOLCHAIN" ]; then
+        mv "${EXTRACTED_DIRS[0]}" "$STAGED_TOOLCHAIN" || exit 1
+    fi
+    log_info "Archive extracted in $((SECONDS-EXTRACT_STARTED))s"
 fi
 llvm_space_snapshot "after extraction" "$STAGED_TOOLCHAIN" "$TEMP_DIR"
 llvm_selection_finalize "$STAGED_TOOLCHAIN" || exit 1

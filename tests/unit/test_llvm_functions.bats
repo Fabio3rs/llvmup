@@ -515,6 +515,51 @@ EOF
     [[ "$output" == *"export SDKROOT=$sdk_root"* ]]
 }
 
+@test "llvm-print-env-exports keeps macOS tools available when SDK discovery fails" {
+    export GITHUB_PATH="$TEST_DIR/github-path"
+    export GITHUB_ENV="$TEST_DIR/github-env"
+    unset SDKROOT
+    uname() { printf 'Darwin\n'; }
+    xcrun() { return 1; }
+
+    run llvm-print-env-exports "$TEST_VERSION" github
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"macOS SDK discovery failed"* ]]
+    grep -Fx "CC=$LLVM_CUSTOM_TOOLCHAINS_DIR/$TEST_VERSION/bin/clang" "$GITHUB_ENV"
+    ! grep -q '^SDKROOT=' "$GITHUB_ENV"
+
+    run llvm-print-env-exports "$TEST_VERSION" shell
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"export CC="* ]]
+    [[ "$output" != *"export SDKROOT="* ]]
+}
+
+@test "llvm-macos-sdk-root warns without xcrun" {
+    unset SDKROOT
+    command() {
+        if [ "$1" = -v ] && [ "$2" = xcrun ]; then return 1; fi
+        builtin command "$@"
+    }
+
+    run llvm-macos-sdk-root
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"xcrun is unavailable"* ]]
+}
+
+@test "llvm-print-env-exports warns when xcrun returns an invalid SDK" {
+    export GITHUB_PATH="$TEST_DIR/github-path"
+    export GITHUB_ENV="$TEST_DIR/github-env"
+    unset SDKROOT
+    uname() { printf 'Darwin\n'; }
+    xcrun() { printf '/missing/MacOSX.sdk\n'; }
+
+    run llvm-print-env-exports "$TEST_VERSION" github
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"xcrun did not return an available macOS SDK"* ]]
+    grep -Fx "LLVMUP_ACTIVE_VERSION=$TEST_VERSION" "$GITHUB_ENV"
+    ! grep -q '^SDKROOT=' "$GITHUB_ENV"
+}
+
 @test "warn verification reports unverified when neither integrity nor provenance was checked" {
     local artifact="$TEST_DIR/artifact.tar.xz"
     local verification_temp="$TEST_DIR/verification"
