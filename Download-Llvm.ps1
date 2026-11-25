@@ -9,6 +9,30 @@ param (
     [string]$Version,
 
     [Parameter(Mandatory = $false)]
+    [string]$Provider = "",
+
+    [Parameter(Mandatory = $false)]
+    [string]$Release = "",
+
+    [Parameter(Mandatory = $false)]
+    [string]$Crt = "",
+
+    [Parameter(Mandatory = $false)]
+    [string]$Threads = "",
+
+    [Parameter(Mandatory = $false)]
+    [string]$Target = "",
+
+    [Parameter(Mandatory = $false)]
+    [string]$Compiler = "",
+
+    [Parameter(Mandatory = $false)]
+    [ValidateSet("auto", "7z", "tar", "zip", "msi")]
+    [string]$Extractor = "auto",
+
+    [switch]$NoCache,
+
+    [Parameter(Mandatory = $false)]
     [ValidateSet("Windows", "Linux", "macOS")]
     [string]$Platform,
 
@@ -1043,106 +1067,125 @@ try {
         throw "Invalid verification policy: $resolvedPolicy"
     }
 
-    # Get available releases
-    Write-InfoLog "LLVM Prebuilt Installation Manager"
-    $releases = Get-LlvmReleases -TimeoutSec $TimeoutSec
+    $installerModule = Join-Path $PSScriptRoot 'libexec/pwsh/Llvm-Installer.psm1'
+    $recipesModule = Join-Path $PSScriptRoot 'libexec/pwsh/Llvm-Recipes.psm1'
+    $downloaderModule = Join-Path $PSScriptRoot 'libexec/pwsh/Llvm-Downloader.psm1'
+    Import-Module $recipesModule -Force -DisableNameChecking
+    Import-Module $downloaderModule -Force -DisableNameChecking
+    Import-Module $installerModule -Force -DisableNameChecking
 
-    if (-not $releases -or $releases.Count -eq 0) {
-        throw "No releases found"
-    }
+    $effProvider = if ($Provider) { $Provider.ToLowerInvariant() } elseif ($Version -match '^([a-z0-9][a-z0-9-]*?)@') { $matches[1].ToLowerInvariant() } else { 'official' }
 
     if ($ListOnly) {
-        $stableTags = @(Get-StableLlvmReleases -Releases $releases | ForEach-Object { $_.tag_name })
-        $stableTags = @($stableTags | Sort-Object {
-            $value = $_ -replace '^llvmorg-', ''
-            try { [version]$value } catch { [version]'0.0.0' }
-        } -Descending)
+        $recipe = Get-LlvmRecipe -Provider $effProvider
+        $releases = Invoke-LlvmProviderReleases -Provider $effProvider -ApiUrl $recipe.api_url -TimeoutSec $TimeoutSec -MaxRetries $MaxRetries -TestMode:$TestMode
+        if (-not $releases -or $releases.Count -eq 0) { throw "No releases found for provider '$effProvider'" }
+        $stableTags = @($releases | Where-Object { -not $_.draft -and -not $_.prerelease -and $_.tag_name -match $recipe.tag_rules.release_tag_pattern } | ForEach-Object { $_.tag_name })
+        if ($effProvider -eq 'official') {
+            $stableTags = @($stableTags | Sort-Object {
+                $value = $_ -replace '^llvmorg-', ''
+                try { [version]$value } catch { [version]'0.0.0' }
+            } -Descending)
+        }
         if ($OutputFormat -eq 'Json') {
-            Write-Output (@{ remote_versions = $stableTags } | ConvertTo-Json -Depth 3)
+            Write-Output (@{ provider = $effProvider; remote_versions = $stableTags } | ConvertTo-Json -Depth 3)
         } else {
             $stableTags | ForEach-Object { Write-Output $_ }
         }
         return
     }
 
-    # Select version if not provided
-    if (-not $Version -and $ResolveOnly) {
-        $Version = 'latest'
-    } elseif (-not $Version) {
-        $stableReleases = Get-StableLlvmReleases -Releases $releases
-        Write-InfoLog "Available versions:"
-        for ($i = 0; $i -lt [Math]::Min($stableReleases.Count, 10); $i++) {
-            $release = $stableReleases[$i]
-            $installPath = Join-Path $script:TOOLCHAINS_DIR $release.tag_name
-            $installed = if (Test-Path $installPath) { " [INSTALLED]" } else { "" }
-            Write-Host "  $($i + 1)) $($release.tag_name)$installed"
-        }
-
-        if ($stableReleases.Count -gt 10) {
-            Write-Host "  ... and $($stableReleases.Count - 10) more versions"
-        }
-
-        $selection = Read-Host "Select version (1-$([Math]::Min($releases.Count, 10))) or enter tag name"
-
-        if ($selection -match '^\d+$') {
-            $index = [int]$selection - 1
-            if ($index -ge 0 -and $index -lt $stableReleases.Count) {
-                $Version = $stableReleases[$index].tag_name
-            } else {
-                throw "Invalid selection"
-            }
-        } else {
-            $Version = $selection
-        }
-    }
-
-    $selectedRelease = Resolve-LlvmRemoteRelease -Releases $releases -Expression $Version
-    $Version = $selectedRelease.tag_name
-
-    Write-InfoLog "Selected version: $Version"
-    Write-VerboseLog "Release assets: $($selectedRelease.assets.Count)"
-
-    if ($script:Selection.selective -and $Platform -notin @('Linux', 'Windows')) { throw 'Selective installation supports Linux and Windows' }
-    if ($Strip -and $Platform -ne 'Linux') { throw 'Strip is supported only for Linux ELF executables' }
-    # Select appropriate asset
-    $selectedAsset = Select-LlvmAssetForPlatform -Assets $selectedRelease.assets -Platform $Platform -Architecture $Arch -PreferInstaller:(-not $ArchiveOnly) -ArchiveOnly:$ArchiveOnly
-
-    if (-not $selectedAsset) {
-        throw "No suitable prebuilt asset found for $Platform $Arch"
-    }
-
-    Write-InfoLog "Selected asset: $($selectedAsset.Name)"
-    Write-InfoLog "Size: $([Math]::Round($selectedAsset.Size / 1MB, 2)) MB"
-
+    $targetVersionExpr = if ($Version) { $Version } else { 'latest' }
     if ($ResolveOnly) {
-        $metadata = [ordered]@{
-            version = $Version
-            asset_name = $selectedAsset.Name
-            asset_url = $selectedAsset.Url
-            asset_digest = if ($selectedAsset.Digest) { [string]$selectedAsset.Digest } else { '' }
-            asset_id = if ($selectedAsset.Asset.id) { [string]$selectedAsset.Asset.id } else { '' }
-            signature_url = if ($selectedAsset.SigFile) { [string]$selectedAsset.SigFile.browser_download_url } else { '' }
-            checksum_url = if ($selectedAsset.ChecksumFile) { [string]$selectedAsset.ChecksumFile.browser_download_url } else { '' }
-            attestation_url = if ($selectedAsset.JsonlFile) { [string]$selectedAsset.JsonlFile.browser_download_url } else { '' }
-            platform = $Platform
-            architecture = $Arch
-        }
+        $resolved = Invoke-LlvmInstallPrebuiltFromRecipe `
+            -Selector $targetVersionExpr `
+            -Provider $Provider `
+            -ReleaseTag $Release `
+            -Platform $Platform `
+            -Arch $Arch `
+            -Crt $Crt `
+            -Threads $Threads `
+            -Target $Target `
+            -Compiler $Compiler `
+            -Extractor $Extractor `
+            -VerifyPolicy $resolvedPolicy `
+            -ArchiveOnly:$ArchiveOnly `
+            -TestMode:$TestMode `
+            -ResolveOnly `
+            -TimeoutSec $TimeoutSec `
+            -MaxRetries $MaxRetries `
+            -ToolchainsPath $script:TOOLCHAINS_DIR `
+            -HomePath $script:LLVM_HOME `
+            -Quiet:$Quiet `
+            -VerboseMode:$VerboseMode
         if ($OutputFormat -eq 'Json') {
-            Write-Output ($metadata | ConvertTo-Json -Compress)
+            Write-Output ($resolved | ConvertTo-Json -Compress)
         } else {
-            Write-Output $Version
+            Write-Output $resolved.version
         }
         return
     }
 
-    New-Item -ItemType Directory -Path $script:TOOLCHAINS_DIR -Force | Out-Null
+    # Interactive version selection when no version or release was supplied
+    if (-not $Version -and -not $Release) {
+        $recipe = Get-LlvmRecipe -Provider $effProvider
+        $releases = Invoke-LlvmProviderReleases -Provider $effProvider -ApiUrl $recipe.api_url -TimeoutSec $TimeoutSec -MaxRetries $MaxRetries -TestMode:$TestMode
+        $stableReleases = @($releases | Where-Object { -not $_.draft -and -not $_.prerelease -and $_.tag_name -match $recipe.tag_rules.release_tag_pattern })
+        Write-InfoLog "Available versions ($effProvider):"
+        for ($i = 0; $i -lt [Math]::Min($stableReleases.Count, 10); $i++) {
+            $releaseItem = $stableReleases[$i]
+            $installPath = Join-Path $script:TOOLCHAINS_DIR $releaseItem.tag_name
+            $installed = if (Test-Path $installPath) { " [INSTALLED]" } else { "" }
+            Write-Host "  $($i + 1)) $($releaseItem.tag_name)$installed"
+        }
+        if ($stableReleases.Count -gt 10) {
+            Write-Host "  ... and $($stableReleases.Count - 10) more versions"
+        }
+        $selection = Read-Host "Select version (1-$([Math]::Min($stableReleases.Count, 10))) or enter tag/expression"
+        if ($selection -match '^\d+$') {
+            $index = [int]$selection - 1
+            if ($index -ge 0 -and $index -lt $stableReleases.Count) {
+                $Release = $stableReleases[$index].tag_name
+                $targetVersionExpr = $Release
+            } else {
+                throw "Invalid selection"
+            }
+        } else {
+            $targetVersionExpr = $selection
+        }
+    }
 
-    # Install the selected asset
-    $installPath = Install-PrebuiltLlvm -SelectedAsset $selectedAsset -Version $Version -CustomName $Name -Force:$Force -Policy $resolvedPolicy
+    $installRes = Invoke-LlvmInstallPrebuiltFromRecipe `
+        -Selector $targetVersionExpr `
+        -Provider $Provider `
+        -ReleaseTag $Release `
+        -Platform $Platform `
+        -Arch $Arch `
+        -Crt $Crt `
+        -Threads $Threads `
+        -Target $Target `
+        -Compiler $Compiler `
+        -Name $Name `
+        -Profile $Profile `
+        -Components $Component `
+        -Strip:$Strip `
+        -Extractor $Extractor `
+        -VerifyPolicy $resolvedPolicy `
+        -ReleaseKeysPath $ReleaseKeysPath `
+        -ArchiveOnly:$ArchiveOnly `
+        -Force:$Force `
+        -NoCache:$NoCache `
+        -TestMode:$TestMode `
+        -TimeoutSec $TimeoutSec `
+        -MaxRetries $MaxRetries `
+        -ToolchainsPath $script:TOOLCHAINS_DIR `
+        -HomePath $script:LLVM_HOME `
+        -Quiet:$Quiet `
+        -VerboseMode:$VerboseMode
 
     Write-SuccessLog "Installation completed successfully!"
-    Write-InfoLog "Installation path: $installPath"
-    Write-InfoLog "To activate: Import-Module Llvm-Functions-Core; Invoke-LlvmActivate '$Version'"
+    Write-InfoLog "Installation path: $($installRes.install_path)"
+    Write-InfoLog "To activate: llvmup use $($installRes.install_name)"
 
 } catch {
     Write-ErrorLog "Installation failed: $($_.Exception.Message)"

@@ -805,8 +805,18 @@ function Invoke-LlvmAutoActivateEnhanced {
     param(
         [string]$StartDirectory = (Get-Location).Path,
         [string]$ConfigExpression = $null,
-        [string]$ToolchainsPath = $null
+        [string]$ToolchainsPath = $null,
+        [switch]$IgnoreSessionOverride
     )
+
+    if (-not $IgnoreSessionOverride -and $env:LLVMUP_SESSION_OVERRIDE -eq '1') {
+        return @{
+            Action = 'SkippedSessionOverride'
+            ActiveVersion = (Get-LlvmActiveVersion)
+            Expression = $ConfigExpression
+            Reason = 'Manual session override is active'
+        }
+    }
 
     $config = if ($ConfigExpression) {
         @{ Expression = $ConfigExpression; AutoActivate = $true }
