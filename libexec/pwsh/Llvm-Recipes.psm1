@@ -144,7 +144,8 @@ function Select-LlvmOfficialAsset {
         [Parameter(Mandatory = $true)][string]$HostOs,
         [Parameter(Mandatory = $true)][string]$HostArch,
         [switch]$PreferInstaller,
-        [switch]$ArchiveOnly
+        [switch]$ArchiveOnly,
+        [string[]]$AvailableFormats = @()
     )
 
     $key = "${HostOs}:${HostArch}"
@@ -180,6 +181,10 @@ function Select-LlvmOfficialAsset {
         }
     }
 
+    if ($AvailableFormats.Count -gt 0) {
+        # Never pick an asset this machine cannot unpack (e.g. .tar.zst without a zstd backend).
+        $candidates = @($candidates | Where-Object { $AvailableFormats -contains $_.Format })
+    }
     if ($candidates.Count -eq 0) { return $null }
     $best = $candidates | Sort-Object Priority -Descending | Select-Object -First 1
     $stdLib = if ($HostOs -eq 'windows') { 'msvc' } elseif ($HostOs -eq 'macos') { 'libc++' } else { 'libstdc++' }
@@ -207,7 +212,8 @@ function Select-LlvmWinLibsAsset {
         [Parameter(Mandatory = $true)][string]$HostArch,
         [string]$Crt = 'ucrt',
         [string]$Threads = 'posix',
-        [string]$Extractor = 'auto'
+        [string]$Extractor = 'auto',
+        [string[]]$AvailableFormats = @()
     )
 
     if ($HostOs -ne 'windows') { return $null }
@@ -220,8 +226,9 @@ function Select-LlvmWinLibsAsset {
     $reqCrt = if ($Crt) { $Crt.ToLowerInvariant() } else { 'ucrt' }
     $reqThreads = if ($Threads) { $Threads.ToLowerInvariant() } else { 'posix' }
 
-    $sevenZip = Find-Llvm7Zip
-    $prefer7z = ($Extractor -eq '7z') -or ($Extractor -eq 'auto' -and $sevenZip.available -and $sevenZip.supports_7z)
+    # .7z is less than half the size of the .zip; use it whenever a modern 7-Zip can unpack it.
+    $formats = if ($AvailableFormats.Count -gt 0) { $AvailableFormats } else { @('zip', '7z') }
+    $prefer7z = ($formats -contains '7z')
 
     $pattern = $Recipe.asset_rules.filename_pattern
     $candidates = @()
@@ -244,8 +251,7 @@ function Select-LlvmWinLibsAsset {
         if ($aArch -ne $archName) { continue }
         if ($aCrt -ne $reqCrt) { continue }
         if ($aThreads -ne $reqThreads) { continue }
-        if ($Extractor -eq '7z' -and $aExt -ne '7z') { continue }
-        if ($Extractor -eq 'zip' -and $aExt -ne 'zip') { continue }
+        if ($formats -notcontains $aExt) { continue }
 
         $fmtScore = if ($prefer7z) { if ($aExt -eq '7z') { 20 } else { 10 } } else { if ($aExt -eq 'zip') { 20 } else { 5 } }
         $candidates += [pscustomobject]@{
@@ -331,6 +337,40 @@ function Select-LlvmMinGWAsset {
     }
 }
 
+function Get-LlvmPlanFormats {
+    # Formats eligible for asset selection. For the current host this is what the local backends can
+    # unpack (narrowed by an explicit --extractor); for another host (e.g. writing a lockfile entry
+    # for Linux from Windows) a portable baseline is used, since its extractors are unknown here.
+    [CmdletBinding()]
+    param(
+        [string]$HostOs,
+        [string]$HostArch,
+        [string]$Extractor = 'auto'
+    )
+    if ($env:LLVMUP_ASSET_FORMATS) {
+        return @($env:LLVMUP_ASSET_FORMATS -split '[,; ]+' | Where-Object { $_ })
+    }
+    $localOs = Normalize-LlvmHostOs
+    if ($HostOs -and $HostOs -ne $localOs) {
+        return @('tar.xz', 'tar.gz', 'tar', 'zip', '7z')
+    }
+    $formats = @(Get-LlvmExtractableFormats)
+    $byExtractor = @{
+        '7z' = @('7z', 'zip', 'tar.xz', 'tar.gz', 'tar', 'exe', 'tar.zst')
+        'tar' = @('tar.xz', 'tar.gz', 'tar.zst', 'tar')
+        'zip' = @('zip')
+        'python' = @('tar.xz', 'tar.gz', 'tar.zst', 'tar', 'zip')
+        'msi' = @('msi')
+    }
+    $ext = if ($Extractor) { $Extractor.ToLowerInvariant() } else { 'auto' }
+    if ($byExtractor.ContainsKey($ext)) {
+        $allowed = $byExtractor[$ext]
+        $formats = @($formats | Where-Object { $allowed -contains $_ })
+        if ($formats.Count -eq 0) { throw "Extractor '$ext' cannot unpack any archive format on this machine." }
+    }
+    return $formats
+}
+
 function Resolve-LlvmRecipeInstallPlan {
     [CmdletBinding()]
     param(
@@ -347,13 +387,17 @@ function Resolve-LlvmRecipeInstallPlan {
         [string]$Profile = 'full',
         [string]$Extractor = 'auto',
         [switch]$PreferInstaller,
-        [switch]$ArchiveOnly
+        [switch]$ArchiveOnly,
+        [string[]]$AvailableFormats = @()
     )
 
     $recipe = Get-LlvmRecipe -Provider $Provider
     $hostOs = Normalize-LlvmHostOs -Platform $Platform
     $hostArch = Normalize-LlvmHostArch -Arch $Arch
     $flatReleases = @($Releases | ForEach-Object { $_ })
+    if (-not $AvailableFormats -or $AvailableFormats.Count -eq 0) {
+        $AvailableFormats = Get-LlvmPlanFormats -HostOs $hostOs -HostArch $hostArch -Extractor $Extractor
+    }
 
     if ($Profile -and ($recipe.profiles -notcontains $Profile)) {
         $allowed = $recipe.profiles -join ', '
@@ -382,10 +426,10 @@ function Resolve-LlvmRecipeInstallPlan {
         switch ($Provider) {
             'official' {
                 if ($tag -match '^llvmorg-(\d+\.\d+\.\d+)$') { $llvmVer = $matches[1] }
-                $picked = Select-LlvmOfficialAsset -Recipe $recipe -Assets @($rel.assets) -HostOs $hostOs -HostArch $hostArch -PreferInstaller:$PreferInstaller -ArchiveOnly:$ArchiveOnly
+                $picked = Select-LlvmOfficialAsset -Recipe $recipe -Assets @($rel.assets) -HostOs $hostOs -HostArch $hostArch -PreferInstaller:$PreferInstaller -ArchiveOnly:$ArchiveOnly -AvailableFormats $AvailableFormats
             }
             'winlibs' {
-                $picked = Select-LlvmWinLibsAsset -Recipe $recipe -Assets @($rel.assets) -HostOs $hostOs -HostArch $hostArch -Crt $Crt -Threads $Threads -Extractor $Extractor
+                $picked = Select-LlvmWinLibsAsset -Recipe $recipe -Assets @($rel.assets) -HostOs $hostOs -HostArch $hostArch -Crt $Crt -Threads $Threads -Extractor $Extractor -AvailableFormats $AvailableFormats
                 if ($picked) {
                     $llvmVer = $picked.llvm_version
                     $gccVer = $picked.gcc_version
@@ -442,12 +486,15 @@ function Resolve-LlvmRecipeInstallPlan {
     ) | Select-Object -First 1
 
     $verAssets = Get-LlvmVerificationAssetsFromRelease -Assets @($chosen.Release.assets) -AssetName $chosen.Picked.asset.name
+    # Canonical identity: provider + exact upstream release + the variant/host axes that change content.
+    # Official keeps the historical 'llvmorg-X.Y.Z' directory name for compatibility with existing installs.
     $canonicalId = if ($Provider -eq 'official') {
         $chosen.Tag
     } elseif ($Provider -eq 'winlibs') {
-        "winlibs-$($chosen.Tag)-$($chosen.Picked.variant.crt)"
+        # The WinLibs tag already encodes GCC, LLVM, MinGW, threads, CRT and revision.
+        "winlibs-$($chosen.Tag)-$($hostArch)"
     } else {
-        "llvm-mingw-$($chosen.Tag)-$($chosen.Picked.variant.crt)"
+        "llvm-mingw-$($chosen.Tag)-$($chosen.Picked.variant.crt)-$($hostOs)-$($hostArch)"
     }
 
     $variant = $chosen.Picked.variant
@@ -557,6 +604,7 @@ Export-ModuleMember -Function @(
     'Normalize-LlvmHostArch',
     'Test-LlvmVersionSatisfies',
     'Resolve-LlvmRecipeInstallPlan',
+    'Get-LlvmPlanFormats',
     'Invoke-LlvmRecipeFinalize',
     'Test-LlvmRecipeStagingValid'
 )

@@ -3,6 +3,7 @@ common 644 LICENSE
 common 644 githubreleases.json
 common 644 libexec/llvmup-components.json
 common 644 libexec/llvmup-selection.py
+common 644 libexec/llvmup-extract.py
 common 644 libexec/recipes/official.json
 common 644 libexec/recipes/winlibs.json
 common 644 libexec/recipes/llvm-mingw.json

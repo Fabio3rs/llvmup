@@ -972,6 +972,15 @@ function ConvertTo-LlvmHashtable {
     return $InputObject
 }
 
+# Variables an activation may set; deactivation restores each one to its exact prior state
+# (including "was not set at all").
+$script:LlvmTrackedEnvNames = @(
+    'PATH', 'LIBCLANG_PATH', 'LLVM_CONFIG_PATH',
+    'CC', 'CXX', 'AR', 'RANLIB', 'RC', 'LD', 'NM', 'STRIP', 'DLLTOOL', 'WINDRES', 'PKG_CONFIG',
+    'LLVMUP_ACTIVE_VERSION', 'LLVMUP_ACTIVE_PATH', 'LLVMUP_ACTIVE_ID',
+    'LLVMUP_ACTIVE_PROVIDER', 'LLVMUP_ACTIVE_COMPILER', 'LLVMUP_ACTIVE_TARGET'
+)
+
 function Backup-LlvmEnvironment {
     <#
     .SYNOPSIS
@@ -986,13 +995,7 @@ function Backup-LlvmEnvironment {
     #>
 
     $llvmSysVars = Get-LlvmSysEnvironmentVariables
-    $trackedNames = @(
-        'PATH', 'LIBCLANG_PATH', 'LLVM_CONFIG_PATH',
-        'CC', 'CXX', 'AR', 'RANLIB', 'RC', 'LD',
-        '_ACTIVE_LLVM', '_ACTIVE_LLVM_PATH', '_LLVM_BACKUP',
-        'LLVMUP_ACTIVE_VERSION', 'LLVMUP_ACTIVE_PATH', 'LLVMUP_ACTIVE_ID',
-        'LLVMUP_ACTIVE_PROVIDER', 'LLVMUP_ACTIVE_COMPILER', 'LLVMUP_ACTIVE_TARGET'
-    )
+    $trackedNames = @($script:LlvmTrackedEnvNames) + @('_ACTIVE_LLVM', '_ACTIVE_LLVM_PATH', '_LLVM_BACKUP')
     $setFlags = @{}
     $values = @{}
     foreach ($name in $trackedNames) {
@@ -1001,25 +1004,9 @@ function Backup-LlvmEnvironment {
         $values[$name] = if ($isSet) { (Get-Item -LiteralPath "Env:$name").Value } else { $null }
     }
 
-    $backup = @{
-        PATH = $values['PATH']
-        LIBCLANG_PATH = $values['LIBCLANG_PATH']
-        LLVM_CONFIG_PATH = $values['LLVM_CONFIG_PATH']
-        CC = $values['CC']
-        CXX = $values['CXX']
-        AR = $values['AR']
-        RANLIB = $values['RANLIB']
-        RC = $values['RC']
-        LD = $values['LD']
-        _ACTIVE_LLVM = $values['_ACTIVE_LLVM']
-        _ACTIVE_LLVM_PATH = $values['_ACTIVE_LLVM_PATH']
-        _LLVM_BACKUP = $values['_LLVM_BACKUP']
-        LLVMUP_ACTIVE_VERSION = $values['LLVMUP_ACTIVE_VERSION']
-        LLVMUP_ACTIVE_PATH = $values['LLVMUP_ACTIVE_PATH']
-        LLVMUP_ACTIVE_ID = $values['LLVMUP_ACTIVE_ID']
-        LLVMUP_ACTIVE_PROVIDER = $values['LLVMUP_ACTIVE_PROVIDER']
-        LLVMUP_ACTIVE_COMPILER = $values['LLVMUP_ACTIVE_COMPILER']
-        LLVMUP_ACTIVE_TARGET = $values['LLVMUP_ACTIVE_TARGET']
+    $backup = @{}
+    foreach ($name in $trackedNames) { $backup[$name] = $values[$name] }
+    $backup += @{
         SET_FLAGS = $setFlags
         LLVM_SYS_VARS = $llvmSysVars
         Timestamp = (Get-Date).ToString('o')
@@ -1069,12 +1056,7 @@ function Restore-LlvmEnvironment {
     Clear-LlvmSysEnvironmentVariables
 
     $setFlags = if ($Backup.ContainsKey('SET_FLAGS') -and $Backup.SET_FLAGS -is [hashtable]) { $Backup.SET_FLAGS } else { $null }
-    foreach ($name in @(
-        'PATH', 'LIBCLANG_PATH', 'LLVM_CONFIG_PATH',
-        'CC', 'CXX', 'AR', 'RANLIB', 'RC', 'LD',
-        'LLVMUP_ACTIVE_VERSION', 'LLVMUP_ACTIVE_PATH', 'LLVMUP_ACTIVE_ID',
-        'LLVMUP_ACTIVE_PROVIDER', 'LLVMUP_ACTIVE_COMPILER', 'LLVMUP_ACTIVE_TARGET'
-    )) {
+    foreach ($name in @($script:LlvmTrackedEnvNames)) {
         if ($setFlags -and $setFlags.ContainsKey($name)) {
             if ($setFlags[$name]) {
                 Set-Item -LiteralPath "Env:$name" -Value ([string]$Backup[$name])

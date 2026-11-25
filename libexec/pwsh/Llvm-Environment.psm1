@@ -61,6 +61,7 @@ function Get-LlvmEnvironmentDelta {
 
     $binDir = Join-Path $root 'bin'
     $ccPath = $null; $cxxPath = $null; $arPath = $null; $ranlibPath = $null; $rcPath = $null; $ldPath = $null
+    $nmPath = $null; $stripPath = $null; $dlltoolPath = $null
 
     # Target-specific wrappers take precedence on multi-target llvm-mingw when target differs or wrappers exist
     $wrappers = $null
@@ -79,13 +80,20 @@ function Get-LlvmEnvironmentDelta {
         $ranlibPath = Resolve-LlvmManifestToolAbsPath -RootPath $root -ToolsMap $wrappers -Key 'ranlib'
         $rcPath = Resolve-LlvmManifestToolAbsPath -RootPath $root -ToolsMap $wrappers -Key 'windres'
         $ldPath = Resolve-LlvmManifestToolAbsPath -RootPath $root -ToolsMap $wrappers -Key 'ld'
+        $nmPath = Resolve-LlvmManifestToolAbsPath -RootPath $root -ToolsMap $wrappers -Key 'nm'
+        $stripPath = Resolve-LlvmManifestToolAbsPath -RootPath $root -ToolsMap $wrappers -Key 'strip'
+        $dlltoolPath = Resolve-LlvmManifestToolAbsPath -RootPath $root -ToolsMap $wrappers -Key 'dlltool'
     }
 
     if ($effCompiler -eq 'gcc') {
         if (-not $ccPath) { $ccPath = Resolve-LlvmManifestToolAbsPath -RootPath $root -ToolsMap $tools -Key 'gcc' }
         if (-not $cxxPath) { $cxxPath = Resolve-LlvmManifestToolAbsPath -RootPath $root -ToolsMap $tools -Key 'g++' }
-        if (-not $arPath) { $arPath = Resolve-LlvmManifestToolAbsPath -RootPath $root -ToolsMap $tools -Key 'ar' }
-        if (-not $ranlibPath) { $ranlibPath = Resolve-LlvmManifestToolAbsPath -RootPath $root -ToolsMap $tools -Key 'ranlib' }
+        # gcc-ar/gcc-ranlib/gcc-nm load the LTO plugin, as WinLibs' own mingwvars.bat configures.
+        foreach ($k in @('gcc-ar', 'ar')) { if (-not $arPath) { $arPath = Resolve-LlvmManifestToolAbsPath -RootPath $root -ToolsMap $tools -Key $k } }
+        foreach ($k in @('gcc-ranlib', 'ranlib')) { if (-not $ranlibPath) { $ranlibPath = Resolve-LlvmManifestToolAbsPath -RootPath $root -ToolsMap $tools -Key $k } }
+        foreach ($k in @('gcc-nm', 'nm')) { if (-not $nmPath) { $nmPath = Resolve-LlvmManifestToolAbsPath -RootPath $root -ToolsMap $tools -Key $k } }
+        if (-not $stripPath) { $stripPath = Resolve-LlvmManifestToolAbsPath -RootPath $root -ToolsMap $tools -Key 'strip' }
+        if (-not $dlltoolPath) { $dlltoolPath = Resolve-LlvmManifestToolAbsPath -RootPath $root -ToolsMap $tools -Key 'dlltool' }
         if (-not $rcPath) { $rcPath = Resolve-LlvmManifestToolAbsPath -RootPath $root -ToolsMap $tools -Key 'windres' }
         if (-not $ldPath) { $ldPath = Resolve-LlvmManifestToolAbsPath -RootPath $root -ToolsMap $tools -Key 'ld' }
     } else {
@@ -98,6 +106,9 @@ function Get-LlvmEnvironmentDelta {
         if (-not $rcPath) { $rcPath = Resolve-LlvmManifestToolAbsPath -RootPath $root -ToolsMap $tools -Key 'llvm-windres' }
         if (-not $rcPath) { $rcPath = Resolve-LlvmManifestToolAbsPath -RootPath $root -ToolsMap $tools -Key 'windres' }
         if (-not $rcPath) { $rcPath = Resolve-LlvmManifestToolAbsPath -RootPath $root -ToolsMap $tools -Key 'llvm-rc' }
+        foreach ($k in @('llvm-nm', 'nm')) { if (-not $nmPath) { $nmPath = Resolve-LlvmManifestToolAbsPath -RootPath $root -ToolsMap $tools -Key $k } }
+        foreach ($k in @('llvm-strip', 'strip')) { if (-not $stripPath) { $stripPath = Resolve-LlvmManifestToolAbsPath -RootPath $root -ToolsMap $tools -Key $k } }
+        foreach ($k in @('llvm-dlltool', 'dlltool')) { if (-not $dlltoolPath) { $dlltoolPath = Resolve-LlvmManifestToolAbsPath -RootPath $root -ToolsMap $tools -Key $k } }
         if (-not $ldPath) {
             if ($provider -eq 'official' -and (Test-LlvmIsWindows)) {
                 $ldPath = Resolve-LlvmManifestToolAbsPath -RootPath $root -ToolsMap $tools -Key 'lld-link'
@@ -113,6 +124,13 @@ function Get-LlvmEnvironmentDelta {
     if ($ranlibPath) { $setVars['RANLIB'] = $ranlibPath } else { $unsetVars += 'RANLIB' }
     if ($rcPath) { $setVars['RC'] = $rcPath } else { $unsetVars += 'RC' }
     if ($ldPath) { $setVars['LD'] = $ldPath } else { $unsetVars += 'LD' }
+    if ($nmPath) { $setVars['NM'] = $nmPath } else { $unsetVars += 'NM' }
+    if ($stripPath) { $setVars['STRIP'] = $stripPath } else { $unsetVars += 'STRIP' }
+    if ($dlltoolPath) { $setVars['DLLTOOL'] = $dlltoolPath } else { $unsetVars += 'DLLTOOL' }
+    if ($rcPath -and $rcPath -match 'windres') { $setVars['WINDRES'] = $rcPath } else { $unsetVars += 'WINDRES' }
+    $pkgConfigPath = $null
+    foreach ($k in @('pkgconf', 'pkg-config')) { if (-not $pkgConfigPath) { $pkgConfigPath = Resolve-LlvmManifestToolAbsPath -RootPath $root -ToolsMap $tools -Key $k } }
+    if ($pkgConfigPath) { $setVars['PKG_CONFIG'] = $pkgConfigPath } else { $unsetVars += 'PKG_CONFIG' }
 
     $libclangPath = Resolve-LlvmManifestToolAbsPath -RootPath $root -ToolsMap $tools -Key 'libclang'
     if ($libclangPath) { $setVars['LIBCLANG_PATH'] = $libclangPath } else { $unsetVars += 'LIBCLANG_PATH' }
@@ -188,9 +206,32 @@ function Format-LlvmEnvironmentDeltaExports {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]$Delta,
-        [ValidateSet('powershell', 'shell', 'github')]
+        [ValidateSet('powershell', 'shell', 'sh', 'bash', 'cmd', 'github', 'json')]
         [string]$Format = 'powershell'
     )
+    if ($Format -in @('sh', 'bash')) { $Format = 'shell' }
+
+    if ($Format -eq 'json') {
+        return ([ordered]@{
+            schema = 1
+            prepend_path = @($Delta.prepend_path)
+            set = $Delta.set
+            unset = @($Delta.unset)
+        } | ConvertTo-Json -Depth 5)
+    }
+
+    if ($Format -eq 'cmd') {
+        # Output is meant for: for /f "delims=" %i in ('llvmup env <tc> --format cmd') do %i
+        $cmdOut = @()
+        foreach ($u in $Delta.unset) { $cmdOut += "set `"$u=`"" }
+        foreach ($key in $Delta.set.Keys) { $cmdOut += "set `"$key=$($Delta.set[$key])`"" }
+        if ($Delta.prepend_path.Count -gt 0) {
+            # %PATH% would not be re-expanded inside "for /f ... do %i"; the child inherits the caller's
+            # PATH, so emit the fully expanded value.
+            $cmdOut += "set `"PATH=$($Delta.prepend_path -join ';');$($env:PATH)`""
+        }
+        return ($cmdOut -join "`r`n")
+    }
 
     $sep = [string][IO.Path]::PathSeparator
     if ($Format -eq 'github') {

@@ -15,4 +15,7 @@ if ($pester.Version.Major -ge 5) {
 } else {
     $result = Invoke-Pester -Script $Path -PassThru
 }
-exit $result.FailedCount
+if ($null -eq $result) { exit 1 }
+if ($result.FailedCount -gt 0) { exit $result.FailedCount }
+if ($result.Result -and $result.Result -ne 'Passed') { exit 1 }
+exit 0

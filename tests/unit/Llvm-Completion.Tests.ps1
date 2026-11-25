@@ -13,6 +13,10 @@ Describe 'Llvm Completion Module' {
 
         # Mock Get-UserHome to point to our test dir
         function Get-UserHome { return $script:testDir }
+        # LLVM_TOOLCHAINS_DIR has documented precedence; pin it so real toolchains on the host
+        # (or modules imported by earlier test files) cannot change what this test observes.
+        $script:savedToolchainsDir = $env:LLVM_TOOLCHAINS_DIR
+        $env:LLVM_TOOLCHAINS_DIR = $script:testDir
 
     # Load the completion module (use Import-Module to avoid dot-sourcing path issues)
     $modulePath = Join-Path $PSScriptRoot '..\..\Llvm-Completion.psm1'
@@ -58,6 +62,8 @@ Describe 'Llvm Completion Module' {
 
     AfterAll {
         # cleanup
+        if ($null -eq $script:savedToolchainsDir) { Remove-Item Env:LLVM_TOOLCHAINS_DIR -ErrorAction SilentlyContinue }
+        else { $env:LLVM_TOOLCHAINS_DIR = $script:savedToolchainsDir }
         Remove-Item -Path $script:testDir -Recurse -Force -ErrorAction SilentlyContinue
     if ($script:cachePath) { Remove-Item -Path $script:cachePath -ErrorAction SilentlyContinue }
     }

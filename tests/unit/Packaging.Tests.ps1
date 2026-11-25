@@ -130,7 +130,7 @@ Describe 'LLVMUP package installation' {
             $doctorJson.exit_code | Should -Be 0
 
             $activateOut = (& $launcher activate missing-version 2>&1 | Out-String)
-            $LASTEXITCODE | Should -Be 1
+            $LASTEXITCODE | Should -Be 2
             $activateOut | Should -Match 'cannot modify the parent shell'
         } finally {
             Remove-Item Env:LLVM_HOME -ErrorAction SilentlyContinue

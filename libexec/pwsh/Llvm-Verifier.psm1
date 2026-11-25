@@ -1,5 +1,9 @@
 # Integrity (SHA256/SHA512) and Origin Authentication (GPG, Sigstore, Authenticode) verification.
 
+$script:CoreModule = Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) 'Llvm-Functions-Core.psm1'
+if ((Test-Path -LiteralPath $script:CoreModule) -and -not (Get-Module -Name 'Llvm-Functions-Core')) {
+    Import-Module $script:CoreModule -DisableNameChecking
+}
 $script:DownloaderModule = Join-Path $PSScriptRoot 'Llvm-Downloader.psm1'
 if ((Test-Path -LiteralPath $script:DownloaderModule) -and -not (Get-Module -Name 'Llvm-Downloader')) {
     Import-Module $script:DownloaderModule -DisableNameChecking
@@ -105,7 +109,8 @@ function Invoke-LlvmAssetVerify {
         [string]$Policy = 'warn',
         [string]$ReleaseKeysPath = '',
         [int]$TimeoutSec = 60,
-        [int]$MaxRetries = 3
+        [int]$MaxRetries = 3,
+        [switch]$Quiet
     )
 
     $assetName = [string]$Plan.asset.name
@@ -270,9 +275,16 @@ function Invoke-LlvmAssetVerify {
                     $dlOk = $false
                 }
                 if ($dlOk) {
-                    if (-not $env:GH_TOKEN -and $env:GITHUB_TOKEN) { $env:GH_TOKEN = $env:GITHUB_TOKEN }
-                    $attOut = & $gh.Source attestation verify $ArtifactPath --repo $attestRepo --bundle $bundlePath 2>&1
-                    if ($LASTEXITCODE -eq 0) {
+                    # Offer GITHUB_TOKEN to gh for this call only; never leave it behind in the session.
+                    $setGhToken = (-not $env:GH_TOKEN -and $env:GITHUB_TOKEN)
+                    if ($setGhToken) { $env:GH_TOKEN = $env:GITHUB_TOKEN }
+                    try {
+                        $attOut = & $gh.Source attestation verify $ArtifactPath --repo $attestRepo --bundle $bundlePath 2>&1
+                        $attExit = $LASTEXITCODE
+                    } finally {
+                        if ($setGhToken) { Remove-Item -LiteralPath 'Env:GH_TOKEN' -ErrorAction SilentlyContinue }
+                    }
+                    if ($attExit -eq 0) {
                         $result.attestation = 'valid'
                         $result.methods += 'sigstore'
                         if (-not $result.authenticated_identity) {
@@ -288,16 +300,47 @@ function Invoke-LlvmAssetVerify {
         }
     }
 
-    # 4. Policy enforcement
-    if ($result.gpg -ne 'valid' -and $result.attestation -ne 'valid') {
+    # 4. Authenticode (Windows installers only). A valid signature authenticates only that file and
+    #    only counts as origin authentication when the recipe pins the expected publisher identity.
+    $fmt = if ($Plan.asset -and $Plan.asset.format) { [string]$Plan.asset.format } else { '' }
+    if ($fmt -in @('exe', 'msi') -and (Test-LlvmIsWindows)) {
+        $allowedPublishers = @()
+        if ($Plan.recipe.verification -and $Plan.recipe.verification.authenticode_publishers) {
+            $allowedPublishers = @($Plan.recipe.verification.authenticode_publishers)
+        }
+        $ac = Test-LlvmAuthenticodePublisher -FilePath $ArtifactPath -AllowedPublishers $allowedPublishers
+        $result.authenticode = [string]$ac.status
+        $result['authenticode_subject'] = [string]$ac.subject
+        if ($ac.status -eq 'invalid' -or $ac.status -eq 'wrong-identity') {
+            throw "Authenticode validation failed for ${assetName}: $($ac.status) (subject: $($ac.subject))."
+        }
+        if ($ac.status -eq 'valid' -and $allowedPublishers.Count -gt 0) {
+            $result.methods += 'authenticode'
+            if (-not $result.authenticated_identity) { $result.authenticated_identity = "authenticode:$($ac.subject)" }
+            $result.scope = 'installer-file'
+        } elseif ($ac.status -eq 'valid') {
+            $result.authenticode = 'valid-unpinned'
+        }
+    }
+
+    # 5. Policy enforcement
+    $originOk = ($result.gpg -eq 'valid' -or $result.attestation -eq 'valid' -or $result.methods -contains 'authenticode')
+    if (-not $originOk) {
         if ($Policy -eq 'strict') {
             if ($Plan.recipe.verification -and -not $Plan.recipe.verification.origin_authentication_available) {
                 throw "Strict verification failed: provider '$($Plan.provider)' does not publish cryptographic origin signatures or attestations upstream (only checksums)."
             }
-            throw "Strict verification requires a valid GPG signature or GitHub/Sigstore attestation for '$($Plan.provider)' ($attestRepo)."
+            throw "Strict verification requires a valid GPG signature or GitHub/Sigstore attestation for '$($Plan.provider)' ($attestRepo). Install gpg or gh, or use --verify warn."
         }
         if ($result.methods.Count -eq 0) {
             $result.methods = if ($result.checksum -eq 'valid') { @('checksum-only') } else { @('unverified') }
+        }
+        if ($Policy -eq 'warn' -and -not $Quiet) {
+            if ($result.checksum -eq 'valid') {
+                Write-Warning "Integrity of $assetName verified ($($result.checksum_algorithm)), but its origin is not authenticated (gpg=$($result.gpg), attestation=$($result.attestation))."
+            } else {
+                Write-Warning "$assetName could not be verified: no digest, checksum, signature, or attestation was available (provider '$($Plan.provider)'). Use --verify strict to refuse unverified downloads."
+            }
         }
     }
 

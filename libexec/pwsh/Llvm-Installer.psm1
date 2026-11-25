@@ -41,6 +41,7 @@ function Invoke-LlvmInstallPrebuiltFromRecipe {
         [int]$MaxRetries = 3,
         [string]$ToolchainsPath = '',
         [string]$HomePath = '',
+        $LockedEntry = $null,
         [switch]$Quiet,
         [switch]$VerboseMode
     )
@@ -52,6 +53,14 @@ function Invoke-LlvmInstallPrebuiltFromRecipe {
     $effProvider = if ($split.provider) { $split.provider } else { 'official' }
     $effExpr = if ($split.expression) { $split.expression } else { 'latest' }
     $policy = Resolve-LlvmVerifyPolicy -RequestedPolicy $VerifyPolicy -SkipVerify:$SkipVerify
+    if ($LockedEntry -and $LockedEntry.verify_policy) {
+        # Locked mode never weakens the verification policy recorded in the lockfile.
+        $rank = @{ skip = 0; warn = 1; strict = 2 }
+        $lockedPolicy = ([string]$LockedEntry.verify_policy).ToLowerInvariant()
+        if ($rank.ContainsKey($lockedPolicy) -and $rank[$policy] -lt $rank[$lockedPolicy]) {
+            throw "Verification policy '$policy' is weaker than the locked policy '$lockedPolicy'."
+        }
+    }
 
     $recipe = Get-LlvmRecipe -Provider $effProvider
     $hostOs = Normalize-LlvmHostOs -Platform $Platform
@@ -104,6 +113,27 @@ function Invoke-LlvmInstallPrebuiltFromRecipe {
         -Extractor $Extractor `
         -PreferInstaller:(-not $ArchiveOnly -and $effProvider -eq 'official' -and -not ($selection -and $selection.selective)) `
         -ArchiveOnly:$ArchiveOnly
+
+    if ($LockedEntry) {
+        # Enforce the lock before any download: same provider, release, asset name and digest.
+        $la = $LockedEntry.asset
+        if ($LockedEntry.provider -and $plan.provider -ne $LockedEntry.provider) {
+            throw "Locked provider '$($LockedEntry.provider)' differs from resolved provider '$($plan.provider)'."
+        }
+        if ($LockedEntry.release -and $plan.release_tag -ne $LockedEntry.release) {
+            throw "Locked release '$($LockedEntry.release)' differs from resolved release '$($plan.release_tag)'."
+        }
+        if ($la -and $la.name -and $plan.asset.name -ne $la.name) {
+            throw "Locked asset '$($la.name)' differs from resolved asset '$($plan.asset.name)'. Update the lockfile with 'llvmup config lock'."
+        }
+        if ($la -and $la.digest) {
+            if ($plan.asset.digest -and $plan.asset.digest -ne $la.digest) {
+                throw "Locked digest $($la.digest) differs from the upstream digest $($plan.asset.digest) for '$($plan.asset.name)'."
+            }
+            # Pin the download to the locked digest even if upstream metadata no longer publishes one.
+            $plan.asset.digest = [string]$la.digest
+        }
+    }
 
     if ($ResolveOnly) {
         return [ordered]@{
@@ -198,14 +228,16 @@ function Invoke-LlvmInstallPrebuiltFromRecipe {
             -Policy $policy `
             -ReleaseKeysPath $ReleaseKeysPath `
             -TimeoutSec $TimeoutSec `
-            -MaxRetries $MaxRetries
+            -MaxRetries $MaxRetries `
+            -Quiet:$Quiet
 
+        $extractInfo = $null
         if ($effProvider -eq 'official' -and $selection -and $selection.selective) {
             Invoke-LlvmSelection -Operation extract -Root $stagingPath -Archive $dlResult.path -Selection $selection
             Invoke-LlvmSelection -Operation finalize -Root $stagingPath -Selection $selection
         } else {
             $expectedTop = if ($plan.recipe.layout -and $plan.recipe.layout.expected_top_dirs) { @($plan.recipe.layout.expected_top_dirs) } else { @() }
-            $null = Invoke-LlvmArchiveExtract `
+            $extractInfo = Invoke-LlvmArchiveExtract `
                 -ArchivePath $dlResult.path `
                 -DestinationPath $stagingPath `
                 -Extractor $Extractor `
@@ -255,6 +287,15 @@ function Invoke-LlvmInstallPrebuiltFromRecipe {
             -Asset $plan.asset `
             -Verification $verifyResult
 
+        if ($extractInfo) {
+            $manifest['installation'] = [ordered]@{
+                extractor = [string]$extractInfo.extractor
+                strategy = [string]$extractInfo.strategy
+                extractor_version = [string]$extractInfo.extractor_version
+                extract_seconds = $extractInfo.seconds
+                cache_hit = [bool]$dlResult.cache_hit
+            }
+        }
         $null = Write-LlvmToolchainManifest -Root $stagingPath -Manifest $manifest
 
         # Atomic publish with rollback on replacement

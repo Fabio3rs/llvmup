@@ -136,6 +136,26 @@ function Get-LlvmDiscoveredToolchainCapabilities {
     if ($windres) { $tools.windres = $windres; $rcs += 'windres' }
     if ($llvmRc) { $tools['llvm-rc'] = $llvmRc; $rcs += 'llvm-rc' }
 
+    # Binutils-style helpers (mirrors WinLibs mingwvars.bat: NM, STRIP, DLLTOOL, WINDRES, PKG_CONFIG).
+    $extraTools = [ordered]@{
+        'gcc-ar' = 'bin/gcc-ar'; 'gcc-ranlib' = 'bin/gcc-ranlib'; 'gcc-nm' = 'bin/gcc-nm'
+        'nm' = 'bin/nm'; 'llvm-nm' = 'bin/llvm-nm'
+        'strip' = 'bin/strip'; 'llvm-strip' = 'bin/llvm-strip'
+        'objcopy' = 'bin/objcopy'; 'llvm-objcopy' = 'bin/llvm-objcopy'
+        'dlltool' = 'bin/dlltool'; 'llvm-dlltool' = 'bin/llvm-dlltool'
+        'pkgconf' = 'bin/pkgconf'; 'pkg-config' = 'bin/pkg-config'
+        'gfortran' = 'bin/gfortran'; 'mingw32-make' = 'bin/mingw32-make'
+        'cmake' = 'bin/cmake'; 'ninja' = 'bin/ninja'
+    }
+    foreach ($kv in $extraTools.GetEnumerator()) {
+        $found = Find-LlvmRelativeTool -Root $Root -Candidates @($kv.Value)
+        if ($found) { $tools[$kv.Key] = $found }
+    }
+    if ($gnuAr -and $gnuAr -match 'gcc-ar') {
+        # 'bin/ar' missing and gcc-ar matched as fallback: keep both keys consistent.
+        $tools['gcc-ar'] = $gnuAr
+    }
+
     $llvmConfig = Find-LlvmRelativeTool -Root $Root -Candidates @('bin/llvm-config')
     $clangd = Find-LlvmRelativeTool -Root $Root -Candidates @('bin/clangd')
     $clangFormat = Find-LlvmRelativeTool -Root $Root -Candidates @('bin/clang-format')
@@ -164,7 +184,7 @@ function Get-LlvmDiscoveredToolchainCapabilities {
             $triple = $matches[1]
             if ($discoveredTargets -notcontains $triple) { $discoveredTargets += $triple }
             $tw = [ordered]@{}
-            foreach ($suffix in @('clang', 'clang++', 'ar', 'ranlib', 'windres', 'ld', 'gcc', 'g++')) {
+            foreach ($suffix in @('clang', 'clang++', 'ar', 'ranlib', 'windres', 'ld', 'gcc', 'g++', 'nm', 'strip', 'dlltool', 'objcopy')) {
                 $foundWrapper = Find-LlvmRelativeTool -Root $Root -Candidates @("bin/$triple-$suffix")
                 if ($foundWrapper) { $tw[$suffix] = $foundWrapper }
             }

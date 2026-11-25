@@ -443,7 +443,6 @@ function Initialize-LlvmConfig {
 }
 
 function Show-LlvmHelp {
-    Write-Output "  llvmup doctor [--verbose] [--deep] [--network] [--json] : Read-only diagnostics"
     @'
 LLVMUP for PowerShell
 
@@ -1030,12 +1029,10 @@ function Invoke-LlvmUpSync {
             -Profile $(if ($entry.profile) { $entry.profile } else { 'full' }) `
             -Components @($entry.components) `
             -VerifyPolicy $(if ($entry.verify_policy) { $entry.verify_policy } else { 'warn' }) `
+            -LockedEntry $entry `
             -ArchiveOnly `
             -ToolchainsPath $toolchainsPath `
             -HomePath $homePath
-        if ($entry.asset.digest -and $res.plan.asset.digest -and $entry.asset.digest -ne $res.plan.asset.digest) {
-            throw "Locked digest mismatch for '$($entry.canonical_id)'."
-        }
         return $true
     }
 
@@ -1178,6 +1175,10 @@ function llvmup {
     if ($tokens.Count -and $knownCommands -contains $tokens[0].ToLowerInvariant()) {
         $command = $tokens[0].ToLowerInvariant()
         $tokens = @($tokens | Select-Object -Skip 1)
+    } elseif ($tokens.Count -and $tokens[0] -notmatch '^(-|[0-9~^<>=*]|latest$|newest$|prebuilt$|llvmorg-|[A-Za-z0-9][A-Za-z0-9-]*@)') {
+        # Legacy 'llvmup <version>' installs; anything else is a typo, not a remote version query.
+        Write-Error "Unknown command '$($tokens[0])'. Run 'llvmup help' for the list of commands." -ErrorAction Continue
+        return $false
     }
 
     try {
@@ -1355,18 +1356,29 @@ function llvmup {
                 }
             }
             'shell' {
-                $sel = ''; $comp = ''; $tgt = ''
+                $sel = ''; $comp = ''; $tgt = ''; $shellExe = ''
                 for ($i = 0; $i -lt $tokens.Count; $i++) {
                     if ($tokens[$i] -eq '--compiler') { $comp = $tokens[++$i] }
                     elseif ($tokens[$i] -eq '--target') { $tgt = $tokens[++$i] }
+                    elseif ($tokens[$i] -eq '--shell') { $shellExe = $tokens[++$i] }
+                    elseif ($tokens[$i].StartsWith('-')) { throw "Unknown shell option: $($tokens[$i])" }
                     else { $sel = $tokens[$i] }
                 }
                 $eff = Resolve-LlvmEffectiveSelection -ExplicitSelector $sel -CompilerOverride $comp -TargetOverride $tgt -ToolchainsPath $toolchainsPath -HomePath $homePath
                 if (-not $eff) { throw 'No matching toolchain found for shell.' }
                 $delta = Get-LlvmEnvironmentDelta -Manifest $eff.manifest -Target $eff.target -Compiler $eff.compiler
-                $shellExe = if (Test-LlvmIsWindows) { (Get-Process -Id $PID).Path } elseif ($env:SHELL) { $env:SHELL } else { 'bash' }
-                Invoke-LlvmProcessWithDelta -Delta $delta -Executable $shellExe -Arguments @('-NoLogo') -InheritShellOverride
-                return ($LASTEXITCODE -eq 0)
+                if ($shellExe) {
+                    $shellArgs = @()
+                } elseif ((Test-LlvmIsWindows) -or -not $env:SHELL) {
+                    $shellExe = (Get-Process -Id $PID).Path
+                    $shellArgs = @('-NoLogo')
+                } else {
+                    $shellExe = $env:SHELL
+                    $shellArgs = @()
+                }
+                if ([IO.Path]::GetFileNameWithoutExtension($shellExe) -in @('pwsh', 'powershell') -and -not $shellArgs) { $shellArgs = @('-NoLogo') }
+                Invoke-LlvmProcessWithDelta -Delta $delta -Executable $shellExe -Arguments $shellArgs -InheritShellOverride
+                return
             }
             'cmake-toolchain' {
                 $sel = ''; $comp = ''; $tgt = ''; $out = ''
