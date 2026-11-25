@@ -745,7 +745,12 @@ function Invoke-LlvmArchiveExtract {
                     $arcArg = $ArchivePath.Replace('\', '/')
                     $dstArg = $rawStage.Replace('\', '/')
                 }
-                $tarArgs = @($caps.tar.extra_args) + @('-xf', $arcArg, '-C', $dstArg)
+                $tarArgs = @($caps.tar.extra_args)
+                if ($format -eq 'tar.zst' -and $caps.tar.flavor -eq 'gnu') {
+                    # LLVM .tar.zst assets use a 1 GiB window (windowLog 30); zstd refuses it without --long.
+                    $tarArgs += @('-I', 'zstd -d --long=31')
+                }
+                $tarArgs += @('-xf', $arcArg, '-C', $dstArg)
                 Invoke-LlvmNativeChecked -FilePath $caps.tar.path -Arguments $tarArgs -Label 'tar extraction'
             }
             '7z' {

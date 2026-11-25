@@ -1,0 +1,356 @@
+[
+ {
+  "tag_name": "16.2.0posix-23.1.3-14.0.0-ucrt-r3",
+  "name": "GCC 16.2.0 (POSIX threads) + LLVM 23.1.3 + MinGW-w64 14.0.0 UCRT (release 3)",
+  "body": "winlibs personal build version gcc-16.2.0-llvm-23.1.3-mingw-w64ucrt-14.0.0-r3\r\n\r\nThis is the winlibs Intel/AMD 64-bit standalone build of:\r\n- GCC 16.2.0\r\n- GDB 18.1\r\n- LLVM/Clang/LLD/LLDB 23.1.3\r\n- MinGW-w64 14.0.0 (linked with **ucrt**)\r\n- GNU Binutils 2.47.20260726\r\n- GNU Make 4.4.1\r\n- dos2unix 7.5.7\r\n- PExports 0.47\r\n- Yasm 1.3.0\r\n- NASM 3.01\r\n- JWasm 2.12pre\r\n- ccache 4.14.2\r\n- CMake 4.4.4\r\n- ",
+  "draft": false,
+  "prerelease": false,
+  "assets": [
+   {
+    "name": "winlibs-i686-posix-dwarf-gcc-16.2.0-llvm-23.1.3-mingw-w64ucrt-14.0.0-r3.7z",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-ucrt-r3/winlibs-i686-posix-dwarf-gcc-16.2.0-llvm-23.1.3-mingw-w64ucrt-14.0.0-r3.7z",
+    "size": 189931072,
+    "digest": "sha256:0d97053aa3de948f925ef1217331bd6f4683bc7bcaba1cda6fec3d7b89210f22",
+    "id": 653588936
+   },
+   {
+    "name": "winlibs-i686-posix-dwarf-gcc-16.2.0-llvm-23.1.3-mingw-w64ucrt-14.0.0-r3.7z.sha256",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-ucrt-r3/winlibs-i686-posix-dwarf-gcc-16.2.0-llvm-23.1.3-mingw-w64ucrt-14.0.0-r3.7z.sha256",
+    "size": 141,
+    "digest": "sha256:0995972dd3c4105655c16527fdca19082f070228f3e4fcc4d5c71c9784c1f68f",
+    "id": 653588875
+   },
+   {
+    "name": "winlibs-i686-posix-dwarf-gcc-16.2.0-llvm-23.1.3-mingw-w64ucrt-14.0.0-r3.7z.sha512",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-ucrt-r3/winlibs-i686-posix-dwarf-gcc-16.2.0-llvm-23.1.3-mingw-w64ucrt-14.0.0-r3.7z.sha512",
+    "size": 205,
+    "digest": "sha256:d31cf29676ae69902802456e716187544f522cda2bb325c26cabf2037a7110df",
+    "id": 653588917
+   },
+   {
+    "name": "winlibs-i686-posix-dwarf-gcc-16.2.0-llvm-23.1.3-mingw-w64ucrt-14.0.0-r3.zip",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-ucrt-r3/winlibs-i686-posix-dwarf-gcc-16.2.0-llvm-23.1.3-mingw-w64ucrt-14.0.0-r3.zip",
+    "size": 427665290,
+    "digest": "sha256:9353f386f7a678ab41b0746db43211c4b6b8ab2811d2edb289f0496711fb1c9b",
+    "id": 653541491
+   },
+   {
+    "name": "winlibs-i686-posix-dwarf-gcc-16.2.0-llvm-23.1.3-mingw-w64ucrt-14.0.0-r3.zip.sha256",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-ucrt-r3/winlibs-i686-posix-dwarf-gcc-16.2.0-llvm-23.1.3-mingw-w64ucrt-14.0.0-r3.zip.sha256",
+    "size": 142,
+    "digest": "sha256:271bcce3184bf13364ac254c4798fb06c787126465a150ecf2b6760ca104fbe0",
+    "id": 653521867
+   },
+   {
+    "name": "winlibs-i686-posix-dwarf-gcc-16.2.0-llvm-23.1.3-mingw-w64ucrt-14.0.0-r3.zip.sha512",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-ucrt-r3/winlibs-i686-posix-dwarf-gcc-16.2.0-llvm-23.1.3-mingw-w64ucrt-14.0.0-r3.zip.sha512",
+    "size": 206,
+    "digest": "sha256:fe88916865d543e3c8abe62f484f5fd059527c4ef5025ecc284df1f794770c39",
+    "id": 653521849
+   },
+   {
+    "name": "winlibs-i686-posix-dwarf-gcc-16.2.0-mingw-w64ucrt-14.0.0-r3.7z",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-ucrt-r3/winlibs-i686-posix-dwarf-gcc-16.2.0-mingw-w64ucrt-14.0.0-r3.7z",
+    "size": 113285685,
+    "digest": "sha256:e7579b167bce7f16358874133eac11dc369eb02f1735ec33695d4f5b0da77fda",
+    "id": 653515937
+   },
+   {
+    "name": "winlibs-i686-posix-dwarf-gcc-16.2.0-mingw-w64ucrt-14.0.0-r3.7z.sha256",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-ucrt-r3/winlibs-i686-posix-dwarf-gcc-16.2.0-mingw-w64ucrt-14.0.0-r3.7z.sha256",
+    "size": 129,
+    "digest": "sha256:f729ff892dd5168b4fc52595ee1a30cd4b0107202858456f0b47739b382af052",
+    "id": 653614753
+   },
+   {
+    "name": "winlibs-i686-posix-dwarf-gcc-16.2.0-mingw-w64ucrt-14.0.0-r3.7z.sha512",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-ucrt-r3/winlibs-i686-posix-dwarf-gcc-16.2.0-mingw-w64ucrt-14.0.0-r3.7z.sha512",
+    "size": 193,
+    "digest": "sha256:2124dcd143b9105331151e2eaeb2c97efb3dbe934f217d187966f00d8725a2e5",
+    "id": 653515924
+   },
+   {
+    "name": "winlibs-i686-posix-dwarf-gcc-16.2.0-mingw-w64ucrt-14.0.0-r3.zip",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-ucrt-r3/winlibs-i686-posix-dwarf-gcc-16.2.0-mingw-w64ucrt-14.0.0-r3.zip",
+    "size": 282851897,
+    "digest": "sha256:27a564478b5642553d28e60afcf1e370543aa4b9751ec1deb7bbfbf2920d902d",
+    "id": 653606227
+   },
+   {
+    "name": "winlibs-i686-posix-dwarf-gcc-16.2.0-mingw-w64ucrt-14.0.0-r3.zip.sha256",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-ucrt-r3/winlibs-i686-posix-dwarf-gcc-16.2.0-mingw-w64ucrt-14.0.0-r3.zip.sha256",
+    "size": 130,
+    "digest": "sha256:736103602cd825c9020cd78a8ad27b09037a0fd454fca607d17e4f168e9169bf",
+    "id": 653606213
+   },
+   {
+    "name": "winlibs-i686-posix-dwarf-gcc-16.2.0-mingw-w64ucrt-14.0.0-r3.zip.sha512",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-ucrt-r3/winlibs-i686-posix-dwarf-gcc-16.2.0-mingw-w64ucrt-14.0.0-r3.zip.sha512",
+    "size": 194,
+    "digest": "sha256:c16e6d17585cff0621e8ec6fa6a9fedaf28292da8f70cee81a9d7756d2e9b954",
+    "id": 653606208
+   },
+   {
+    "name": "winlibs-x86_64-posix-seh-gcc-16.2.0-llvm-23.1.3-mingw-w64ucrt-14.0.0-r3.7z",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-ucrt-r3/winlibs-x86_64-posix-seh-gcc-16.2.0-llvm-23.1.3-mingw-w64ucrt-14.0.0-r3.7z",
+    "size": 188514094,
+    "digest": "sha256:122a0693808e426336ccf876434a26071c1780b6d1a50f544f54097409c35bf6",
+    "id": 653563256
+   },
+   {
+    "name": "winlibs-x86_64-posix-seh-gcc-16.2.0-llvm-23.1.3-mingw-w64ucrt-14.0.0-r3.7z.sha256",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-ucrt-r3/winlibs-x86_64-posix-seh-gcc-16.2.0-llvm-23.1.3-mingw-w64ucrt-14.0.0-r3.7z.sha256",
+    "size": 141,
+    "digest": "sha256:749453abda02aa95da04d49a46ed9c4edb4877b90827b3e19401c4ab063b42f5",
+    "id": 653563183
+   },
+   {
+    "name": "winlibs-x86_64-posix-seh-gcc-16.2.0-llvm-23.1.3-mingw-w64ucrt-14.0.0-r3.7z.sha512",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-ucrt-r3/winlibs-x86_64-posix-seh-gcc-16.2.0-llvm-23.1.3-mingw-w64ucrt-14.0.0-r3.7z.sha512",
+    "size": 205,
+    "digest": "sha256:9083e48f1c961530dc61edf3371ed8aecb330921e3234e8babdb05f73b28f392",
+    "id": 653563218
+   },
+   {
+    "name": "winlibs-x86_64-posix-seh-gcc-16.2.0-llvm-23.1.3-mingw-w64ucrt-14.0.0-r3.zip",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-ucrt-r3/winlibs-x86_64-posix-seh-gcc-16.2.0-llvm-23.1.3-mingw-w64ucrt-14.0.0-r3.zip",
+    "size": 423745549,
+    "digest": "sha256:1f04e482797dc5f71fe2875cf2b743bfb9f5fd1de0955fdd3118438c0432ba5f",
+    "id": 653521876
+   },
+   {
+    "name": "winlibs-x86_64-posix-seh-gcc-16.2.0-llvm-23.1.3-mingw-w64ucrt-14.0.0-r3.zip.sha256",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-ucrt-r3/winlibs-x86_64-posix-seh-gcc-16.2.0-llvm-23.1.3-mingw-w64ucrt-14.0.0-r3.zip.sha256",
+    "size": 142,
+    "digest": "sha256:7a82e1c60579fbf19dd3c22c440732b80f701e6c8ac29995e51fe1ada9cbfba5",
+    "id": 653521836
+   },
+   {
+    "name": "winlibs-x86_64-posix-seh-gcc-16.2.0-llvm-23.1.3-mingw-w64ucrt-14.0.0-r3.zip.sha512",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-ucrt-r3/winlibs-x86_64-posix-seh-gcc-16.2.0-llvm-23.1.3-mingw-w64ucrt-14.0.0-r3.zip.sha512",
+    "size": 206,
+    "digest": "sha256:8b019455c387b94a24111a6d368136f32a0be8ad2d88e174c984b3cdb99f8fa6",
+    "id": 653521815
+   },
+   {
+    "name": "winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64ucrt-14.0.0-r3.7z",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-ucrt-r3/winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64ucrt-14.0.0-r3.7z",
+    "size": 111718557,
+    "digest": "sha256:db014a73b71907c6c778fd1c938056cddcae9023f89f8dfff7783d9e45baf975",
+    "id": 653603118
+   },
+   {
+    "name": "winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64ucrt-14.0.0-r3.7z.sha256",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-ucrt-r3/winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64ucrt-14.0.0-r3.7z.sha256",
+    "size": 129,
+    "digest": "sha256:7a760c359f8b271413d3b39be433a5ac29d5cc02f13f9176d6d6180c88aed399",
+    "id": 653603086
+   },
+   {
+    "name": "winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64ucrt-14.0.0-r3.7z.sha512",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-ucrt-r3/winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64ucrt-14.0.0-r3.7z.sha512",
+    "size": 193,
+    "digest": "sha256:ac9533f224f1a41973c297679dcab12a6ade3552527d78e88675057c4b4fa65e",
+    "id": 653603109
+   },
+   {
+    "name": "winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64ucrt-14.0.0-r3.zip",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-ucrt-r3/winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64ucrt-14.0.0-r3.zip",
+    "size": 276414382,
+    "digest": "sha256:3c69305081e4a647144339a936244fcf7d3d9e558319e1ad7be2cd2886d4b6a1",
+    "id": 653595629
+   },
+   {
+    "name": "winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64ucrt-14.0.0-r3.zip.sha256",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-ucrt-r3/winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64ucrt-14.0.0-r3.zip.sha256",
+    "size": 130,
+    "digest": "sha256:8c5c3e8bb6829cab1bd55091bdab273f68b67d2eb4159ef957e4bc4314cf04e1",
+    "id": 653595605
+   },
+   {
+    "name": "winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64ucrt-14.0.0-r3.zip.sha512",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-ucrt-r3/winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64ucrt-14.0.0-r3.zip.sha512",
+    "size": 194,
+    "digest": "sha256:f9676ccdcb3b37af4fbb46da2f9dfe25e6cc55b761419366aca459f019d4293c",
+    "id": 653595615
+   }
+  ]
+ },
+ {
+  "tag_name": "16.2.0posix-23.1.3-14.0.0-msvcrt-r3",
+  "name": "GCC 16.2.0 (POSIX threads) + LLVM 23.1.3 + MinGW-w64 14.0.0 MSVCRT (release 3)",
+  "body": "winlibs personal build version gcc-16.2.0-llvm-23.1.3-mingw-w64msvcrt-14.0.0-r3\r\n\r\nThis is the winlibs Intel/AMD 32-bit and 64-bit standalone build of:\r\n- GCC 16.2.0\r\n- GDB 18.1\r\n- LLVM/Clang/LLD/LLDB 23.1.3\r\n- MinGW-w64 14.0.0 (linked with **msvcrt**)\r\n- GNU Binutils 2.47.20260726\r\n- GNU Make 4.4.1\r\n- dos2unix 7.5.7\r\n- PExports 0.47\r\n- Yasm 1.3.0\r\n- NASM 3.01\r\n- JWasm 2.12pre\r\n- ccache 4.14.2\r\n- ",
+  "draft": false,
+  "prerelease": false,
+  "assets": [
+   {
+    "name": "winlibs-i686-posix-dwarf-gcc-16.2.0-llvm-23.1.3-mingw-w64msvcrt-14.0.0-r3.7z",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-msvcrt-r3/winlibs-i686-posix-dwarf-gcc-16.2.0-llvm-23.1.3-mingw-w64msvcrt-14.0.0-r3.7z",
+    "size": 190003785,
+    "digest": "sha256:248c43109afd793e9ce0d439501deaf166575df976b5b3dd798b5f9309a3331f",
+    "id": 653537422
+   },
+   {
+    "name": "winlibs-i686-posix-dwarf-gcc-16.2.0-llvm-23.1.3-mingw-w64msvcrt-14.0.0-r3.7z.sha256",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-msvcrt-r3/winlibs-i686-posix-dwarf-gcc-16.2.0-llvm-23.1.3-mingw-w64msvcrt-14.0.0-r3.7z.sha256",
+    "size": 143,
+    "digest": "sha256:fb2b27b5f2277d9f0ffe8ce35ab3089105fceb45953eda71581e887a798f4a8a",
+    "id": 653537407
+   },
+   {
+    "name": "winlibs-i686-posix-dwarf-gcc-16.2.0-llvm-23.1.3-mingw-w64msvcrt-14.0.0-r3.7z.sha512",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-msvcrt-r3/winlibs-i686-posix-dwarf-gcc-16.2.0-llvm-23.1.3-mingw-w64msvcrt-14.0.0-r3.7z.sha512",
+    "size": 207,
+    "digest": "sha256:8c52d207dd00d89b26d00c8c8788fb6a00c488f20a966e22ff239ed6fccea29a",
+    "id": 653537364
+   },
+   {
+    "name": "winlibs-i686-posix-dwarf-gcc-16.2.0-llvm-23.1.3-mingw-w64msvcrt-14.0.0-r3.zip",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-msvcrt-r3/winlibs-i686-posix-dwarf-gcc-16.2.0-llvm-23.1.3-mingw-w64msvcrt-14.0.0-r3.zip",
+    "size": 428697947,
+    "digest": "sha256:221d8ad090b0c77514e9213394e011a43dd8099eb516b172a755645cb51899b2",
+    "id": 653515339
+   },
+   {
+    "name": "winlibs-i686-posix-dwarf-gcc-16.2.0-llvm-23.1.3-mingw-w64msvcrt-14.0.0-r3.zip.sha256",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-msvcrt-r3/winlibs-i686-posix-dwarf-gcc-16.2.0-llvm-23.1.3-mingw-w64msvcrt-14.0.0-r3.zip.sha256",
+    "size": 144,
+    "digest": "sha256:9d8f3eaa552638df777f73685b518f6414980f8ae7339afed648878981eb0fb3",
+    "id": 653515312
+   },
+   {
+    "name": "winlibs-i686-posix-dwarf-gcc-16.2.0-llvm-23.1.3-mingw-w64msvcrt-14.0.0-r3.zip.sha512",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-msvcrt-r3/winlibs-i686-posix-dwarf-gcc-16.2.0-llvm-23.1.3-mingw-w64msvcrt-14.0.0-r3.zip.sha512",
+    "size": 208,
+    "digest": "sha256:9fd114a138297dcc39f24203a95dcea01a3c3769a4d414c3d45b37e8065d235a",
+    "id": 653504215
+   },
+   {
+    "name": "winlibs-i686-posix-dwarf-gcc-16.2.0-mingw-w64msvcrt-14.0.0-r3.7z",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-msvcrt-r3/winlibs-i686-posix-dwarf-gcc-16.2.0-mingw-w64msvcrt-14.0.0-r3.7z",
+    "size": 113453025,
+    "digest": "sha256:d74244fd8ebc2131ae23e554cc4f698cfcf57d83dc8684412e333e88737b24f5",
+    "id": 653500985
+   },
+   {
+    "name": "winlibs-i686-posix-dwarf-gcc-16.2.0-mingw-w64msvcrt-14.0.0-r3.7z.sha256",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-msvcrt-r3/winlibs-i686-posix-dwarf-gcc-16.2.0-mingw-w64msvcrt-14.0.0-r3.7z.sha256",
+    "size": 131,
+    "digest": "sha256:692daadfc73fe544d8f361caa866fcfc8eacd2230111a47bb4a9aa6d523644e0",
+    "id": 653500966
+   },
+   {
+    "name": "winlibs-i686-posix-dwarf-gcc-16.2.0-mingw-w64msvcrt-14.0.0-r3.7z.sha512",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-msvcrt-r3/winlibs-i686-posix-dwarf-gcc-16.2.0-mingw-w64msvcrt-14.0.0-r3.7z.sha512",
+    "size": 195,
+    "digest": "sha256:144dd34d68df8a2bfd57df89a34acf7f0202df4752d1129001efef8c81249e09",
+    "id": 653500951
+   },
+   {
+    "name": "winlibs-i686-posix-dwarf-gcc-16.2.0-mingw-w64msvcrt-14.0.0-r3.zip",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-msvcrt-r3/winlibs-i686-posix-dwarf-gcc-16.2.0-mingw-w64msvcrt-14.0.0-r3.zip",
+    "size": 283724863,
+    "digest": "sha256:805d3e022d005fe05a4bd53d80fef72fbb1f2ed8db6e14d51b6fa227980ffa8a",
+    "id": 653558529
+   },
+   {
+    "name": "winlibs-i686-posix-dwarf-gcc-16.2.0-mingw-w64msvcrt-14.0.0-r3.zip.sha256",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-msvcrt-r3/winlibs-i686-posix-dwarf-gcc-16.2.0-mingw-w64msvcrt-14.0.0-r3.zip.sha256",
+    "size": 132,
+    "digest": "sha256:e8393b26cddac27040507669c5614aa2b85a1b72859d1faf537e363afb52e9bc",
+    "id": 653558491
+   },
+   {
+    "name": "winlibs-i686-posix-dwarf-gcc-16.2.0-mingw-w64msvcrt-14.0.0-r3.zip.sha512",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-msvcrt-r3/winlibs-i686-posix-dwarf-gcc-16.2.0-mingw-w64msvcrt-14.0.0-r3.zip.sha512",
+    "size": 196,
+    "digest": "sha256:3315011c6c1783c2452748278672af7ed1079cdcc1ae772230208ac41d41dbc0",
+    "id": 653558448
+   },
+   {
+    "name": "winlibs-x86_64-posix-seh-gcc-16.2.0-llvm-23.1.3-mingw-w64msvcrt-14.0.0-r3.7z",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-msvcrt-r3/winlibs-x86_64-posix-seh-gcc-16.2.0-llvm-23.1.3-mingw-w64msvcrt-14.0.0-r3.7z",
+    "size": 188665997,
+    "digest": "sha256:d129c661d84fb1848fb1c8f43d7d7ca15ec61e656ec406c91145212dfc3f209c",
+    "id": 653530898
+   },
+   {
+    "name": "winlibs-x86_64-posix-seh-gcc-16.2.0-llvm-23.1.3-mingw-w64msvcrt-14.0.0-r3.7z.sha256",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-msvcrt-r3/winlibs-x86_64-posix-seh-gcc-16.2.0-llvm-23.1.3-mingw-w64msvcrt-14.0.0-r3.7z.sha256",
+    "size": 143,
+    "digest": "sha256:8676d2c7b3d8a921bbf815e9af77dcd238747bcc9eec21a0674f2a3d45c5f89b",
+    "id": 653530878
+   },
+   {
+    "name": "winlibs-x86_64-posix-seh-gcc-16.2.0-llvm-23.1.3-mingw-w64msvcrt-14.0.0-r3.7z.sha512",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-msvcrt-r3/winlibs-x86_64-posix-seh-gcc-16.2.0-llvm-23.1.3-mingw-w64msvcrt-14.0.0-r3.7z.sha512",
+    "size": 207,
+    "digest": "sha256:aea07184145fff279d818a0ad143400a9dea3d32477f627c75f2dc657f9a61e3",
+    "id": 653530840
+   },
+   {
+    "name": "winlibs-x86_64-posix-seh-gcc-16.2.0-llvm-23.1.3-mingw-w64msvcrt-14.0.0-r3.zip",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-msvcrt-r3/winlibs-x86_64-posix-seh-gcc-16.2.0-llvm-23.1.3-mingw-w64msvcrt-14.0.0-r3.zip",
+    "size": 424677812,
+    "digest": "sha256:20d9ad1f219e95c8f7c465b21a0e0b05840c631fc1dcc2d81b9c1ed4217189e6",
+    "id": 653504222
+   },
+   {
+    "name": "winlibs-x86_64-posix-seh-gcc-16.2.0-llvm-23.1.3-mingw-w64msvcrt-14.0.0-r3.zip.sha256",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-msvcrt-r3/winlibs-x86_64-posix-seh-gcc-16.2.0-llvm-23.1.3-mingw-w64msvcrt-14.0.0-r3.zip.sha256",
+    "size": 144,
+    "digest": "sha256:db085ad444964d76d8ad69eac5b6e618fc290f04f59ac3c50caf6619a0aa67cc",
+    "id": 653504136
+   },
+   {
+    "name": "winlibs-x86_64-posix-seh-gcc-16.2.0-llvm-23.1.3-mingw-w64msvcrt-14.0.0-r3.zip.sha512",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-msvcrt-r3/winlibs-x86_64-posix-seh-gcc-16.2.0-llvm-23.1.3-mingw-w64msvcrt-14.0.0-r3.zip.sha512",
+    "size": 208,
+    "digest": "sha256:96e267de2ccf32c6eec12269b2ca1ee337148aa3a79aa9b03339c900f0ffba37",
+    "id": 653504110
+   },
+   {
+    "name": "winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64msvcrt-14.0.0-r3.7z",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-msvcrt-r3/winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64msvcrt-14.0.0-r3.7z",
+    "size": 111781404,
+    "digest": "sha256:e74df1e528fe6506646edb1c1b06de3e9a78fbb79b45dad6e284161bba4138fb",
+    "id": 653497958
+   },
+   {
+    "name": "winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64msvcrt-14.0.0-r3.7z.sha256",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-msvcrt-r3/winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64msvcrt-14.0.0-r3.7z.sha256",
+    "size": 131,
+    "digest": "sha256:4f24508f98a7161e2f4ccc26eb8f95d3fbbcd4e2b80521714fc4422b3103765a",
+    "id": 653593904
+   },
+   {
+    "name": "winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64msvcrt-14.0.0-r3.7z.sha512",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-msvcrt-r3/winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64msvcrt-14.0.0-r3.7z.sha512",
+    "size": 195,
+    "digest": "sha256:f74b3bafc70d66a1af2c3847bcf3ebe68e8561f7f9e8ab52cb939ac0541062b5",
+    "id": 653593949
+   },
+   {
+    "name": "winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64msvcrt-14.0.0-r3.zip",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-msvcrt-r3/winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64msvcrt-14.0.0-r3.zip",
+    "size": 277203392,
+    "digest": "sha256:62af32ea58acdea1318ea5dd8eb7017eaee694dd40b269d52a59c769dcfefb82",
+    "id": 653547803
+   },
+   {
+    "name": "winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64msvcrt-14.0.0-r3.zip.sha256",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-msvcrt-r3/winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64msvcrt-14.0.0-r3.zip.sha256",
+    "size": 132,
+    "digest": "sha256:2dc1ccb64292545fc5beb893563e0928c05b61df4225612a7949145b403a3a9b",
+    "id": 653547786
+   },
+   {
+    "name": "winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64msvcrt-14.0.0-r3.zip.sha512",
+    "browser_download_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-msvcrt-r3/winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64msvcrt-14.0.0-r3.zip.sha512",
+    "size": 196,
+    "digest": "sha256:f8a11ea99f5256a6363da76e84eec2ce9275f72dc309b7ec8815f91ef8ecee7e",
+    "id": 653547744
+   }
+  ]
+ }
+]

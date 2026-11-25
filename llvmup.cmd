@@ -6,9 +6,9 @@ set "LLVMUP_CLI=%LLVMUP_ROOT%\libexec\pwsh\llvmup-cli.ps1"
 
 where pwsh.exe >nul 2>nul
 if errorlevel 1 goto :use_winps
-pwsh.exe -NoProfile -ExecutionPolicy Bypass -File "%LLVMUP_CLI%" %*
+pwsh.exe -NoProfile -ExecutionPolicy Bypass -File "%LLVMUP_CLI%" --llvmup-args %*
 exit /b %ERRORLEVEL%
 
 :use_winps
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%LLVMUP_CLI%" %*
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%LLVMUP_CLI%" --llvmup-args %*
 exit /b %ERRORLEVEL%

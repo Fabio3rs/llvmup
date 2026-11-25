@@ -67,6 +67,16 @@ def extract(archive, dest):
     if lower.endswith(".zip"):
         _safe_zip_extract(archive, dest)
         return 0
+    if lower.endswith((".tar.zst", ".tzst")):
+        # Upstream LLVM builds use long-distance matching with a 1 GiB window (windowLog 30);
+        # the default decoder limit (windowLog 27) rejects such frames, so raise it explicitly.
+        from compression import zstd  # Python 3.14+
+
+        options = {zstd.DecompressionParameter.window_log_max: 31}
+        with zstd.ZstdFile(archive, mode="rb", options=options) as zf:
+            with tarfile.open(fileobj=zf, mode="r|") as tf:
+                tf.extractall(dest, filter="data")
+        return 0
     with tarfile.open(archive, mode="r:*") as tf:
         tf.extractall(dest, filter="data")
     return 0

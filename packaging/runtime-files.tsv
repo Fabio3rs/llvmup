@@ -54,3 +54,5 @@ powershell 644 libexec/pwsh/Llvm-Runner.psm1
 powershell 644 libexec/pwsh/Llvm-ConfigEngine.psm1
 powershell 644 libexec/pwsh/Llvm-CMake.psm1
 powershell 644 libexec/pwsh/Llvm-Installer.psm1
+bash 755 libexec/sh/llvmup-engine.sh
+bash 644 libexec/sh/llvmup-session.sh

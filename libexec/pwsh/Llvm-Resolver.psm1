@@ -35,6 +35,10 @@ function Split-LlvmSelector {
         $hasAt = $true
     }
 
+    if ($expr -match ',') {
+        throw "Compound version expressions such as '$expr' are not supported; use a single selector (e.g. '23', '~23.1', '>=23.1.4' or '23.*')."
+    }
+
     return [pscustomobject][ordered]@{
         raw = $Selector
         provider = $provider

@@ -622,6 +622,12 @@ function Resolve-LlvmInstalledToolchain {
             $matched += $cand
             continue
         }
+        # Partial versions (major or major.minor) select the newest matching installation, like
+        # remote resolution does ('llvm-mingw@23', 'official@23.1').
+        if ($expr -match '^\d+(\.\d+)?$' -and $cand.llvm_version) {
+            if ([string]$cand.llvm_version -like "$expr.*") { $matched += $cand }
+            continue
+        }
         try {
             $res = @(Invoke-LlvmMatchVersions -Expression $expr -CandidateVersions @($verKey))
             if ($res.Count -gt 0) { $matched += $cand; continue }

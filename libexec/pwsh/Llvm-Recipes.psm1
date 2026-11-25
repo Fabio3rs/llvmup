@@ -296,7 +296,8 @@ function Select-LlvmMinGWAsset {
         [Parameter(Mandatory = $true)][object[]]$Assets,
         [Parameter(Mandatory = $true)][string]$HostOs,
         [Parameter(Mandatory = $true)][string]$HostArch,
-        [string]$Crt = 'ucrt'
+        [string]$Crt = 'ucrt',
+        [string[]]$AvailableFormats = @()
     )
 
     $key = "${HostOs}:${HostArch}"
@@ -321,6 +322,7 @@ function Select-LlvmMinGWAsset {
     $defaultTarget = $Recipe.asset_rules.default_target_map.$HostArch
     if (-not $defaultTarget) { $defaultTarget = 'x86_64-w64-mingw32' }
     $fmt = if ($matched.name -match '\.tar\.xz$') { 'tar.xz' } elseif ($matched.name -match '\.zip$') { 'zip' } else { 'archive' }
+    if ($AvailableFormats.Count -gt 0 -and $AvailableFormats -notcontains $fmt) { return $null }
 
     return [ordered]@{
         asset = $matched
@@ -395,6 +397,15 @@ function Resolve-LlvmRecipeInstallPlan {
     $hostOs = Normalize-LlvmHostOs -Platform $Platform
     $hostArch = Normalize-LlvmHostArch -Arch $Arch
     $flatReleases = @($Releases | ForEach-Object { $_ })
+    $supportedHosts = @()
+    if ($recipe.asset_rules.supported_hosts) { $supportedHosts = @($recipe.asset_rules.supported_hosts) }
+    elseif ($recipe.asset_rules.targets) { $supportedHosts = @($recipe.asset_rules.targets.PSObject.Properties.Name | ForEach-Object { ($_ -split ':')[0] } | Select-Object -Unique) }
+    if ($supportedHosts.Count -gt 0 -and $supportedHosts -notcontains $hostOs) {
+        throw "Provider '$Provider' does not publish toolchains for host '$hostOs' (supported hosts: $($supportedHosts -join ', '))."
+    }
+    if ($VersionExpression -match ',') {
+        throw "Compound version expressions such as '$VersionExpression' are not supported; use a single selector (e.g. '23', '~23.1', '>=23.1.4' or '23.*')."
+    }
     if (-not $AvailableFormats -or $AvailableFormats.Count -eq 0) {
         $AvailableFormats = Get-LlvmPlanFormats -HostOs $hostOs -HostArch $hostArch -Extractor $Extractor
     }
@@ -442,7 +453,7 @@ function Resolve-LlvmRecipeInstallPlan {
                 if ($metaText -match $recipe.tag_rules.llvm_version_metadata_regex) {
                     $llvmVer = $matches[1]
                 }
-                $picked = Select-LlvmMinGWAsset -Recipe $recipe -Assets @($rel.assets) -HostOs $hostOs -HostArch $hostArch -Crt $Crt
+                $picked = Select-LlvmMinGWAsset -Recipe $recipe -Assets @($rel.assets) -HostOs $hostOs -HostArch $hostArch -Crt $Crt -AvailableFormats $AvailableFormats
             }
         }
 

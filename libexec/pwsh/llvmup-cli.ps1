@@ -15,7 +15,58 @@ if (-not (Test-Path -LiteralPath $modulePath -PathType Leaf)) {
 
 Import-Module $modulePath -Force -DisableNameChecking -WarningAction SilentlyContinue
 
+function ConvertFrom-LlvmWin32CommandLine {
+    # Splits a command line with the MSVC/CommandLineToArgvW rules used by C programs:
+    # 2n backslashes + quote -> n backslashes and a quote toggle; 2n+1 -> n backslashes and a
+    # literal quote; "" inside a quoted run is a literal quote.
+    param([string]$CommandLine)
+    $result = New-Object System.Collections.Generic.List[string]
+    $i = 0
+    $n = $CommandLine.Length
+    while ($i -lt $n) {
+        while ($i -lt $n -and ($CommandLine[$i] -eq ' ' -or $CommandLine[$i] -eq "`t")) { $i++ }
+        if ($i -ge $n) { break }
+        $sb = New-Object System.Text.StringBuilder
+        $inQuotes = $false
+        while ($i -lt $n) {
+            $ch = $CommandLine[$i]
+            if (-not $inQuotes -and ($ch -eq ' ' -or $ch -eq "`t")) { break }
+            if ($ch -eq '\') {
+                $bs = 0
+                while ($i -lt $n -and $CommandLine[$i] -eq '\') { $bs++; $i++ }
+                if ($i -lt $n -and $CommandLine[$i] -eq '"') {
+                    $null = $sb.Append('\', [int][Math]::Floor($bs / 2))
+                    if ($bs % 2 -eq 1) { $null = $sb.Append('"'); $i++ }
+                } else {
+                    $null = $sb.Append('\', $bs)
+                }
+                continue
+            }
+            if ($ch -eq '"') {
+                if ($inQuotes -and ($i + 1) -lt $n -and $CommandLine[$i + 1] -eq '"') {
+                    $null = $sb.Append('"'); $i += 2; continue
+                }
+                $inQuotes = -not $inQuotes
+                $i++
+                continue
+            }
+            $null = $sb.Append($ch)
+            $i++
+        }
+        $result.Add($sb.ToString())
+    }
+    return , $result.ToArray()
+}
+
+# llvmup.cmd passes a sentinel before the user's arguments. PowerShell's -File binder would
+# otherwise reinterpret arguments such as "-DCMAKE_TOOLCHAIN_FILE=C:\a b\t.cmake" or "-c:x"
+# (splitting them at '=' / ':'), so the original arguments are recovered from the raw command line.
 $tokens = @($args | ForEach-Object { [string]$_ })
+$rawTokens = ConvertFrom-LlvmWin32CommandLine ([Environment]::CommandLine)
+$sentinel = [Array]::IndexOf($rawTokens, '--llvmup-args')
+if ($sentinel -ge 0) {
+    $tokens = if ($sentinel + 1 -lt $rawTokens.Count) { @($rawTokens[($sentinel + 1)..($rawTokens.Count - 1)]) } else { @() }
+}
 $first = if ($tokens.Count -gt 0) { $tokens[0].ToLowerInvariant() } else { '' }
 if ($first -in @('activate', 'deactivate', 'use', 'pick')) {
     [Console]::Error.WriteLine("[ERROR] 'llvmup $first' cannot modify the parent shell when invoked via llvmup.cmd (child process).")
