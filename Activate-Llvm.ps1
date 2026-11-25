@@ -8,11 +8,22 @@ param (
     [string]$Version
 )
 
-# Load helper for user home detection
+# Load core helpers so directory overrides and environment restoration stay unified
 $modulePath = Join-Path $PSScriptRoot 'Get-UserHome.psm1'
 if (Test-Path $modulePath) { Import-Module $modulePath -Force } else { . "$PSScriptRoot\Get-UserHome.ps1" }
-$homeDir = Get-UserHome
-$toolchainsDir = Join-Path $homeDir ".llvm/toolchains"
+$coreModulePath = Join-Path $PSScriptRoot 'Llvm-Functions-Core.psm1'
+if (Test-Path $coreModulePath) { Import-Module $coreModulePath -Force -DisableNameChecking }
+$toolchainsDir = if ($env:LLVM_TOOLCHAINS_DIR) {
+    $env:LLVM_TOOLCHAINS_DIR
+} elseif ($env:LLVM_CUSTOM_TOOLCHAINS_DIR) {
+    $env:LLVM_CUSTOM_TOOLCHAINS_DIR
+} elseif ($env:LLVM_HOME) {
+    Join-Path $env:LLVM_HOME "toolchains"
+} elseif ($env:LLVM_CUSTOM_HOME) {
+    Join-Path $env:LLVM_CUSTOM_HOME "toolchains"
+} else {
+    Join-Path (Get-UserHome) ".llvm/toolchains"
+}
 
 # If no version is specified, list installed versions
 if (-not $Version) {

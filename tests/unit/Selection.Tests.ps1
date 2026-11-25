@@ -16,7 +16,8 @@ Describe 'Shared component selection' {
     It 'normalizes equivalent compiler and custom selections' {
         $compiler = Get-LlvmSelection -Profile compiler
         $components = @('llvm-cov,llvm-profdata', 'lld', 'llvm-ar', 'llvm-ranlib')
-        if (-not $IsWindows) { $components += 'libc++' }
+        $isWin = ($PSVersionTable.PSVersion.Major -lt 6) -or ($null -ne $IsWindows -and $IsWindows)
+        if (-not $isWin) { $components += 'libc++' }
         $custom = Get-LlvmSelection -Components $components
         $compiler.key | Should -Be $custom.key
         $compiler.components | Should -Contain clang

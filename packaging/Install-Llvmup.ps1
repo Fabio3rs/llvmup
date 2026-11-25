@@ -3,25 +3,31 @@
 param(
     [string]$InstallDir = $(if ($env:LLVMUP_INSTALL_DIR) { $env:LLVMUP_INSTALL_DIR } elseif ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'llvmup' } else { Join-Path $HOME '.local/share/llvmup' }),
     [switch]$NoProfile,
-    [string]$ProfilePath = $PROFILE.CurrentUserAllHosts
+    [string]$ProfilePath = $PROFILE.CurrentUserAllHosts,
+    [switch]$AddToPath,
+    [switch]$NoPath,
+    [switch]$Import
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $manifest = Join-Path $PSScriptRoot 'runtime-files.tsv'
 $InstallDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($InstallDir)
+$explicitProfile = $PSBoundParameters.ContainsKey('ProfilePath')
 if ($ProfilePath) { $ProfilePath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ProfilePath) }
+
 $files = @()
 foreach ($line in Get-Content -LiteralPath $manifest) {
     if ($line -match '^\s*(#|$)') { continue }
     $parts = $line -split '\s+'
     if ($parts[0] -notin @('common', 'powershell')) { continue }
-    if ($parts.Count -ne 3 -or $parts[2] -notmatch '^(libexec/)?[A-Za-z0-9_][A-Za-z0-9_.-]*$') { throw 'Invalid runtime manifest' }
+    if ($parts.Count -ne 3 -or $parts[2] -notmatch '^(libexec/([A-Za-z0-9_-]+/)*)?[A-Za-z0-9_][A-Za-z0-9_.-]*$') { throw 'Invalid runtime manifest' }
     $source = Join-Path $root $parts[2]
     if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Missing runtime file: $source" }
     $files += @{ Source = $source; Name = $parts[2] }
 }
 $files += @{ Source = $manifest; Name = 'llvmup-files.tsv' }
 if (Test-Path -LiteralPath (Join-Path $root 'VERSION')) { $files += @{ Source = (Join-Path $root 'VERSION'); Name = 'llvmup-version' } }
+
 # Refuse directory links, including ancestor junctions, rather than follow them
 # during replacement or rollback.
 $ancestor = $InstallDir
@@ -32,10 +38,21 @@ while ($ancestor) {
     }
     $ancestor = Split-Path $ancestor -Parent
 }
-$support = Join-Path $InstallDir 'libexec'
-if (Test-Path -LiteralPath $support) {
-    $item = Get-Item -LiteralPath $support -Force
-    if (-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Unsafe libexec directory' }
+
+$subDirs = @{}
+foreach ($file in $files) {
+    $relParent = Split-Path $file.Name -Parent
+    while ($relParent) {
+        $subDirs[$relParent] = $true
+        $relParent = Split-Path $relParent -Parent
+    }
+}
+foreach ($subDir in ($subDirs.Keys | Sort-Object)) {
+    $targetSub = Join-Path $InstallDir $subDir
+    if (Test-Path -LiteralPath $targetSub) {
+        $item = Get-Item -LiteralPath $targetSub -Force
+        if (-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw "Unsafe runtime subdirectory: $targetSub" }
+    }
 }
 foreach ($file in $files) {
     $target = Join-Path $InstallDir $file.Name
@@ -44,16 +61,25 @@ foreach ($file in $files) {
         if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw "Refusing non-regular destination: $target" }
     }
 }
+
 $work = Join-Path ([IO.Path]::GetTempPath()) ('llvmup-install-' + [guid]::NewGuid().ToString('N'))
 $null = New-Item -ItemType Directory -Path $work
-$null = New-Item -ItemType Directory -Path (Join-Path $work 'libexec')
 $touched = @()
 $committed = $false
 $lock = $null
 try {
-    foreach ($file in $files) { Copy-Item -LiteralPath $file.Source -Destination (Join-Path $work $file.Name) }
+    foreach ($file in $files) {
+        $workTarget = Join-Path $work $file.Name
+        $workParent = Split-Path $workTarget -Parent
+        if (-not (Test-Path -LiteralPath $workParent)) {
+            $null = New-Item -ItemType Directory -Path $workParent -Force
+        }
+        Copy-Item -LiteralPath $file.Source -Destination $workTarget
+    }
     $null = New-Item -ItemType Directory -Path $InstallDir -Force
-    $null = New-Item -ItemType Directory -Path $support -Force
+    foreach ($subDir in ($subDirs.Keys | Sort-Object)) {
+        $null = New-Item -ItemType Directory -Path (Join-Path $InstallDir $subDir) -Force
+    }
     $lockPath = Join-Path $InstallDir '.llvmup-install.lock'
     $lock = [IO.File]::Open($lockPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
     foreach ($file in $files) {
@@ -78,21 +104,66 @@ try {
     if ($lock) { $lock.Dispose(); Remove-Item -LiteralPath $lockPath -Force }
     if (-not $recoveryFailed) { Remove-Item -LiteralPath $work -Recurse -Force }
 }
-$module = (Join-Path $InstallDir 'Llvm-Functions.psm1').Replace("'", "''")
-$import = "Import-Module '$module' -Force"
-if (-not $NoProfile) {
-    if (-not $ProfilePath) { throw 'No profile path is available; use -NoProfile and import the module manually.' }
-    $text = if (Test-Path -LiteralPath $ProfilePath) { [IO.File]::ReadAllText($ProfilePath) } else { '' }
-    $pattern = '(?ms)^# LLVMUP module - Start\r?\n.*?^# LLVMUP module - End(?:\r?\n|$)'
-    $block = "# LLVMUP module - Start`n$import`n# LLVMUP module - End`n"
-    if ($text -match $pattern) { $updated = [regex]::Replace($text, $pattern, [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $block }) }
-    else { $updated = $text + "`n" + $block }
-    if ($updated -ne $text) {
-        $null = New-Item -ItemType Directory -Path (Split-Path $ProfilePath -Parent) -Force
-        if (Test-Path -LiteralPath $ProfilePath) { Copy-Item -LiteralPath $ProfilePath -Destination ($ProfilePath + '.llvmup-backup') -Force }
-        [IO.File]::WriteAllText($ProfilePath, $updated, [Text.UTF8Encoding]::new($true))
+
+$modulePath = Join-Path $InstallDir 'Llvm-Functions.psm1'
+$module = $modulePath.Replace("'", "''")
+$importCmd = "Import-Module '$module' -Force"
+
+$shouldAddToPath = $AddToPath -or (-not $NoProfile -and -not $NoPath -and -not $explicitProfile)
+if ($shouldAddToPath) {
+    $isWin = ($PSVersionTable.PSVersion.Major -lt 6) -or ($null -ne $IsWindows -and $IsWindows)
+    if ($isWin) {
+        $userPath = [Environment]::GetEnvironmentVariable('PATH', 'User')
+        $entries = @()
+        if ($userPath) { $entries = @($userPath -split ';' | Where-Object { $_ }) }
+        $already = $false
+        foreach ($entry in $entries) {
+            if ($entry.TrimEnd('\') -ieq $InstallDir.TrimEnd('\')) { $already = $true; break }
+        }
+        if (-not $already) {
+            $newUserPath = (@($InstallDir) + $entries) -join ';'
+            [Environment]::SetEnvironmentVariable('PATH', $newUserPath, 'User')
+        }
+        $procEntries = @($env:PATH -split ';' | Where-Object { $_ })
+        if (-not ($procEntries | Where-Object { $_.TrimEnd('\') -ieq $InstallDir.TrimEnd('\') })) {
+            $env:PATH = "$InstallDir;$env:PATH"
+        }
     }
 }
+
+if (-not $NoProfile) {
+    if (-not $ProfilePath) { throw 'No profile path is available; use -NoProfile and import the module manually.' }
+    $profileTargets = @($ProfilePath)
+    if (-not $explicitProfile) {
+        $docs = [Environment]::GetFolderPath([System.Environment+SpecialFolder]::MyDocuments)
+        if ($docs) {
+            foreach ($editionDir in @('WindowsPowerShell', 'PowerShell')) {
+                $candidateProfile = Join-Path (Join-Path $docs $editionDir) 'profile.ps1'
+                if ($profileTargets -notcontains $candidateProfile) {
+                    $profileTargets += $candidateProfile
+                }
+            }
+        }
+    }
+    $pattern = '(?ms)^# LLVMUP module - Start\r?\n.*?^# LLVMUP module - End(?:\r?\n|$)'
+    $block = "# LLVMUP module - Start`n$importCmd`n# LLVMUP module - End`n"
+    foreach ($targetProfile in $profileTargets) {
+        $text = if (Test-Path -LiteralPath $targetProfile) { [IO.File]::ReadAllText($targetProfile) } else { '' }
+        if ($text -match $pattern) { $updated = [regex]::Replace($text, $pattern, [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $block }) }
+        else { $updated = if ($text) { $text.TrimEnd("`r", "`n") + "`n`n" + $block } else { $block } }
+        if ($updated -ne $text) {
+            $null = New-Item -ItemType Directory -Path (Split-Path $targetProfile -Parent) -Force
+            if (Test-Path -LiteralPath $targetProfile) { Copy-Item -LiteralPath $targetProfile -Destination ($targetProfile + '.llvmup-backup') -Force }
+            [IO.File]::WriteAllText($targetProfile, $updated, [Text.UTF8Encoding]::new($true))
+        }
+    }
+}
+
+if ($Import) {
+    Import-Module $modulePath -Force -Global -DisableNameChecking
+}
+
 Write-Host "LLVMUP installed in $InstallDir. To load it in this session:"
-Write-Host $import
+Write-Host $importCmd
+Write-Host "CLI launcher: $(Join-Path $InstallDir 'llvmup.cmd')"
 Write-Host "Uninstall with: & '$(Join-Path $InstallDir 'Uninstall-Llvmup.ps1')'"

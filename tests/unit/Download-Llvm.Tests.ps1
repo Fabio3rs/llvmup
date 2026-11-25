@@ -187,7 +187,7 @@ Describe "Asset Selection Functions" {
             $found = $null
             foreach ($rel in $script:AllTestReleases) {
                 foreach ($a in $rel.assets) {
-                    if ($a.digest -and ($a.name -match "(Linux|linux)")) { $found = $a; break }
+                    if ($a.digest -and ($a.name -match "(Linux-X64|x86_64-linux)") -and ($a.name -notmatch "\.(sig|jsonl|sha256)$")) { $found = $a; break }
                 }
                 if ($found) { break }
             }

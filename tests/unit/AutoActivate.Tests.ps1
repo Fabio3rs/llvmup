@@ -1,18 +1,22 @@
 Describe 'Auto-activation' {
     BeforeAll {
         Import-Module -Force (Join-Path $PSScriptRoot '../../Llvm-Functions-Core.psm1')
-        $Script:testDir = Join-Path $PSScriptRoot 'ps-auto'
+        $Script:testDir = Join-Path $TestDrive 'ps-auto'
         New-Item -ItemType Directory -Path $Script:testDir -Force | Out-Null
+        $Script:prevUserProfile = $env:USERPROFILE
+        $Script:prevLocation = Get-Location
         $env:USERPROFILE = $Script:testDir
         $global:toolchains = Join-Path $env:USERPROFILE '.llvm\toolchains'
         New-Item -ItemType Directory -Path $global:toolchains -Force | Out-Null
         # create a version and a .llvmup-config
         New-Item -ItemType Directory -Path (Join-Path $global:toolchains 'llvmorg-21.0.0') -Force | Out-Null
         Set-Location $Script:testDir
-        "[version]`ndefault = \`"llvmorg-21.0.0\`"" | Set-Content -Path (Join-Path $Script:testDir '.llvmup-config')
+        "[version]`ndefault = `"llvmorg-21.0.0`"" | Set-Content -Path (Join-Path $Script:testDir '.llvmup-config')
     }
 
     AfterAll {
+        Set-Location $Script:prevLocation
+        $env:USERPROFILE = $Script:prevUserProfile
         Remove-Item -Path $Script:testDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 

@@ -8,34 +8,41 @@ if (-not $env:_ACTIVE_LLVM) {
     return 0
 }
 
-# Restore original environment variables
-if ($env:_OLD_PATH) {
+$coreModulePath = Join-Path $PSScriptRoot 'Llvm-Functions-Core.psm1'
+if ($env:_LLVM_BACKUP -and (Test-Path -LiteralPath $coreModulePath)) {
+    Import-Module $coreModulePath -Force -DisableNameChecking
+    $null = Invoke-LlvmDeactivate
+} elseif ($env:_OLD_PATH) {
     $env:PATH = $env:_OLD_PATH
-    $env:CC = $env:_OLD_CC
-    $env:CXX = $env:_OLD_CXX
-    $env:LD = $env:_OLD_LD
-
-    # Clear backup variables
-    Remove-Item Env:\_OLD_PATH -ErrorAction SilentlyContinue
-    Remove-Item Env:\_OLD_CC -ErrorAction SilentlyContinue
-    Remove-Item Env:\_OLD_CXX -ErrorAction SilentlyContinue
-    Remove-Item Env:\_OLD_LD -ErrorAction SilentlyContinue
-    # Remove any saved original prompt function and restore prompt if present
-    if (Test-Path Function:\__llvm_original_prompt) {
-        try {
-            # Restore original prompt function
-            $orig = Get-Item -Path Function:\__llvm_original_prompt
-            if ($orig) {
-                Set-Item -Path Function:\prompt -Value $orig.Value
-            }
-        } catch {
-            # ignore
+    foreach ($pair in @(
+        @('CC', '_OLD_CC'),
+        @('CXX', '_OLD_CXX'),
+        @('LD', '_OLD_LD')
+    )) {
+        $oldVal = [Environment]::GetEnvironmentVariable($pair[1], 'Process')
+        if ([string]::IsNullOrEmpty($oldVal)) {
+            [Environment]::SetEnvironmentVariable($pair[0], $null, 'Process')
+        } else {
+            [Environment]::SetEnvironmentVariable($pair[0], $oldVal, 'Process')
         }
-        Remove-Item -Path Function:\__llvm_original_prompt -ErrorAction SilentlyContinue
+        [Environment]::SetEnvironmentVariable($pair[1], $null, 'Process')
     }
+    Remove-Item Env:\_OLD_PATH -ErrorAction SilentlyContinue
+}
+
+# Remove any saved original prompt function and restore prompt if present
+if (Test-Path Function:\__llvm_original_prompt) {
+    try {
+        $orig = Get-Item -Path Function:\__llvm_original_prompt
+        if ($orig) {
+            Set-Item -Path Function:\prompt -Value $orig.Value
+        }
+    } catch {}
+    Remove-Item -Path Function:\__llvm_original_prompt -ErrorAction SilentlyContinue
 }
 
 # Clear active version indicator
 Remove-Item Env:\_ACTIVE_LLVM -ErrorAction SilentlyContinue
+Remove-Item Env:\_ACTIVE_LLVM_PATH -ErrorAction SilentlyContinue
 
 Write-Output "LLVM version deactivated. Environment variables restored."

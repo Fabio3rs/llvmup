@@ -1,4 +1,4 @@
-# Llvm-Default.ps1: LLVM default version manager for Windows
+﻿# Llvm-Default.ps1: LLVM default version manager for Windows
 # Requirements: PowerShell v5 or later
 # Usage:
 #   . Llvm-Default.ps1 -Command <set|show> [-Version <version>]
@@ -41,17 +41,17 @@ if ($Help) {
 # Logging functions
 function Write-LogInfo {
     param([string]$Message)
-    Write-Output "ℹ️  $Message"
+    Write-Output "[INFO] $Message"
 }
 
 function Write-LogSuccess {
     param([string]$Message)
-    Write-Output "✅ $Message"
+    Write-Output "[OK] $Message"
 }
 
 function Write-LogError {
     param([string]$Message)
-    Write-Error "❌ $Message"
+    Write-Error "[ERROR] $Message"
 }
 
 $coreModulePath = Join-Path $PSScriptRoot 'Llvm-Functions-Core.psm1'
@@ -72,7 +72,7 @@ function Set-DefaultVersion {
     try {
         Set-LlvmDefaultVersion -Version $Version -ToolchainsPath $toolchainsPath -HomePath $homeDir | Out-Null
         Write-LogSuccess "Default LLVM version set to: $Version"
-        Write-LogInfo "💡 Default toolchain available at: $defaultPath"
+        Write-LogInfo "Default toolchain available at: $defaultPath"
     } catch {
         Write-LogError $_.Exception.Message
         return 1
@@ -90,16 +90,16 @@ function Show-DefaultVersion {
             if ($item.LinkType -in @('Junction', 'SymbolicLink')) {
                 $target = $item.Target
                 $version = Split-Path $target -Leaf
-                Write-LogInfo "📦 Current default LLVM version: $version"
+                Write-LogInfo "Current default LLVM version: $version"
 
                 # Try to get clang version
                 $clangPath = Join-Path $defaultPath "bin\clang.exe"
                 if (Test-Path $clangPath) {
                     try {
                         $clangVersion = & $clangPath --version | Select-Object -First 1
-                        Write-LogInfo "🔍 Clang version: $clangVersion"
+                        Write-LogInfo "Clang version: $clangVersion"
                     } catch {
-                        Write-LogInfo "🔍 Clang version: (unable to determine)"
+                        Write-LogInfo "Clang version: (unable to determine)"
                     }
                 }
             } else {
@@ -110,8 +110,8 @@ function Show-DefaultVersion {
             return 1
         }
     } else {
-        Write-LogInfo "❌ No default LLVM version is set"
-        Write-LogInfo "💡 Use 'Llvm-Default.ps1 -Command set -Version <version>' to set one"
+        Write-LogInfo "No default LLVM version is set"
+        Write-LogInfo "Use 'Llvm-Default.ps1 -Command set -Version <version>' to set one"
     }
 }
 

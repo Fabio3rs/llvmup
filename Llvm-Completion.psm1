@@ -6,7 +6,7 @@
 
 # Resolve user home, preferring a session/script-defined Get-UserHome (so tests can mock it)
 function Resolve-UserHome {
-    # If a Get-UserHome function exists, try calling it directly — this respects any session/test
+    # If a Get-UserHome function exists, try calling it directly - this respects any session/test
     # overrides (the PS engine will resolve the visible function at call time).
     try {
         $cmds = Get-Command -Name Get-UserHome -CommandType Function -ErrorAction SilentlyContinue -All
@@ -33,10 +33,10 @@ function Resolve-UserHome {
         }
     } catch {}
 
-    # Fallback to environment variables
+    $isWin = ($PSVersionTable.PSVersion.Major -lt 6) -or ($null -ne $IsWindows -and $IsWindows)
     if ($env:HOME) { return $env:HOME }
     if ($env:USERPROFILE) { return $env:USERPROFILE }
-    if ($IsWindows) { return $env:SystemDrive + '\' }
+    if ($isWin) { return $env:SystemDrive + '\' }
     return '/tmp'
 }
 
@@ -91,17 +91,21 @@ try {
 
 function Get-LlvmLocalVersions {
     param()
-    # Resolve user home, preferring script/global-defined Get-UserHome (so tests can mock it)
-    $home = Resolve-UserHome
-    if (-not $home) { return @() }
-    # Possible locations:
-    # 1) $home/.llvm/toolchains (standard)
-    # 2) $home (tests may mock Get-UserHome to point directly to a toolchains dir)
-    $candidates = @(
-        (Join-Path (Join-Path $home '.llvm') 'toolchains'),
-        (Join-Path $home '*'),
-        $home
-    )
+    $candidates = @()
+    if ($env:LLVM_TOOLCHAINS_DIR) { $candidates += $env:LLVM_TOOLCHAINS_DIR }
+    elseif ($env:LLVM_CUSTOM_TOOLCHAINS_DIR) { $candidates += $env:LLVM_CUSTOM_TOOLCHAINS_DIR }
+    elseif ($env:LLVM_HOME) { $candidates += (Join-Path $env:LLVM_HOME 'toolchains') }
+    elseif ($env:LLVM_CUSTOM_HOME) { $candidates += (Join-Path $env:LLVM_CUSTOM_HOME 'toolchains') }
+
+    $homeDir = Resolve-UserHome
+    if ($homeDir) {
+        $candidates += @(
+            (Join-Path (Join-Path $homeDir '.llvm') 'toolchains'),
+            (Join-Path $homeDir '*'),
+            $homeDir
+        )
+    }
+    if (-not $candidates) { return @() }
 
     $found = @()
     foreach ($dir in $candidates) {
@@ -151,9 +155,10 @@ function Get-LlvmRemoteVersions {
     param()
     # Basic remote fetch with short timeout and fallback list
     # Resolve user home, preferring script/global-defined Get-UserHome (so tests can mock it)
-    $home = Resolve-UserHome
-    if (-not $home) { $home = if ($IsWindows) { $env:SystemDrive + '\' } else { '/tmp' } }
-    $preferredCacheDir = Join-Path (Join-Path $home '.cache') 'llvmup'
+    $homeDir = Resolve-UserHome
+    $isWin = ($PSVersionTable.PSVersion.Major -lt 6) -or ($null -ne $IsWindows -and $IsWindows)
+    if (-not $homeDir) { $homeDir = if ($isWin) { $env:SystemDrive + '\' } else { '/tmp' } }
+    $preferredCacheDir = Join-Path (Join-Path $homeDir '.cache') 'llvmup'
     $cacheDir = $preferredCacheDir
     $cacheFile = Join-Path $cacheDir 'remote_versions.cache'
 
@@ -283,7 +288,7 @@ $llvmupSB = {
 # Register idempotently
 try { Register-LlvmCompleter -CommandName 'Activate-Llvm' -ParameterName 'Version' -ScriptBlock $activateSB } catch {}
 try { Register-LlvmCompleter -CommandName 'Install-Llvm' -ParameterName 'Version' -ScriptBlock $installSB } catch {}
-try { Register-LlvmCompleter -CommandName 'llvmup' -ParameterName 'First' -ScriptBlock $llvmupSB } catch {}
+try { Register-LlvmCompleter -CommandName 'llvmup' -ParameterName 'LlvmupSubcommand' -ScriptBlock $llvmupSB } catch {}
 
 # Export functions for testing if desired
 Export-ModuleMember -Function Get-LlvmLocalVersions, Get-LlvmRemoteVersions, Register-LlvmCompleter

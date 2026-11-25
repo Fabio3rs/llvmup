@@ -1,4 +1,4 @@
-# Download-Llvm.ps1: Enhanced LLVM prebuilt download and installation manager
+﻿# Download-Llvm.ps1: Enhanced LLVM prebuilt download and installation manager
 # Requirements: PowerShell v5 or later
 # Based on llvm-prebuilt bash implementation
 # Usage:
@@ -100,27 +100,27 @@ function Write-VerboseLog {
 
 function Write-InfoLog {
     param([string]$Message)
-    if (-not $Quiet) { Write-Host "ℹ️  $Message" -ForegroundColor Cyan }
+    if (-not $Quiet) { Write-Host "[INFO] $Message" -ForegroundColor Cyan }
 }
 
 function Write-ErrorLog {
     param([string]$Message)
-    Write-Error "❌ $Message"
+    Write-Error "[ERROR] $Message"
 }
 
 function Write-SuccessLog {
     param([string]$Message)
-    if (-not $Quiet) { Write-Host "✅ $Message" -ForegroundColor Green }
+    if (-not $Quiet) { Write-Host "[OK] $Message" -ForegroundColor Green }
 }
 
 function Write-WarningLog {
     param([string]$Message)
-    Write-Warning "⚠️  $Message"
+    Write-Warning "[WARN] $Message"
 }
 
 function Write-ProgressLog {
     param([string]$Message)
-    if (-not $Quiet) { Write-Host "🔄 $Message" -ForegroundColor Yellow }
+    if (-not $Quiet) { Write-Host "[PROGRESS] $Message" -ForegroundColor Yellow }
 }
 
 function Resolve-LlvmVerificationPolicy {
@@ -198,8 +198,10 @@ function Get-LlvmReleases {
     }
 
     try {
+        $oldProtocol = [Net.ServicePointManager]::SecurityProtocol
+        [Net.ServicePointManager]::SecurityProtocol = $oldProtocol -bor [Net.SecurityProtocolType]::Tls12
         Write-ProgressLog "Connecting to GitHub API..."
-        $headers = @{ Accept = 'application/vnd.github+json' }
+        $headers = @{ Accept = 'application/vnd.github+json'; 'User-Agent' = 'llvmup' }
         $token = if ($env:GITHUB_TOKEN) { $env:GITHUB_TOKEN } elseif ($env:GH_TOKEN) { $env:GH_TOKEN } else { $null }
         if ($token) { $headers.Authorization = "Bearer $token" }
         $response = Invoke-RestMethod -Uri $ApiUrl -Headers $headers -TimeoutSec $TimeoutSec -ErrorAction Stop
@@ -308,8 +310,8 @@ function Select-LlvmAssetForPlatform {
         $score = 0
         $assetName = $asset.name
 
-        # Skip signature files
-        if ($assetName -match '\.(sig|jsonl)$') {
+        # Skip signature and checksum companion files
+        if ($assetName -match '\.(sig|jsonl|sha256|sha512|sha256sum|txt)$') {
             continue
         }
 
@@ -318,17 +320,26 @@ function Select-LlvmAssetForPlatform {
         # Platform-specific scoring
         switch ($Platform) {
             "Windows" {
-                # Prefer LLVM-*-win*.exe (installer) or clang+llvm-*-windows-msvc.tar.xz (archive)
-                if ($assetName -match "LLVM-.*-win(64|32)\.exe") {
-                    if ($ArchiveOnly) { continue }
+                # Prefer LLVM-*-win*.exe/.msi (installer) or clang+llvm-*-windows-msvc.tar.xz (archive)
+                if ($assetName -match "LLVM-.*-win64\.exe") {
+                    if ($ArchiveOnly -or $normalizedArch -ne "x64") { continue }
+                    $score += 100
+                    if ($PreferInstaller) { $score += 20 }
+                } elseif ($assetName -match "LLVM-.*-win32\.exe") {
+                    if ($ArchiveOnly -or $normalizedArch -ne "x86") { continue }
                     $score += 100
                     if ($PreferInstaller) { $score += 20 }
                 } elseif ($assetName -match "clang\+llvm-.*-.*-pc-windows-msvc\.tar\.xz") {
                     $score += 80
                     if (-not $PreferInstaller) { $score += 20 }
-                } elseif ($assetName -match "LLVM-.*-woa64\.exe" -and $normalizedArch -eq "arm64") {
+                } elseif ($assetName -match "LLVM-.*-woa64\.(exe|msi)" -and $normalizedArch -eq "arm64") {
                     if ($ArchiveOnly) { continue }
                     $score += 90
+                    if ($PreferInstaller) { $score += 20 }
+                } elseif ($assetName -match "LLVM-.*-win64\.msi" -and $normalizedArch -eq "x64") {
+                    if ($ArchiveOnly) { continue }
+                    $score += 95
+                    if ($PreferInstaller) { $score += 20 }
                 }
             }
             "Linux" {
@@ -349,22 +360,25 @@ function Select-LlvmAssetForPlatform {
             }
         }
 
-        # Architecture-specific scoring
+        # Require matching architecture
         if ($score -gt 0) {
+            $archMatched = $false
             switch ($normalizedArch) {
                 "x64" {
-                    if ($assetName -match "(X64|x86_64|amd64)") { $score += 50 }
+                    if ($assetName -match "(win64|X64|x86_64|amd64)") { $archMatched = $true }
                 }
                 "arm64" {
-                    if ($assetName -match "(ARM64|aarch64)") { $score += 50 }
+                    if ($assetName -match "(woa64|ARM64|aarch64)") { $archMatched = $true }
                 }
                 "armv7a" {
-                    if ($assetName -match "armv7a") { $score += 50 }
+                    if ($assetName -match "armv7a") { $archMatched = $true }
                 }
                 "x86" {
-                    if ($assetName -match "(win32|x86|i386)") { $score += 50 }
+                    if ($assetName -match "(win32|i386|i686)" -or ($assetName -match "x86" -and $assetName -notmatch "x86_64")) { $archMatched = $true }
                 }
             }
+            if (-not $archMatched) { continue }
+            $score += 50
         }
 
         if ($score -gt 0) {
@@ -450,10 +464,32 @@ function Download-File {
                 New-Item -ItemType Directory -Path $dir -Force | Out-Null
             }
 
-            # Download with progress (PowerShell 5+ compatible)
-            $webClient = New-Object System.Net.WebClient
-            $webClient.DownloadFile($Url, $OutPath)
-            $webClient.Dispose()
+            # Download with timeout & TLS 1.2+ support (PowerShell 5.1 & 7 compatible)
+            $oldProtocol = [Net.ServicePointManager]::SecurityProtocol
+            try {
+                [Net.ServicePointManager]::SecurityProtocol = $oldProtocol -bor [Net.SecurityProtocolType]::Tls12
+                $request = [System.Net.HttpWebRequest]::Create($Url)
+                $request.Timeout = $TimeoutSec * 1000
+                $request.ReadWriteTimeout = $TimeoutSec * 1000
+                $request.AllowAutoRedirect = $true
+                $request.MaximumAutomaticRedirections = 10
+                $request.UserAgent = 'llvmup'
+                $response = $request.GetResponse()
+                try {
+                    $stream = $response.GetResponseStream()
+                    $fileStream = [System.IO.File]::Create($OutPath)
+                    try {
+                        $stream.CopyTo($fileStream)
+                    } finally {
+                        $fileStream.Dispose()
+                        $stream.Dispose()
+                    }
+                } finally {
+                    $response.Dispose()
+                }
+            } finally {
+                [Net.ServicePointManager]::SecurityProtocol = $oldProtocol
+            }
 
             # Verify file exists and has content
             if (-not (Test-Path $OutPath) -or (Get-Item $OutPath).Length -eq 0) {
@@ -1008,7 +1044,7 @@ try {
     }
 
     # Get available releases
-    Write-InfoLog "🚀 LLVM Prebuilt Installation Manager"
+    Write-InfoLog "LLVM Prebuilt Installation Manager"
     $releases = Get-LlvmReleases -TimeoutSec $TimeoutSec
 
     if (-not $releases -or $releases.Count -eq 0) {
@@ -1105,8 +1141,8 @@ try {
     $installPath = Install-PrebuiltLlvm -SelectedAsset $selectedAsset -Version $Version -CustomName $Name -Force:$Force -Policy $resolvedPolicy
 
     Write-SuccessLog "Installation completed successfully!"
-    Write-InfoLog "📁 Installation path: $installPath"
-    Write-InfoLog "🔄 To activate: Import-Module Llvm-Functions-Core; Invoke-LlvmActivate '$Version'"
+    Write-InfoLog "Installation path: $installPath"
+    Write-InfoLog "To activate: Import-Module Llvm-Functions-Core; Invoke-LlvmActivate '$Version'"
 
 } catch {
     Write-ErrorLog "Installation failed: $($_.Exception.Message)"

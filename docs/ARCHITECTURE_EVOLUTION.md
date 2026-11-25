@@ -86,8 +86,8 @@ This document records the baseline diagnostic, architectural decisions, implemen
 | Milestone | Scope | Status | Notes |
 | --- | --- | --- | --- |
 | A | Diagnostic & baseline tracking | Completed | `docs/ARCHITECTURE_EVOLUTION.md` |
-| B | Windows PS 5.1 compatibility, `llvmup.cmd` launcher & packaging | Pending | |
-| C | Recipe contract, `.llvmup-toolchain.json` & `official` migration | Pending | |
+| B | Windows PS 5.1 compatibility, `llvmup.cmd` launcher & packaging | Completed | PS 5.1 & PS 7.7 both pass 176/176 Pester tests; packaged `llvmup.cmd` validated outside checkout |
+| C | Recipe contract, `.llvmup-toolchain.json` & `official` migration | In Progress | |
 | D | Shared downloader, cache, verifier, 7-Zip extractor & benchmark | Pending | |
 | E | Normalized resolver, precedence & capability-based environment | Pending | |
 | F | `winlibs` and `llvm-mingw` providers & real Windows validation | Pending | |

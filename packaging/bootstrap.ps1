@@ -3,7 +3,9 @@ param(
     [string]$Version = '@LLVMUP_VERSION@',
     [string]$InstallDir,
     [switch]$NoProfile,
-    [string]$ProfilePath
+    [string]$ProfilePath,
+    [switch]$NoPath,
+    [switch]$Import
 )
 $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$') { throw 'Use a release bootstrap or supply -Version vX.Y.Z' }
@@ -29,7 +31,7 @@ try {
     } finally { $zip.Dispose() }
     [IO.Compression.ZipFile]::ExtractToDirectory($archive, $work)
     if ((Get-Content -LiteralPath (Join-Path $work 'llvmup/VERSION') -Raw).Trim() -ne $Version) { throw 'Package version mismatch' }
-    $options = @{ NoProfile = $NoProfile }
+    $options = @{ NoProfile = $NoProfile; NoPath = $NoPath; Import = $Import }
     if ($InstallDir) { $options.InstallDir = $InstallDir }
     if ($ProfilePath) { $options.ProfilePath = $ProfilePath }
     & (Join-Path $work 'llvmup/packaging/Install-Llvmup.ps1') @options

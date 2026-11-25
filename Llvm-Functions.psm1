@@ -45,10 +45,10 @@ function Write-LlvmLog {
     }
 
     $emoji = switch ($Level) {
-        "Info" { "📋" }
-        "Warning" { "⚠️ " }
-        "Error" { "❌" }
-        "Success" { "✅" }
+        "Info" { "[INFO]" }
+        "Warning" { "[WARN]" }
+        "Error" { "[ERROR]" }
+        "Success" { "[OK]" }
     }
 
     Write-Host "$emoji $Message" -ForegroundColor $color
@@ -62,21 +62,21 @@ function Activate-Llvm {
     )
 
     if (-not $Version) {
-        Write-Host "╭─ LLVM Activation Help ─────────────────────────────────────╮" -ForegroundColor Cyan
-        Write-Host "│ Usage: Activate-Llvm <version>                            │" -ForegroundColor White
-        Write-Host "│                                                            │" -ForegroundColor White
-        Write-Host "│ Examples:                                                  │" -ForegroundColor White
-        Write-Host "│   Activate-Llvm 18.1.8     # Activate specific version    │" -ForegroundColor White
-        Write-Host "│   Activate-Llvm 19.1.0     # Activate another version     │" -ForegroundColor White
-        Write-Host "│                                                            │" -ForegroundColor White
-        Write-Host "│ What this does:                                            │" -ForegroundColor White
-        Write-Host "│ • Sets PATH to use LLVM tools (clang, clang++, etc.)      │" -ForegroundColor White
-        Write-Host "│ • Updates environment variables                            │" -ForegroundColor White
-        Write-Host "│ • Modifies prompt to show active LLVM version             │" -ForegroundColor White
-        Write-Host "│                                                            │" -ForegroundColor White
-        Write-Host "│ To deactivate: Deactivate-Llvm                            │" -ForegroundColor White
-        Write-Host "│ To check status: Get-LlvmStatus                           │" -ForegroundColor White
-        Write-Host "╰────────────────────────────────────────────────────────────╯" -ForegroundColor Cyan
+        Write-Host "+-- LLVM Activation Help ------------------------------------+" -ForegroundColor Cyan
+        Write-Host "| Usage: Activate-Llvm <version>                            |" -ForegroundColor White
+        Write-Host "|                                                            |" -ForegroundColor White
+        Write-Host "| Examples:                                                  |" -ForegroundColor White
+        Write-Host "|   Activate-Llvm 18.1.8     # Activate specific version    |" -ForegroundColor White
+        Write-Host "|   Activate-Llvm 19.1.0     # Activate another version     |" -ForegroundColor White
+        Write-Host "|                                                            |" -ForegroundColor White
+        Write-Host "| What this does:                                            |" -ForegroundColor White
+        Write-Host "| - Sets PATH to use LLVM tools (clang, clang++, etc.)      |" -ForegroundColor White
+        Write-Host "| - Updates environment variables                            |" -ForegroundColor White
+        Write-Host "| - Modifies prompt to show active LLVM version             |" -ForegroundColor White
+        Write-Host "|                                                            |" -ForegroundColor White
+        Write-Host "| To deactivate: Deactivate-Llvm                            |" -ForegroundColor White
+        Write-Host "| To check status: Get-LlvmStatus                           |" -ForegroundColor White
+        Write-Host "+------------------------------------------------------------+" -ForegroundColor Cyan
         Write-Host ""
         if (Test-Path $script:TOOLCHAINS_DIR) {
             Get-ChildItem $script:TOOLCHAINS_DIR -Directory |
@@ -534,11 +534,16 @@ function Invoke-LlvmUpConfig {
 }
 
 function llvmup {
-    param($First)
+    param(
+        [Parameter(Position = 0)]
+        [string]$LlvmupSubcommand,
+        [Parameter(ValueFromRemainingArguments = $true)]
+        [string[]]$LlvmupArgs
+    )
 
     $tokens = @()
-    if ($null -ne $First -and [string]$First -ne '') { $tokens += [string]$First }
-    $tokens += @($args | ForEach-Object { [string]$_ })
+    if ($null -ne $LlvmupSubcommand -and $LlvmupSubcommand -ne '') { $tokens += $LlvmupSubcommand }
+    if ($LlvmupArgs) { $tokens += @($LlvmupArgs | ForEach-Object { [string]$_ }) }
     $knownCommands = @('doctor', 'install', 'activate', 'deactivate', 'env', 'resolve', 'vscode-activate', 'status', 'list', 'remove', 'disk-usage', 'default', 'config', 'help')
     $command = 'install'
     if ($tokens.Count -and $knownCommands -contains $tokens[0].ToLowerInvariant()) {

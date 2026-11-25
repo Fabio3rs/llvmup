@@ -105,7 +105,7 @@ if [[ -f $manifest ]]; then
     scripts=()
     while read -r platform mode name extra; do
         [[ $platform == common || $platform == bash ]] || continue
-        [[ $name =~ ^(libexec/)?[a-zA-Z0-9_][a-zA-Z0-9_.-]*$ && -z $extra ]] || { print_error 'Invalid runtime manifest'; exit 1; }
+        [[ $name =~ ^(libexec/([a-zA-Z0-9_-]+/)*)?[a-zA-Z0-9_][a-zA-Z0-9_.-]*$ && -z $extra ]] || { print_error 'Invalid runtime manifest'; exit 1; }
         scripts+=("$name")
     done < "$manifest"
     scripts+=(llvmup-files.tsv llvmup-version llvmup-install-paths)

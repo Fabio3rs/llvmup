@@ -9,7 +9,7 @@ Describe 'Auto-Activation Idempotency' {
         $script:TestToolchainsPath = Join-Path $TestDrive "toolchains"
         New-Item -Type Directory -Path $script:TestToolchainsPath -Force | Out-Null
 
-        # Criar versões mock
+        # Criar versoes mock
         $mockVersions = @(
             'llvmorg-19.1.5',
             'llvmorg-19.1.2',
@@ -32,7 +32,7 @@ Describe 'Auto-Activation Idempotency' {
 
     Context 'Version Matching Logic' {
         It 'should find latest version when specified' {
-            # Teste: verificar se encontra a versão mais recente
+            # Teste: verificar se encontra a versao mais recente
             $result = Get-LlvmVersionsSimple -ToolchainsPath $script:TestToolchainsPath
             $result | Should -Contain 'llvmorg-19.1.5'
             $result | Should -Contain 'source-llvmorg-19.1.5'
@@ -54,27 +54,27 @@ Describe 'Auto-Activation Idempotency' {
 
     Context 'Version Satisfaction Logic' {
         It 'should detect when active version satisfies expression' {
-            # Setup: simular versão ativa
+            # Setup: simular versao ativa
             $activeVersion = 'llvmorg-19.1.5'
             $expression = 'latest-prebuilt'
 
-            # Teste: verificar se versão ativa satisfaz expressão
+            # Teste: verificar se versao ativa satisfaz expressao
             $result = Test-LlvmVersionSatisfiesExpression -ActiveVersion $activeVersion -Expression $expression -ToolchainsPath $script:TestToolchainsPath
             $result | Should -Be $true
         }
 
         It 'should detect when active version does not satisfy expression' {
-            # Setup: simular versão ativa diferente
+            # Setup: simular versao ativa diferente
             $activeVersion = 'llvmorg-18.1.8'
             $expression = 'latest-prebuilt'
 
-            # Teste: verificar se versão ativa NÃO satisfaz expressão
+            # Teste: verificar se versao ativa NAO satisfaz expressao
             $result = Test-LlvmVersionSatisfiesExpression -ActiveVersion $activeVersion -Expression $expression -ToolchainsPath $script:TestToolchainsPath
             $result | Should -Be $false
         }
 
         It 'should handle wildcard expressions correctly' {
-            # Setup: versão ativa e expressão wildcard
+            # Setup: versao ativa e expressao wildcard
             $activeVersion = 'llvmorg-19.1.2'
             $expression = '19.1.*'
 
@@ -84,7 +84,7 @@ Describe 'Auto-Activation Idempotency' {
         }
 
         It 'should handle source vs prebuilt distinction' {
-            # Setup: versão source ativa
+            # Setup: versao source ativa
             $activeVersion = 'source-llvmorg-19.1.5'
             $expression = 'latest-source'
 
@@ -92,11 +92,11 @@ Describe 'Auto-Activation Idempotency' {
             $result = Test-LlvmVersionSatisfiesExpression -ActiveVersion $activeVersion -Expression $expression -ToolchainsPath $script:TestToolchainsPath
             $result | Should -Be $true
 
-            # Setup: versão prebuilt com expressão source
+            # Setup: versao prebuilt com expressao source
             $activeVersion2 = 'llvmorg-19.1.5'
             $expression2 = 'latest-source'
 
-            # Teste: verificar se prebuilt NÃO satisfaz latest-source
+            # Teste: verificar se prebuilt NAO satisfaz latest-source
             $result2 = Test-LlvmVersionSatisfiesExpression -ActiveVersion $activeVersion2 -Expression $expression2 -ToolchainsPath $script:TestToolchainsPath
             $result2 | Should -Be $false
         }
@@ -104,24 +104,24 @@ Describe 'Auto-Activation Idempotency' {
 
     Context 'Enhanced Auto-Activation Logic' {
         BeforeEach {
-            # Setup adicional: criar arquivo de configuração
+            # Setup adicional: criar arquivo de configuracao
             $script:ConfigDir = Join-Path $TestDrive "project"
             New-Item -Type Directory -Path $script:ConfigDir -Force | Out-Null
             $script:ConfigFile = Join-Path $script:ConfigDir ".llvmup-config"
         }
 
         AfterEach {
-            # Teardown: limpar configuração
+            # Teardown: limpar configuracao
             if (Test-Path $script:ConfigFile) {
                 Remove-Item -Path $script:ConfigFile -Force -ErrorAction SilentlyContinue
             }
         }
 
         It 'should read config and determine required version' {
-            # Setup: criar arquivo de configuração
+            # Setup: criar arquivo de configuracao
             'default = "latest-prebuilt"' | Out-File -FilePath $script:ConfigFile -Encoding utf8
 
-            # Teste: verificar leitura da configuração
+            # Teste: verificar leitura da configuracao
             $result = Invoke-LlvmAutoActivate -StartDirectory $script:ConfigDir
             $result | Should -Be 'latest-prebuilt'
         }
@@ -133,11 +133,11 @@ Describe 'Auto-Activation Idempotency' {
         }
 
         It 'should determine if activation is needed' {
-            # Setup: criar configuração e simular versão ativa
+            # Setup: criar configuracao e simular versao ativa
             'default = "latest-prebuilt"' | Out-File -FilePath $script:ConfigFile -Encoding utf8
-            $activeVersion = 'llvmorg-19.1.5'  # Esta é a latest-prebuilt no nosso mock
+            $activeVersion = 'llvmorg-19.1.5'  # Esta e a latest-prebuilt no nosso mock
 
-            # Teste: verificar se ativação é necessária (não deveria ser)
+            # Teste: verificar se ativacao e necessaria (nao deveria ser)
             $configExpression = Invoke-LlvmAutoActivate -StartDirectory $script:ConfigDir
             $isActivationNeeded = -not (Test-LlvmVersionSatisfiesExpression -ActiveVersion $activeVersion -Expression $configExpression -ToolchainsPath $script:TestToolchainsPath)
 
@@ -145,11 +145,11 @@ Describe 'Auto-Activation Idempotency' {
         }
 
         It 'should detect when activation is needed for different version' {
-            # Setup: configuração pede latest, mas versão ativa é antiga
+            # Setup: configuracao pede latest, mas versao ativa e antiga
             'default = "latest-prebuilt"' | Out-File -FilePath $script:ConfigFile -Encoding utf8
-            $activeVersion = 'llvmorg-18.1.8'  # Versão mais antiga
+            $activeVersion = 'llvmorg-18.1.8'  # Versao mais antiga
 
-            # Teste: verificar se ativação é necessária (deveria ser)
+            # Teste: verificar se ativacao e necessaria (deveria ser)
             $configExpression = Invoke-LlvmAutoActivate -StartDirectory $script:ConfigDir
             $isActivationNeeded = -not (Test-LlvmVersionSatisfiesExpression -ActiveVersion $activeVersion -Expression $configExpression -ToolchainsPath $script:TestToolchainsPath)
 

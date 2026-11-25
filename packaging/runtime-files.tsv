@@ -37,3 +37,5 @@ powershell 644 Llvm-Doctor-Deep.ps1
 powershell 644 Llvm-Functions.psm1
 powershell 644 Llvm-Functions-Core.psm1
 powershell 644 Uninstall-Llvmup.ps1
+powershell 755 llvmup.cmd
+powershell 644 libexec/pwsh/llvmup-cli.ps1

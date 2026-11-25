@@ -114,4 +114,31 @@ Describe 'LLVMUP package installation' {
         { & (Join-Path $repo 'packaging/bootstrap.ps1') -Version '../bad' -InstallDir $destination -NoProfile } | Should -Throw '*supply -Version*'
         Test-Path $destination | Should -BeFalse
     }
+    It 'runs the packaged llvmup.cmd launcher outside the checkout and cleans nested libexec files on uninstall' {
+        & $installer -InstallDir $destination -NoProfile
+        $launcher = Join-Path $destination 'llvmup.cmd'
+        Test-Path $launcher | Should -BeTrue
+        Test-Path (Join-Path $destination 'libexec/pwsh/llvmup-cli.ps1') | Should -BeTrue
+
+        $env:LLVM_HOME = Join-Path $case 'llvm-home'
+        $env:LLVM_TOOLCHAINS_DIR = Join-Path $case 'toolchains'
+        try {
+            $doctorOut = (& $launcher doctor --json | Out-String)
+            $LASTEXITCODE | Should -Be 0
+            $doctorJson = $doctorOut | ConvertFrom-Json
+            $doctorJson.schema_version | Should -Be 1
+            $doctorJson.exit_code | Should -Be 0
+
+            $activateOut = (& $launcher activate missing-version 2>&1 | Out-String)
+            $LASTEXITCODE | Should -Be 1
+            $activateOut | Should -Match 'cannot modify the parent shell'
+        } finally {
+            Remove-Item Env:LLVM_HOME -ErrorAction SilentlyContinue
+            Remove-Item Env:LLVM_TOOLCHAINS_DIR -ErrorAction SilentlyContinue
+        }
+
+        & (Join-Path $destination 'Uninstall-Llvmup.ps1') -NoProfile
+        Test-Path $launcher | Should -BeFalse
+        Test-Path (Join-Path $destination 'libexec/pwsh/llvmup-cli.ps1') | Should -BeFalse
+    }
 }
