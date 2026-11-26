@@ -203,9 +203,14 @@ fake_winlibs() {
 
 @test "which resolves tools inside the selected toolchain only and cmake-toolchain writes cross settings" {
     fake_toolchain lm llvm-mingw 23.1.6 20261117 "sha256:4444"
+    # The bundle's default target is selected, so clang++ resolves to that target's wrapper.
     run "$LLVMUP_SCRIPT" which clang++ --toolchain lm
     [ "$status" -eq 0 ]
-    [ "$output" = "$LLVM_HOME/toolchains/lm/bin/clang++" ]
+    [ "$output" = "$LLVM_HOME/toolchains/lm/bin/x86_64-w64-mingw32-clang++" ]
+    run "$LLVMUP_SCRIPT" which clang --toolchain lm --target aarch64-w64-mingw32
+    [ "$output" = "$LLVM_HOME/toolchains/lm/bin/aarch64-w64-mingw32-clang" ]
+    run "$LLVMUP_SCRIPT" run lm --target aarch64-w64-mingw32 -- clang --version
+    [ "$output" = "aarch64-w64-mingw32-clang --version" ]
     run "$LLVMUP_SCRIPT" which definitely-missing-tool --toolchain lm
     [ "$status" -ne 0 ]
     run "$LLVMUP_SCRIPT" cmake-toolchain lm --target aarch64-w64-mingw32 --output "$PROJ/tc.cmake"

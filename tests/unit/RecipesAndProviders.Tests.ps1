@@ -474,6 +474,9 @@ Describe 'LLVMUP Recipes, Multi-Provider Engine, and Ergonomic CLI' {
                 Pop-Location
             }
 
+            # A selected target maps known tools to the distribution's target wrappers.
+            (llvmup which clang --toolchain llvm-mingw@20261117 --target aarch64-w64-mingw32) | Should -Match 'aarch64-w64-mingw32-clang\.exe$'
+
             llvmup default winlibs@23.1.3 | Should -BeTrue
             (llvmup default) | Should -Match 'winlibs'
             $upd = (llvmup update llvm-mingw@20261117 2>&1 | Out-String)

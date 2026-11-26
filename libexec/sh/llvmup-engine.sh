@@ -1159,7 +1159,11 @@ eng_resolve_exe() {
     esac
     if [ -n "$mapped" ] && [ -f "$mapped" ]; then printf '%s\n' "$mapped"; return 0; fi
     local rel
-    rel="$(jq -r --arg k "$cmd" '.tools[$k] // empty | strings' <<<"$m")"
+    # With a target selected, a known tool resolves to the distribution's target wrapper
+    # (llvm-mingw: clang -> x86_64-w64-mingw32-clang, which sets the target and sysroot).
+    rel="$(jq -r --arg k "$cmd" --arg t "$(jq -r '.set.LLVMUP_ACTIVE_TARGET // ""' <<<"$d")" \
+        'if $t != "" then (.tools.target_wrappers[$t][$k] // empty | strings) else empty end' <<<"$m")"
+    if [ -z "$rel" ]; then rel="$(jq -r --arg k "$cmd" '.tools[$k] // empty | strings' <<<"$m")"; fi
     if [ -n "$rel" ]; then
         local root
         root="$(jq -r '.root_path' <<<"$m")"

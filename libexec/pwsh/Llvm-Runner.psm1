@@ -34,6 +34,22 @@ function Resolve-LlvmChildExecutable {
             return $mapped
         }
 
+        # With a target selected, a known tool resolves to the distribution's target wrapper
+        # (llvm-mingw: clang -> x86_64-w64-mingw32-clang, which sets the target and sysroot).
+        if ($Delta.target -and $tools -and $tools.target_wrappers) {
+            $tw = $tools.target_wrappers
+            $wrap = if ($tw -is [System.Collections.IDictionary]) { if ($tw.Contains($Delta.target)) { $tw[$Delta.target] } } elseif ($tw.PSObject.Properties[$Delta.target]) { $tw.($Delta.target) }
+            if ($wrap) {
+                foreach ($key in @($CommandName, $base)) {
+                    $val = if ($wrap -is [System.Collections.IDictionary]) { if ($wrap.Contains($key)) { $wrap[$key] } } elseif ($wrap.PSObject.Properties[$key]) { $wrap.$key }
+                    if ($val -is [string] -and $val) {
+                        $cand = Join-Path $root ($val.Replace('/', [IO.Path]::DirectorySeparatorChar))
+                        if (Test-Path -LiteralPath $cand -PathType Leaf) { return $cand }
+                    }
+                }
+            }
+        }
+
         if ($tools) {
             foreach ($key in @($CommandName, $base)) {
                 if ($tools -is [System.Collections.IDictionary] -and $tools.Contains($key)) {

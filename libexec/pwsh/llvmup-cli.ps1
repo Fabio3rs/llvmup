@@ -84,13 +84,19 @@ $global:LASTEXITCODE = 0
 $script:failed = $false
 
 # Stream every object as soon as it is emitted; the facade's [bool] status values are consumed here.
-llvmup @tokens | ForEach-Object {
+# Errors of llvmup itself are printed as one plain "Error: ..." line instead of PowerShell's
+# CategoryInfo/FullyQualifiedErrorId block. Programs started by run/shell write to the console directly.
+$emit = {
     if ($_ -is [bool]) {
         if (-not $_) { $script:failed = $true }
+    } elseif ($_ -is [System.Management.Automation.ErrorRecord]) {
+        $script:failed = $true
+        [Console]::Error.WriteLine("Error: $($_.Exception.Message)")
     } elseif ($null -ne $_) {
         $_
     }
 }
+if ($runsProgram) { llvmup @tokens | ForEach-Object $emit } else { llvmup @tokens 2>&1 | ForEach-Object $emit }
 
 $cmdExit = if ($null -ne $LASTEXITCODE) { [int]$LASTEXITCODE } else { 0 }
 if ($runsProgram) {
