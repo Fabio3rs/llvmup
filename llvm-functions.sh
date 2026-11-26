@@ -748,7 +748,7 @@ llvmup() {
             ;;
         deactivate)
             shift
-            unset LLVMUP_SESSION_OVERRIDE
+            unset LLVMUP_SESSION_OVERRIDE LLVMUP_PREVIOUS_SESSION
             if [ "${_LLVMUP_ENV_SAVED:-0}" = 1 ] && llvm-load-session-helpers; then
                 _llvmup_session_restore
                 unset _LLVMUP_AUTOACTIVATE_ACTIVE _LLVMUP_AUTOACTIVATE_ROOT

@@ -224,6 +224,8 @@ function Deactivate-Llvm {
     [CmdletBinding()]
     param()
     Remove-Item -LiteralPath 'Env:LLVMUP_SESSION_OVERRIDE' -ErrorAction SilentlyContinue
+    # Deactivation returns to the original environment, including the 'use -' history.
+    Remove-Item -LiteralPath 'Env:LLVMUP_PREVIOUS_SESSION' -ErrorAction SilentlyContinue
     return Invoke-LlvmDeactivate
 }
 
@@ -779,7 +781,12 @@ function Invoke-LlvmUpUse {
         if (-not $env:LLVMUP_PREVIOUS_SESSION) {
             throw 'No previous toolchain selection recorded in this session.'
         }
-        $prev = $env:LLVMUP_PREVIOUS_SESSION | ConvertFrom-Json
+        # Same "name|compiler|target" format as the Bash 'use' (older sessions stored JSON).
+        $raw = [string]$env:LLVMUP_PREVIOUS_SESSION
+        $prev = if ($raw.StartsWith('{')) { $raw | ConvertFrom-Json } else {
+            $parts = $raw.Split('|')
+            [pscustomobject]@{ name = $parts[0]; compiler = $(if ($parts.Count -gt 1) { $parts[1] } else { '' }); target = $(if ($parts.Count -gt 2) { $parts[2] } else { '' }) }
+        }
         $selector = [string]$prev.name
         if (-not $compiler -and $prev.compiler) { $compiler = [string]$prev.compiler }
         if (-not $target -and $prev.target) { $target = [string]$prev.target }
@@ -789,12 +796,7 @@ function Invoke-LlvmUpUse {
 
     # Save current active state for 'use -'
     if ($env:_ACTIVE_LLVM) {
-        $prevObj = [ordered]@{
-            name = $env:_ACTIVE_LLVM
-            compiler = if ($env:LLVMUP_ACTIVE_COMPILER) { $env:LLVMUP_ACTIVE_COMPILER } else { '' }
-            target = if ($env:LLVMUP_ACTIVE_TARGET) { $env:LLVMUP_ACTIVE_TARGET } else { '' }
-        }
-        Set-Item -LiteralPath 'Env:LLVMUP_PREVIOUS_SESSION' -Value ($prevObj | ConvertTo-Json -Compress)
+        Set-Item -LiteralPath 'Env:LLVMUP_PREVIOUS_SESSION' -Value ("{0}|{1}|{2}" -f $env:_ACTIVE_LLVM, $env:LLVMUP_ACTIVE_COMPILER, $env:LLVMUP_ACTIVE_TARGET)
     }
 
     $manifest = Resolve-LlvmInstalledToolchain -Selector $selector -ToolchainsPath $toolchainsPath -HomePath $homePath -CrtFilter $crt

@@ -377,6 +377,7 @@ Describe 'LLVMUP Recipes, Multi-Provider Engine, and Ergonomic CLI' {
             llvmup deactivate | Should -BeTrue
             $env:LLVMUP_ACTIVE_TOOLCHAIN | Should -BeNullOrEmpty
             $env:CC | Should -BeNullOrEmpty
+            $env:LLVMUP_PREVIOUS_SESSION | Should -BeNullOrEmpty
         }
 
         It 'executes +toolchain and run in isolated process env with exit code preservation' {
