@@ -1178,6 +1178,8 @@ function Invoke-LlvmActivate {
             $rounded = [math]::Floor($combined / 10) * 10
             $envVarName = "LLVM_SYS_${rounded}_PREFIX"
             [Environment]::SetEnvironmentVariable($envVarName, $versionPath, "Process")
+            # llvm-sys >= 18.1 reads LLVM_SYS_<major><minor>_PREFIX (e.g. 181).
+            [Environment]::SetEnvironmentVariable("LLVM_SYS_${combined}_PREFIX", $versionPath, "Process")
             Write-Verbose "Set environment variable $envVarName = $versionPath (for LLVM $parsedVersion)"
         }
     }

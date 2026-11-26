@@ -8,6 +8,10 @@ $script:ManifestModule = Join-Path $PSScriptRoot 'Llvm-Manifest.psm1'
 if ((Test-Path -LiteralPath $script:ManifestModule) -and -not (Get-Module -Name 'Llvm-Manifest')) {
     Import-Module $script:ManifestModule -DisableNameChecking
 }
+$script:RecipesModule = Join-Path $PSScriptRoot 'Llvm-Recipes.psm1'
+if ((Test-Path -LiteralPath $script:RecipesModule) -and -not (Get-Module -Name 'Llvm-Recipes')) {
+    Import-Module $script:RecipesModule -DisableNameChecking
+}
 
 function Resolve-LlvmManifestToolAbsPath {
     [CmdletBinding()]
@@ -53,6 +57,10 @@ function Get-LlvmEnvironmentDelta {
     $supportedTargets = if ($Manifest.supported_targets) { @($Manifest.supported_targets) } else { @() }
     if ($Target -and $supportedTargets.Count -gt 0 -and ($supportedTargets -notcontains $Target)) {
         throw "Toolchain '$($Manifest.install_name)' ($provider) does not support target '$Target'. Supported: $($supportedTargets -join ', ')"
+    }
+
+    if ($effCompiler -eq 'gcc' -and (Get-Command Get-LlvmRecipePathConstraintWarnings -ErrorAction SilentlyContinue)) {
+        foreach ($w in @(Get-LlvmRecipePathConstraintWarnings -Provider $provider -RootPath $root -Compiler $effCompiler)) { Write-Warning $w }
     }
 
     $tools = $Manifest.tools
@@ -140,8 +148,10 @@ function Get-LlvmEnvironmentDelta {
 
     if ($Manifest.llvm_version -and $Manifest.llvm_version -match '^(\d+)\.(\d+)') {
         $major = [int]$matches[1]; $minor = [int]$matches[2]
+        # llvm-sys reads LLVM_SYS_<major><minor>_PREFIX (181 for 18.1); the rounded name is the historical llvmup one.
         $rounded = [math]::Floor(($major * 10 + $minor) / 10) * 10
         $setVars["LLVM_SYS_${rounded}_PREFIX"] = $root
+        $setVars["LLVM_SYS_$($major * 10 + $minor)_PREFIX"] = $root
     }
 
     $setVars['_ACTIVE_LLVM'] = [string]$Manifest.install_name

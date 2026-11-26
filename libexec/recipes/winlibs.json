@@ -47,6 +47,14 @@
     },
     "supported_hosts": ["windows"]
   },
+  "path_constraints": [
+    {
+      "compilers": ["gcc"],
+      "forbid_whitespace": true,
+      "reason": "WinLibs GCC (collect2/ld) cannot link when the installation path contains spaces; Clang from the same bundle is unaffected (verified with GCC 16.2.0 r3 on Windows 10).",
+      "remedy": "Install under a directory without spaces, for example: $env:LLVM_TOOLCHAINS_DIR = 'C:\\llvmup\\toolchains'"
+    }
+  ],
   "layout": {
     "expected_top_dirs": ["mingw64", "mingw32"],
     "bin_dir": "bin",

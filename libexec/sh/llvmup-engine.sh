@@ -147,6 +147,18 @@ eng_recipe_path() {
 # GitHub releases (fixtures, pagination, retries)
 # ---------------------------------------------------------------------------------------------
 
+# eng_path_warnings <provider> <root> [compiler]: print the recipe's documented path limitations for root.
+eng_path_warnings() {
+    local rp
+    rp="$(eng_recipe_path "$1" 2>/dev/null)" || return 0
+    jq -r --arg root "$2" --arg cc "${3:-}" '
+        (.path_constraints // [])[]
+        | select($cc == "" or ((.compilers // []) | length) == 0 or ((.compilers // []) | index($cc)))
+        | select(.forbid_whitespace == true and ($root | test("\\s")))
+        | "Path \"\($root)\" contains whitespace (affects: \((.compilers // []) | join(", "))). \(.reason) \(.remedy)"' "$rp" |
+        while IFS= read -r w; do eng_warn "$w"; done
+}
+
 eng_http_get() {
     # eng_http_get <url> <out-file> [headers-file]
     local url="$1" out="$2" hdr="${3:-/dev/null}"
@@ -1074,7 +1086,9 @@ eng_delta() {
             prepend_path: [$root + "/bin"],
             set: (($resolved | map(select(.value != null)) | from_entries)
                   + (if (($m.llvm_version // "") | test("^[0-9]+\\.[0-9]+")) then
-                       {("LLVM_SYS_" + ((($m.llvm_version | split(".")[0] | tonumber) * 10 + ($m.llvm_version | split(".")[1] | tonumber)) / 10 | floor * 10 | tostring) + "_PREFIX"): $root}
+                       ((($m.llvm_version | split(".")[0] | tonumber) * 10 + ($m.llvm_version | split(".")[1] | tonumber)) as $mm
+                        | {("LLVM_SYS_" + ($mm / 10 | floor * 10 | tostring) + "_PREFIX"): $root,
+                           ("LLVM_SYS_" + ($mm | tostring) + "_PREFIX"): $root})
                      else {} end)
                   + {_ACTIVE_LLVM: $m.install_name, _ACTIVE_LLVM_PATH: $root, LLVMUP_ACTIVE_VERSION: $m.install_name,
                      LLVMUP_ACTIVE_PATH: $root, LLVMUP_ACTIVE_ID: ($m.id // $m.install_name), LLVMUP_ACTIVE_PROVIDER: $prov,
@@ -1231,6 +1245,7 @@ cmd_install() {
     case "$name" in ""|.|..|*/*|*\\*) eng_die "Invalid installation name: $name" ;; esac
     tc="$(eng_toolchains)"; dest="$tc/$name"
     mkdir -p "$tc"
+    [ "$ENGINE_QUIET" = 1 ] || eng_path_warnings "$prov" "$dest"
 
     local lock="$tc/.$name.llvmup.lock"
     mkdir "$lock" 2>/dev/null || eng_die "Another llvmup operation is currently installing or modifying '$name' ($lock)."

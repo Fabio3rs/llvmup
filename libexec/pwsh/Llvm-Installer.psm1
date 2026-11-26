@@ -164,6 +164,9 @@ function Invoke-LlvmInstallPrebuiltFromRecipe {
     }
     $installPath = Join-Path $ToolchainsPath $installName
     $null = New-Item -ItemType Directory -Path $ToolchainsPath -Force
+    if (-not $Quiet) {
+        foreach ($w in @(Get-LlvmRecipePathConstraintWarnings -Provider $effProvider -RootPath $installPath)) { Write-Warning $w }
+    }
 
     $lockHandle = Enter-LlvmToolchainLock -ToolchainsPath $ToolchainsPath -InstallName $installName
     $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ('llvmup-op-' + [guid]::NewGuid().ToString('N'))

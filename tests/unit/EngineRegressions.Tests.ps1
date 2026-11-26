@@ -304,6 +304,38 @@ Describe 'LLVMUP engine regressions' {
         }
     }
 
+    Context 'Environment delta details' {
+        BeforeAll {
+            $script:mkRoot = {
+                param([string]$Name)
+                $r = Join-Path $TestDrive $Name
+                $null = New-Item -ItemType Directory -Path (Join-Path $r 'bin') -Force
+                foreach ($n in @('clang.exe', 'clang++.exe', 'gcc.exe', 'g++.exe')) { Set-Content -LiteralPath (Join-Path $r "bin\$n") -Value '' }
+                $m = New-LlvmToolchainManifest -Id 'wl' -InstallName $Name -Provider 'winlibs' -LlvmVersion '23.1.3' -HostOs 'windows' -HostArch 'x64' -Variant @{ crt = 'ucrt'; default_compiler = 'clang' } -Root $r
+                $m['root_path'] = $r
+                return $m
+            }
+        }
+
+        It 'exports both the historical and the llvm-sys LLVM_SYS_NNN_PREFIX names' {
+            $m = & $script:mkRoot 'wl-nosp'
+            $d = Get-LlvmEnvironmentDelta -Manifest $m
+            $d.set['LLVM_SYS_230_PREFIX'] | Should -Be $m.root_path
+            $d.set['LLVM_SYS_231_PREFIX'] | Should -Be $m.root_path
+        }
+
+        It 'warns about WinLibs GCC under a path with spaces only when GCC is selected' {
+            $m = & $script:mkRoot 'wl with space'
+            $gccWarn = @(Get-LlvmEnvironmentDelta -Manifest $m -Compiler gcc 3>&1 | Where-Object { $_ -is [System.Management.Automation.WarningRecord] })
+            $gccWarn.Count | Should -Be 1
+            "$($gccWarn[0])" | Should -Match 'contains whitespace \(affects: gcc\)'
+            $clangWarn = @(Get-LlvmEnvironmentDelta -Manifest $m -Compiler clang 3>&1 | Where-Object { $_ -is [System.Management.Automation.WarningRecord] })
+            $clangWarn.Count | Should -Be 0
+            @(Get-LlvmRecipePathConstraintWarnings -Provider 'winlibs' -RootPath 'C:\nospace\wl').Count | Should -Be 0
+            @(Get-LlvmRecipePathConstraintWarnings -Provider 'official' -RootPath 'C:\with space\x').Count | Should -Be 0
+        }
+    }
+
     Context 'llvmup.cmd launcher' {
         BeforeAll {
             $script:launcher = Join-Path $script:repoRoot 'llvmup.cmd'

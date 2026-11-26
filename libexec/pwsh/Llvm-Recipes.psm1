@@ -607,7 +607,34 @@ function Test-LlvmRecipeStagingValid {
     return $caps
 }
 
+function Get-LlvmRecipePathConstraintWarnings {
+    <#
+    .SYNOPSIS
+    Returns the recipe's documented path limitations that apply to RootPath (and, when given, Compiler).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Provider,
+        [Parameter(Mandatory = $true)][string]$RootPath,
+        [string]$Compiler = ''
+    )
+    $recipe = $null
+    try { $recipe = Get-LlvmRecipe -Provider $Provider } catch { return @() }
+    if (-not $recipe -or -not $recipe.PSObject.Properties['path_constraints']) { return @() }
+    $messages = @()
+    foreach ($c in @($recipe.path_constraints)) {
+        $compilers = @($c.compilers)
+        if ($Compiler -and $compilers.Count -gt 0 -and $compilers -notcontains $Compiler.ToLowerInvariant()) { continue }
+        if ($c.forbid_whitespace -and $RootPath -match '\s') {
+            $scope = if ($compilers.Count) { " (affects: $($compilers -join ', '))" } else { '' }
+            $messages += "Path '$RootPath' contains whitespace$scope. $($c.reason) $($c.remedy)"
+        }
+    }
+    return $messages
+}
+
 Export-ModuleMember -Function @(
+    'Get-LlvmRecipePathConstraintWarnings',
     'Get-LlvmRecipesDirectory',
     'Get-LlvmProviderList',
     'Get-LlvmRecipe',
