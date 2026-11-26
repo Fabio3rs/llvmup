@@ -99,10 +99,13 @@ Notes:
   come from the selected toolchain only. Copy them next to the program to run it elsewhere.
 - Official LLVM on Windows targets MSVC and needs Visual Studio/Windows SDK for hosted builds; the
   matrix only checks that it starts (`official` configuration).
-- Official LLVM 23.1.6 for Linux x64 downloaded, verified (sha256) and extracted with the Bash
-  engine; the 282 MB `clang` could not be executed on WSL1 (`Exec format error`), so the install
-  was rejected by the validation step. This is a WSL1 limit, not a verified llvmup failure; it needs
-  a real Linux host or WSL2 (pending).
+- Official LLVM 23.1.6 for Linux x64 (`.tar.zst`, 1.2 GB) was downloaded, verified (sha256) and
+  extracted by the Bash engine. On WSL1 the kernel loader cannot execute the 282 MB `clang-23`
+  directly (`Exec format error`), so llvmup's validation step rejected the install there. Started
+  through the dynamic loader (`ld-linux-x86-64.so.2 clang-23`) the same file runs: `clang 23.1.6`
+  compiled a C17 and a C++23 (`libstdc++`) program, linked with the system `g++` and executed
+  (`official-linux sum=6`). A direct, unassisted install-and-build on a real Linux host or WSL2 is
+  still pending.
 - Windows PowerShell 5.1 (`-File`) rejects a lone `-` argument (for example `clang -x c -`) before
   llvmup runs; use PowerShell 7 or pass a file instead.
 

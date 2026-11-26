@@ -133,8 +133,14 @@ targets); the Bash engine hid the compiler's own message when validation failed.
 
 Not executed (prepared only): GitHub workflows (`tests.yml`, `action-e2e.yml`), macOS hosts,
 Windows ARM64 execution. Official LLVM for Linux was downloaded, verified and extracted by the Bash
-engine, but its 282 MB `clang` cannot be executed on WSL1 (`Exec format error`); a real Linux host or
-WSL2 (not installed here) is needed to finish that check.
+engine and its `clang` compiled and ran C17/C++23 programs when started through the dynamic loader,
+but WSL1 cannot exec the 282 MB binary directly, so llvmup's own install validation fails there; a
+real Linux host or WSL2 (not installed here) is needed for an unassisted install.
+
+Performance (idle Windows 10 host, SSD, warm cache): Bash engine `status` 0.10 s, `list` 0.14 s,
+`which` 0.44 s (WSL1); PowerShell CLI child process `status` 0.9 s, `list` 1.0 s, `which` 1.0 s
+(about 0.45 s of that is importing the module); the session functions (`use`, `use --auto`) run in
+the already-loaded module. Extraction benchmark: `docs/EXTRACTION.md`.
 
 ## 6. Decisions
 
