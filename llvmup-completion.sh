@@ -110,11 +110,76 @@ _llvmup_completions() {
     local command="install"
     if [ ${#words[@]} -gt 1 ]; then
         case "${words[1]}" in
-            doctor|install|activate|deactivate|env|resolve|vscode-activate|status|list|remove|disk-usage|default|config|help)
+            doctor|install|activate|deactivate|env|resolve|vscode-activate|status|list|remove|disk-usage|default|config|help|\
+            use|run|which|where|provides|info|alias|pin|sync|update|pick|toolchain|shell|cmake-toolchain)
                 command="${words[1]}"
                 ;;
         esac
     fi
+
+    # Options shared by the provider-aware commands.
+    case "$prev" in
+        --provider) _llvmup_collect_values _llvmup_get_provider_items "$cur"; return 0 ;;
+        --compiler) _llvmup_collect_values _llvmup_get_compiler_items "$cur"; return 0 ;;
+        --target) _llvmup_collect_values _llvmup_get_target_items "$cur"; return 0 ;;
+        --crt) _llvmup_collect_values _llvmup_get_crt_items "$cur"; return 0 ;;
+        --extractor) _llvmup_collect_values _llvmup_get_extractor_items "$cur"; return 0 ;;
+        --toolchain) _llvmup_collect_values _llvmup_get_toolchain_items "$cur"; return 0 ;;
+        --output|-o) COMPREPLY=( $(compgen -f -- "$cur") ); return 0 ;;
+    esac
+
+    case "$command" in
+        use|run|which|where|info|shell|cmake-toolchain|update)
+            local w
+            for w in "${words[@]:2:cword-2}"; do [ "$w" != -- ] || { COMPREPLY=( $(compgen -c -- "$cur") ); return 0; }; done
+            if [[ "$cur" == -* ]]; then
+                case "$command" in
+                    use) _llvmup_collect_values _llvmup_get_use_flag_items "$cur" ;;
+                    *) _llvmup_collect_values _llvmup_get_run_flag_items "$cur" ;;
+                esac
+            elif [ "$command" = which ] && [ "$cword" -eq 2 ]; then
+                COMPREPLY=( $(compgen -W "clang clang++ clangd clang-format clang-tidy lld ld.lld lld-link llvm-ar llvm-config gcc g++ gdb lldb cmake ninja windres" -- "$cur") )
+            else
+                _llvmup_collect_combined_values "$cur" _llvmup_get_toolchain_items _llvmup_get_provider_selector_items
+            fi
+            return 0
+            ;;
+        provides)
+            COMPREPLY=( $(compgen -W "clang clang++ clangd lld ld.lld lld-link llvm-config libclang gcc g++ gdb lldb windres cmake ninja" -- "$cur") )
+            return 0
+            ;;
+        alias)
+            case "$cword" in
+                2) COMPREPLY=( $(compgen -W "set list show remove" -- "$cur") ) ;;
+                3) case "$prev" in show|remove) _llvmup_collect_values _llvmup_get_alias_items "$cur" ;; esac ;;
+                4) _llvmup_collect_values _llvmup_get_toolchain_items "$cur" ;;
+            esac
+            return 0
+            ;;
+        toolchain)
+            case "$cword" in
+                2) COMPREPLY=( $(compgen -W "link unlink list" -- "$cur") ) ;;
+                3) [ "$prev" = unlink ] && COMPREPLY=( $(compgen -W "$(_llvmup_get_external_names)" -- "$cur") ) ;;
+                4) COMPREPLY=( $(compgen -d -- "$cur") ) ;;
+            esac
+            return 0
+            ;;
+        pin)
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "--current --fuzzy --crt --target --compiler" -- "$cur") )
+            else
+                _llvmup_collect_combined_values "$cur" _llvmup_get_toolchain_items _llvmup_get_provider_selector_items
+            fi
+            return 0
+            ;;
+        sync)
+            COMPREPLY=( $(compgen -W "--locked --verify" -- "$cur") )
+            return 0
+            ;;
+        pick)
+            return 0
+            ;;
+    esac
 
     case "$command" in
         activate|vscode-activate)
@@ -132,7 +197,7 @@ _llvmup_completions() {
                     return 0
                     ;;
                 --format)
-                    COMPREPLY=( $(compgen -W "shell github" -- "$cur") )
+                    COMPREPLY=( $(compgen -W "shell github json" -- "$cur") )
                     return 0
                     ;;
             esac
@@ -265,6 +330,7 @@ _llvmup_completions() {
 
             if [ "$has_target" -eq 0 ]; then
                 _llvmup_collect_combined_values "$cur" \
+                    _llvmup_get_provider_selector_items \
                     _llvmup_get_expression_items \
                     _llvmup_get_range_template_items \
                     _llvmup_get_local_version_items \

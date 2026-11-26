@@ -107,6 +107,20 @@ remove	command	Remove one installed LLVM version
 disk-usage	command	Show disk usage of installed LLVM versions
 default	command	Manage the global default LLVM version
 config	command	Manage project configuration
+use	command	Select a toolchain for the current shell session
+run	command	Run a command with a toolchain without changing the shell
+which	command	Show the real path of a tool in the selected toolchain
+where	command	Show the installation root of a toolchain
+provides	command	List installed toolchains that provide a tool
+info	command	Show the manifest of an installed toolchain
+alias	command	Manage aliases for installed toolchains
+pin	command	Pin the project toolchain in .llvmup-config
+sync	command	Install the toolchain declared by the project
+update	command	Install the newest release of the same provider and major
+pick	command	Choose an installed toolchain interactively
+toolchain	command	Register external toolchains (link/unlink/list)
+shell	command	Start a subshell with a toolchain active
+cmake-toolchain	command	Generate a CMake toolchain file
 help	command	Show help
 EOF
 }
@@ -149,6 +163,7 @@ _llvmup_get_config_action_items() {
         cat <<'EOF'
 load	config	Load and display the current project configuration
 apply	config	Install using the loaded project configuration
+lock	config	Record the exact assets in .llvmup-lock.json
 activate	config	Activate an installed version from the project configuration
 init	config	Recreate or update the current project configuration
 EOF
@@ -178,8 +193,122 @@ _llvmup_get_install_flag_items() {
 --reconfigure	flag	Force CMake reconfiguration
 --list-only	flag	List source releases without building
 --verify	flag	Choose warn, strict, or skip release verification
+--provider	flag	Choose the toolchain provider
+--release	flag	Install an exact upstream release tag
+--crt	flag	Choose the C runtime (ucrt, msvcrt)
+--threads	flag	Choose the threading model (WinLibs)
+--target	flag	Choose the default target triple
+--compiler	flag	Choose the default compiler (clang, gcc)
+--extractor	flag	Choose the archive extractor
+--use	flag	Select the toolchain after installing it
+--force	flag	Replace an existing installation
+--no-cache	flag	Ignore the download cache
 EOF
 }
+# --- Provider/alias/target items (offline: recipes, aliases.json and installed manifests) -------------
+_llvmup_completion_dir() {
+    if [ -n "${BASH_SOURCE:-}" ]; then
+        (cd -- "$(dirname -- "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)
+    elif [ -n "${ZSH_VERSION:-}" ]; then
+        # shellcheck disable=SC2296
+        printf '%s\n' "${${(%):-%x}:A:h}"
+    fi
+}
+_LLVMUP_COMPLETION_DIR="$(_llvmup_completion_dir)"
+
+_llvmup_home_dir() {
+    if [ -n "${LLVM_HOME:-}" ]; then printf '%s\n' "$LLVM_HOME"
+    elif [ -n "${LLVM_CUSTOM_HOME:-}" ]; then printf '%s\n' "$LLVM_CUSTOM_HOME"
+    else printf '%s\n' "$HOME/.llvm"; fi
+}
+
+_llvmup_get_provider_names() {
+    local dir f
+    for dir in "${LLVMUP_RECIPES_DIR:-}" "$_LLVMUP_COMPLETION_DIR/libexec/recipes" "$_LLVMUP_COMPLETION_DIR/../libexec/recipes"; do
+        [ -n "$dir" ] && [ -d "$dir" ] || continue
+        for f in "$dir"/*.json; do [ -f "$f" ] && basename "$f" .json; done
+        return 0
+    done
+    printf '%s\n' official winlibs llvm-mingw
+}
+
+_llvmup_get_provider_items() {
+    _llvmup_get_provider_names | while IFS= read -r p; do printf '%s\tprovider\tToolchain provider\n' "$p"; done
+}
+
+_llvmup_get_provider_selector_items() {
+    _llvmup_get_provider_names | while IFS= read -r p; do
+        printf '%s@latest\tselector\tNewest %s release\n' "$p" "$p"
+    done
+}
+
+_llvmup_get_alias_names() {
+    local f
+    f="$(_llvmup_home_dir)/aliases.json"
+    [ -f "$f" ] || return 0
+    # Keys of the "aliases" object: lines like   "name": {
+    sed -n 's/^[[:space:]]*"\([A-Za-z0-9_.+-]*\)"[[:space:]]*:[[:space:]]*{.*/\1/p' "$f" | grep -v '^aliases$'
+}
+
+_llvmup_get_alias_items() {
+    _llvmup_get_alias_names | while IFS= read -r a; do printf '%s\talias\tToolchain alias\n' "$a"; done
+}
+
+_llvmup_get_external_names() {
+    local f
+    f="$(_llvmup_home_dir)/external-toolchains.json"
+    [ -f "$f" ] || return 0
+    sed -n 's/^[[:space:]]*"\([A-Za-z0-9_.+-]*\)"[[:space:]]*:[[:space:]]*{.*/\1/p' "$f" | grep -v '^toolchains$'
+}
+
+_llvmup_get_toolchain_items() {
+    _llvmup_get_local_versions 2>/dev/null | while IFS= read -r v; do printf '%s\tinstalled\tInstalled toolchain\n' "$v"; done
+    _llvmup_get_alias_items
+    _llvmup_get_external_names | while IFS= read -r e; do printf '%s\texternal\tLinked external toolchain\n' "$e"; done
+}
+
+_llvmup_get_target_items() {
+    local tc
+    tc="${LLVM_TOOLCHAINS_DIR:-$(_llvmup_home_dir)/toolchains}"
+    {
+        printf '%s\n' x86_64-w64-mingw32 i686-w64-mingw32 aarch64-w64-mingw32 armv7-w64-mingw32
+        cat "$tc"/*/.llvmup-toolchain.json 2>/dev/null | grep -o '"[a-z0-9_]*-[a-z0-9_]*-[a-z0-9_.-]*"' | tr -d '"' | grep -E -- '-(mingw32|linux-gnu|windows-msvc|apple-darwin)'
+    } | sort -u | while IFS= read -r t; do printf '%s\ttarget\tTarget triple\n' "$t"; done
+}
+
+_llvmup_get_compiler_items() {
+    printf '%s\tcompiler\t%s\n' clang 'LLVM Clang' gcc 'GNU GCC (WinLibs)'
+}
+
+_llvmup_get_crt_items() {
+    printf '%s\tcrt\t%s\n' ucrt 'Universal CRT' msvcrt 'Legacy MSVCRT'
+}
+
+_llvmup_get_extractor_items() {
+    printf '%s\textractor\t%s\n' auto 'Best available backend' 7z '7-Zip' tar 'tar' zip 'Built-in ZIP' python 'Python tarfile'
+}
+
+_llvmup_get_run_flag_items() {
+    cat <<'EOF'
+--compiler	flag	Choose clang or gcc inside the bundle
+--target	flag	Choose a target triple of the bundle
+--crt	flag	Filter by C runtime
+--install	flag	Install the toolchain when missing
+--locked	flag	Use the toolchain recorded in .llvmup-lock.json
+--	flag	End of llvmup options; the command follows
+EOF
+}
+
+_llvmup_get_use_flag_items() {
+    cat <<'EOF'
+--compiler	flag	Choose clang or gcc inside the bundle
+--target	flag	Choose a target triple of the bundle
+--crt	flag	Filter by C runtime
+--install	flag	Install the toolchain when missing
+--auto	flag	Drop the manual selection and follow project/default
+EOF
+}
+
 
 _llvmup_get_expression_items() {
     cat <<'EOF'

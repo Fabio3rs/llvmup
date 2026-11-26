@@ -81,6 +81,7 @@ _llvmup_zsh_complete_config_actions() {
 }
 
 _llvmup_zsh_complete_install_targets() {
+    _llvmup_zsh_values llvmup-selectors 'Provider selectors' _llvmup_get_provider_selector_items
     _llvmup_zsh_collect_specs _llvmup_get_install_target_items
     [[ ${#_LLVMUP_ZSH_EXPRESSIONS[@]} -gt 0 ]] && _describe -t llvmup-expressions 'Expressions' _LLVMUP_ZSH_EXPRESSIONS
     [[ ${#_LLVMUP_ZSH_TEMPLATES[@]} -gt 0 ]] && _describe -t llvmup-templates 'Range and wildcard templates' _LLVMUP_ZSH_TEMPLATES
@@ -113,6 +114,20 @@ _llvmup_zsh_complete_cmake_flags() {
     _describe -t llvmup-cmake 'CMake flags' _LLVMUP_ZSH_CMAKE
 }
 
+_llvmup_zsh_values() {
+    # _llvmup_zsh_values <tag> <title> <generator...>: describe every value printed by the generators.
+    local tag="$1" title="$2" gen value group desc
+    shift 2
+    local -a items
+    for gen in "$@"; do
+        while IFS=$'\t' read -r value group desc; do
+            [[ -z "$value" ]] && continue
+            items+=("${value//:/\\:}:${desc}")
+        done < <("$gen")
+    done
+    (( ${#items[@]} )) && _describe -t "$tag" "$title" items
+}
+
 _llvmup() {
     emulate -L zsh
 
@@ -136,6 +151,73 @@ _llvmup() {
         command="install"
     fi
 
+    case "$prev" in
+        --provider) _llvmup_zsh_values llvmup-providers 'Providers' _llvmup_get_provider_items; return 0 ;;
+        --compiler) _llvmup_zsh_values llvmup-compilers 'Compilers' _llvmup_get_compiler_items; return 0 ;;
+        --target) _llvmup_zsh_values llvmup-targets 'Targets' _llvmup_get_target_items; return 0 ;;
+        --crt) _llvmup_zsh_values llvmup-crts 'C runtimes' _llvmup_get_crt_items; return 0 ;;
+        --extractor) _llvmup_zsh_values llvmup-extractors 'Extractors' _llvmup_get_extractor_items; return 0 ;;
+        --toolchain) _llvmup_zsh_values llvmup-toolchains 'Toolchains' _llvmup_get_toolchain_items; return 0 ;;
+        --output|-o) _files; return 0 ;;
+    esac
+
+    case "$command" in
+        use|run|which|where|info|shell|cmake-toolchain|update)
+            if (( ${words[(I)--]} > 2 && ${words[(I)--]} < CURRENT )); then
+                _command_names -e
+                return 0
+            fi
+            if [[ "$cur" == -* ]]; then
+                if [[ "$command" == use ]]; then
+                    _llvmup_zsh_values llvmup-flags 'Flags' _llvmup_get_use_flag_items
+                else
+                    _llvmup_zsh_values llvmup-flags 'Flags' _llvmup_get_run_flag_items
+                fi
+            elif [[ "$command" == which ]] && (( CURRENT == 3 )); then
+                compadd -- clang clang++ clangd clang-format clang-tidy lld ld.lld lld-link llvm-ar llvm-config gcc g++ gdb lldb cmake ninja windres
+            else
+                [[ "$command" == use ]] && (( CURRENT == 3 )) && compadd -- -
+                _llvmup_zsh_values llvmup-toolchains 'Toolchains' _llvmup_get_toolchain_items _llvmup_get_provider_selector_items
+            fi
+            return 0
+            ;;
+        provides)
+            compadd -- clang clang++ clangd lld ld.lld lld-link llvm-config libclang gcc g++ gdb lldb windres cmake ninja
+            return 0
+            ;;
+        alias)
+            case $CURRENT in
+                3) compadd -- set list show remove ;;
+                4) [[ "$prev" == (show|remove) ]] && _llvmup_zsh_values llvmup-aliases 'Aliases' _llvmup_get_alias_items ;;
+                5) _llvmup_zsh_values llvmup-toolchains 'Toolchains' _llvmup_get_toolchain_items ;;
+            esac
+            return 0
+            ;;
+        toolchain)
+            case $CURRENT in
+                3) compadd -- link unlink list ;;
+                4) [[ "$prev" == unlink ]] && compadd -- ${(f)"$(_llvmup_get_external_names)"} ;;
+                5) _directories ;;
+            esac
+            return 0
+            ;;
+        pin)
+            if [[ "$cur" == -* ]]; then
+                compadd -- --current --fuzzy --crt --target --compiler
+            else
+                _llvmup_zsh_values llvmup-toolchains 'Toolchains' _llvmup_get_toolchain_items _llvmup_get_provider_selector_items
+            fi
+            return 0
+            ;;
+        sync)
+            compadd -- --locked --verify
+            return 0
+            ;;
+        pick)
+            return 0
+            ;;
+    esac
+
     case "$command" in
         activate|vscode-activate)
             _llvmup_zsh_complete_local_versions
@@ -143,7 +225,7 @@ _llvmup() {
             ;;
         env)
             if [[ "$prev" == "--format" ]]; then
-                compadd -- shell github
+                compadd -- shell github json
                 return 0
             fi
             if [[ "$cur" == -* ]]; then

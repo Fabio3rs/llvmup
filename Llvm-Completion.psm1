@@ -58,7 +58,15 @@ if (-not (Get-Command Get-ArgumentCompleter -ErrorAction SilentlyContinue)) {
             ParameterName = $ParameterName
             ScriptBlock = $ScriptBlock
         }
-        $script:__llvm_completers += $entry
+        $script:__llvm_completers = @($script:__llvm_completers | Where-Object { -not ($_.CommandName -eq $CommandName -and $_.ParameterName -eq $ParameterName) }) + $entry
+        # No PowerShell version ships Get-ArgumentCompleter, so this shim is always active: keep the local
+        # registry for introspection and also register with the real cmdlet so tab completion works.
+        $real = Get-Command -Name 'Microsoft.PowerShell.Core\Register-ArgumentCompleter' -CommandType Cmdlet -ErrorAction SilentlyContinue
+        if ($real) {
+            $realArgs = @{ CommandName = $CommandName; ScriptBlock = $ScriptBlock }
+            if ($ParameterName) { $realArgs.ParameterName = $ParameterName }
+            & $real @realArgs
+        }
     }
 
     function Get-ArgumentCompleter {
@@ -250,33 +258,130 @@ $installSB = {
     }
 }
 
+function Get-LlvmCompletionHome {
+    if ($env:LLVM_HOME) { return $env:LLVM_HOME }
+    if ($env:LLVM_CUSTOM_HOME) { return $env:LLVM_CUSTOM_HOME }
+    $h = Resolve-UserHome
+    if ($h) { return (Join-Path $h '.llvm') }
+    return $null
+}
+
+function Get-LlvmProviderNames {
+    $dir = Join-Path (Join-Path $PSScriptRoot 'libexec') 'recipes'
+    $names = @(Get-ChildItem -LiteralPath $dir -Filter '*.json' -File -ErrorAction SilentlyContinue | ForEach-Object { $_.BaseName })
+    if ($names.Count) { return $names }
+    return @('official', 'winlibs', 'llvm-mingw')
+}
+
+function Get-LlvmToolchainCompletionItems {
+    # Offline: installed toolchains (any provider), aliases and linked external toolchains.
+    $homeDir = Get-LlvmCompletionHome
+    $tc = if ($env:LLVM_TOOLCHAINS_DIR) { $env:LLVM_TOOLCHAINS_DIR } elseif ($homeDir) { Join-Path $homeDir 'toolchains' } else { $null }
+    $items = @()
+    if ($tc -and (Test-Path -LiteralPath $tc)) {
+        foreach ($d in @(Get-ChildItem -LiteralPath $tc -Directory -ErrorAction SilentlyContinue)) {
+            if ($d.Name -match '\.(installing|backup|staging|raw)-') { continue }
+            if ((Test-Path -LiteralPath (Join-Path $d.FullName '.llvmup-toolchain.json')) -or (Test-Path -LiteralPath (Join-Path $d.FullName 'bin'))) { $items += $d.Name }
+        }
+    }
+    foreach ($f in @('aliases.json', 'external-toolchains.json')) {
+        if (-not $homeDir) { continue }
+        $path = Join-Path $homeDir $f
+        if (-not (Test-Path -LiteralPath $path)) { continue }
+        try {
+            $j = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+            $obj = if ($f -eq 'aliases.json') { $j.aliases } else { $j.toolchains }
+            if ($obj) { $items += @($obj.PSObject.Properties | ForEach-Object { $_.Name }) }
+        } catch {}
+    }
+    return @($items | Select-Object -Unique)
+}
+
+function Get-LlvmTargetCompletionItems {
+    $homeDir = Get-LlvmCompletionHome
+    $tc = if ($env:LLVM_TOOLCHAINS_DIR) { $env:LLVM_TOOLCHAINS_DIR } elseif ($homeDir) { Join-Path $homeDir 'toolchains' } else { $null }
+    $targets = @('x86_64-w64-mingw32', 'i686-w64-mingw32', 'aarch64-w64-mingw32', 'armv7-w64-mingw32')
+    if ($tc -and (Test-Path -LiteralPath $tc)) {
+        foreach ($m in @(Get-ChildItem -Path (Join-Path $tc '*\.llvmup-toolchain.json') -File -ErrorAction SilentlyContinue)) {
+            try { $targets += @((Get-Content -LiteralPath $m.FullName -Raw | ConvertFrom-Json).supported_targets) } catch {}
+        }
+    }
+    return @($targets | Where-Object { $_ } | Select-Object -Unique)
+}
+
 $llvmupSB = {
     param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
     $elements = @($commandAst.CommandElements | ForEach-Object { $_.Extent.Text.Trim([char[]]@([char]39, [char]34)) })
-    $commands = @('doctor','install','activate','deactivate','env','resolve','vscode-activate','status','list','remove','disk-usage','default','config','help')
+    # When the cursor is after a space, the word being completed is not yet an element.
+    $typed = if ($wordToComplete) { $elements.Count - 1 } else { $elements.Count }
+    $previous = if ($typed -ge 1) { $elements[$typed - 1] } else { '' }
+    $commands = @('doctor', 'install', 'activate', 'deactivate', 'env', 'resolve', 'vscode-activate', 'status', 'list', 'remove',
+                  'disk-usage', 'default', 'config', 'use', 'run', 'which', 'where', 'provides', 'info', 'alias', 'pin', 'sync',
+                  'update', 'pick', 'toolchain', 'shell', 'cmake-toolchain', 'help')
+    $selectors = { @(Get-LlvmToolchainCompletionItems) + @(Get-LlvmProviderNames | ForEach-Object { "$_@latest" }) }
     $values = @()
-    if ($elements.Count -le 2) {
-        $values = $commands
-    } else {
+    if ($typed -le 1) {
+        $values = $commands + @(& $selectors | Where-Object { $wordToComplete -like '+*' } | ForEach-Object { "+$_" })
+    } elseif ($previous -eq '--provider') { $values = Get-LlvmProviderNames }
+    elseif ($previous -eq '--compiler') { $values = @('clang', 'gcc') }
+    elseif ($previous -eq '--target') { $values = Get-LlvmTargetCompletionItems }
+    elseif ($previous -eq '--crt') { $values = @('ucrt', 'msvcrt') }
+    elseif ($previous -eq '--extractor') { $values = @('auto', '7z', 'tar', 'zip', 'python') }
+    elseif ($previous -eq '--verify') { $values = @('warn', 'strict', 'skip') }
+    elseif ($previous -eq '--toolchain') { $values = Get-LlvmToolchainCompletionItems }
+    elseif ($previous -eq '--format') { $values = @('shell', 'github', 'json', 'cmd', 'tag', 'plan') }
+    else {
         $subcommand = $elements[1].ToLowerInvariant()
+        if ($subcommand.StartsWith('+')) { $subcommand = 'run' }
+        $afterSeparator = ($elements[1..($typed - 1)] -contains '--')
         switch ($subcommand) {
-            'activate' { $values = Get-LlvmLocalVersions }
-            'vscode-activate' { $values = Get-LlvmLocalVersions }
-            'remove' { $values = if ($wordToComplete -like '-*') { @('--force','--help') } else { Get-LlvmLocalVersions } }
-            'list' { $values = @('--remote','--json','--help') }
+            { $_ -in @('activate', 'vscode-activate') } { $values = Get-LlvmToolchainCompletionItems }
+            'remove' { $values = if ($wordToComplete -like '-*') { @('--force', '--help') } else { Get-LlvmToolchainCompletionItems } }
+            'list' { $values = @('--remote', '--json', '--providers', '--provider', '--help') }
             'default' {
-                if ($elements.Count -le 3) { $values = @('set','show','unset') }
-                elseif ($elements[2] -eq 'set') { $values = Get-LlvmLocalVersions }
+                if ($typed -le 2) { $values = @('set', 'show', 'unset') + @(Get-LlvmToolchainCompletionItems) }
+                elseif ($elements[2] -eq 'set') { $values = Get-LlvmToolchainCompletionItems }
             }
-            'config' { $values = @('init','load','apply','activate') }
-            'doctor' { $values = @('--verbose','--deep','--network','--json','--help') }
-            'disk-usage' { $values = @('-h','--human-readable') }
+            'config' { if ($typed -le 2) { $values = @('init', 'load', 'apply', 'activate', 'lock') } else { $values = @('--platform', '--arch', '--verify') } }
+            'doctor' { $values = @('--verbose', '--deep', '--network', '--json', '--help') }
+            'disk-usage' { $values = @('-h', '--human-readable') }
+            { $_ -in @('use', 'run', 'which', 'where', 'info', 'shell', 'cmake-toolchain', 'update', 'env') } {
+                if ($afterSeparator) {
+                    $values = @(Get-Command -Name "$wordToComplete*" -CommandType Application, ExternalScript -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })
+                } elseif ($wordToComplete -like '-*') {
+                    $values = switch ($subcommand) {
+                        'use' { @('--compiler', '--target', '--crt', '--install', '--auto') }
+                        'env' { @('--config', '--format', '--compiler', '--target') }
+                        'which' { @('--toolchain', '--compiler', '--target') }
+                        'cmake-toolchain' { @('--target', '--compiler', '--output') }
+                        'shell' { @('--compiler', '--target', '--shell') }
+                        default { @('--compiler', '--target', '--crt', '--install', '--locked', '--') }
+                    }
+                } elseif ($subcommand -eq 'which' -and $typed -eq 2) {
+                    $values = @('clang', 'clang++', 'clangd', 'clang-format', 'clang-tidy', 'lld', 'ld.lld', 'lld-link', 'llvm-ar', 'llvm-config', 'gcc', 'g++', 'gdb', 'lldb', 'cmake', 'ninja', 'windres')
+                } else {
+                    $values = @(& $selectors)
+                    if ($subcommand -eq 'use' -and $typed -eq 2) { $values = @('-') + $values }
+                }
+            }
+            'provides' { $values = @('clang', 'clang++', 'clangd', 'lld', 'ld.lld', 'lld-link', 'llvm-config', 'libclang', 'gcc', 'g++', 'gdb', 'lldb', 'windres', 'cmake', 'ninja') }
+            'alias' {
+                if ($typed -le 2) { $values = @('set', 'list', 'show', 'remove') }
+                elseif ($typed -eq 3 -and $elements[2] -in @('show', 'remove')) {
+                    $homeDir = Get-LlvmCompletionHome
+                    try { $values = @((Get-Content -LiteralPath (Join-Path $homeDir 'aliases.json') -Raw | ConvertFrom-Json).aliases.PSObject.Properties | ForEach-Object { $_.Name }) } catch {}
+                } elseif ($typed -eq 4) { $values = Get-LlvmToolchainCompletionItems }
+            }
+            'toolchain' { if ($typed -le 2) { $values = @('link', 'unlink', 'list') } }
+            'pin' { $values = if ($wordToComplete -like '-*') { @('--current', '--fuzzy', '--crt', '--target', '--compiler') } else { @(& $selectors) } }
+            'sync' { $values = @('--locked', '--verify') }
             'install' {
-                $previous = if ($wordToComplete) { $elements[$elements.Count-2] } else { $elements[-1] }
-                if ($previous -in @('--profile','-p')) { $values = @('minimal','compiler','full','custom') }
+                if ($previous -in @('--profile', '-p')) { $values = @('minimal', 'compiler', 'full', 'custom') }
                 elseif ($previous -eq '--component') { $values = @('clang','lld','llvm-ar','llvm-ranlib','llvm-cov','llvm-profdata','clangd','clang-format','clang-tidy','libc++','llvm-xray','llvm-nm','llvm-objcopy','llvm-strip','llvm-objdump','llvm-readobj','llvm-readelf','llvm-size','llvm-strings','llvm-symbolizer','llvm-addr2line','llvm-cxxfilt','llvm-dwarfdump','llvm-dwp','llvm-pdbutil','llvm-profgen','llvm-as','llvm-dis','llvm-link','llvm-extract','llvm-bcanalyzer','llvm-diff','llvm-mc','llvm-mca','llc','lli','opt','clang-apply-replacements','clang-query','clang-scan-deps','clang-check') }
-                else { $values = @('--from-source','--verify','--name','--default','--profile','--component','--strip','--verbose','--reconfigure','--list-only') + @(Get-LlvmRemoteVersions) }
+                elseif ($wordToComplete -like '-*') { $values = @('--from-source', '--verify', '--name', '--default', '--profile', '--component', '--strip', '--verbose', '--reconfigure', '--list-only', '--provider', '--release', '--crt', '--threads', '--target', '--compiler', '--extractor', '--use', '--force', '--no-cache') }
+                else { $values = @(Get-LlvmProviderNames | ForEach-Object { "$_@latest" }) + @(Get-LlvmRemoteVersions) }
             }
+            'resolve' { $values = if ($wordToComplete -like '-*') { @('--format', '--platform', '--arch', '--provider', '--release', '--crt', '--config') } else { @(Get-LlvmProviderNames | ForEach-Object { "$_@latest" }) } }
             default { $values = @() }
         }
     }
@@ -289,6 +394,7 @@ $llvmupSB = {
 try { Register-LlvmCompleter -CommandName 'Activate-Llvm' -ParameterName 'Version' -ScriptBlock $activateSB } catch {}
 try { Register-LlvmCompleter -CommandName 'Install-Llvm' -ParameterName 'Version' -ScriptBlock $installSB } catch {}
 try { Register-LlvmCompleter -CommandName 'llvmup' -ParameterName 'LlvmupSubcommand' -ScriptBlock $llvmupSB } catch {}
+try { Register-LlvmCompleter -CommandName 'llvmup' -ParameterName 'LlvmupArgs' -ScriptBlock $llvmupSB } catch {}
 
 # Export functions for testing if desired
-Export-ModuleMember -Function Get-LlvmLocalVersions, Get-LlvmRemoteVersions, Register-LlvmCompleter
+Export-ModuleMember -Function Get-LlvmLocalVersions, Get-LlvmRemoteVersions, Register-LlvmCompleter, Get-LlvmToolchainCompletionItems, Get-LlvmProviderNames, Get-LlvmTargetCompletionItems

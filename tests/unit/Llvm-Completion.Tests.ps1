@@ -60,6 +60,26 @@ Describe 'Llvm Completion Module' {
         @($res | ForEach-Object CompletionText) | Should -Contain 'list'
     }
 
+    It 'registers with the real tab-completion engine and completes providers, toolchains and options' {
+        # A manifest-described toolchain with a non-llvmorg name must be offered too.
+        $wl = Join-Path $script:testDir 'win-dev'
+        $null = New-Item -ItemType Directory -Path (Join-Path $wl 'bin') -Force
+        Set-Content -LiteralPath (Join-Path $wl '.llvmup-toolchain.json') -Value '{"schema":1,"supported_targets":["x86_64-w64-mingw32"]}'
+        function global:llvmup {
+            param([Parameter(Position = 0)][string]$LlvmupSubcommand, [Parameter(ValueFromRemainingArguments = $true)][string[]]$LlvmupArgs)
+        }
+        try {
+            $complete = { param($line) @((TabExpansion2 -inputScript $line -cursorColumn $line.Length).CompletionMatches | ForEach-Object CompletionText) }
+            & $complete 'llvmup pi' | Should -Contain 'pick'
+            & $complete 'llvmup install --provider ' | Should -Contain 'llvm-mingw'
+            & $complete 'llvmup use ' | Should -Contain 'win-dev'
+            & $complete 'llvmup run win-dev --compiler ' | Should -Be @('clang', 'gcc')
+            & $complete 'llvmup +win' | Should -Contain '+win-dev'
+        } finally {
+            Remove-Item Function:\llvmup -ErrorAction SilentlyContinue
+        }
+    }
+
     AfterAll {
         # cleanup
         if ($null -eq $script:savedToolchainsDir) { Remove-Item Env:LLVM_TOOLCHAINS_DIR -ErrorAction SilentlyContinue }
