@@ -689,6 +689,16 @@ function Assert-LlvmManagedAsset {
             throw 'Strict verification cannot trust the existing toolchain: no authenticated origin is recorded.'
         }
     }
+    if (-not $Manifest.capabilities.compilers -or -not $Manifest.tools) { throw 'Installed toolchain has no recorded compiler.' }
+    $compilerNames = @($Manifest.capabilities.compilers)
+    $compilerNames += @('clang++', 'g++' | Where-Object { $Manifest.tools[$_] })
+    foreach ($compiler in $compilerNames) {
+        $relative = [string]$Manifest.tools[$compiler]
+        if ($relative -notmatch '^bin/[a-zA-Z0-9_.+-]+$' -or
+            -not (Test-Path -LiteralPath (Join-Path $Manifest.root_path $relative) -PathType Leaf)) {
+            throw "Installed toolchain compiler '$compiler' is unavailable under '$($Manifest.root_path)'. Remove it or reinstall with --force."
+        }
+    }
 }
 
 Export-ModuleMember -Function @(

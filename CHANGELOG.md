@@ -60,6 +60,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Linux release packages built from Windows checkouts use LF line endings.
 - Windows uninstall removes its profile block when the recorded module path uses
   an equivalent spelling, including a Windows short path.
+- Unix install and uninstall also accept a CRLF runtime manifest from a checkout.
+- Install reuse and locked commands reject managed toolchains with missing compiler executables.
 - Locked sync and execution ignore local aliases that share the recorded toolchain name.
 - Aliases reject a replacement toolchain with a different recorded identity.
 - PowerShell strict reuse accepts recorded Authenticode verification against a pinned publisher.

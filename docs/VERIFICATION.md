@@ -34,6 +34,9 @@ Windows recipe. The lockfile can pin an archive digest when upstream provides on
 The installed manifest records the archive verification result from installation time.
 Locked commands resolve the recorded toolchain identity directly, even when a local alias
 has the same name.
+Reuse, including Action cache hits, also checks that the recorded compiler executables are
+present. The archive digest records what was installed. It does not hash the extracted tree
+on every reuse.
 
 ## What is recorded
 

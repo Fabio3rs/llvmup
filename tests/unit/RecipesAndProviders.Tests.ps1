@@ -458,6 +458,14 @@ Describe 'LLVMUP Recipes, Multi-Provider Engine, and Ergonomic CLI' {
             { Resolve-LlvmInstalledToolchain -Selector 'reused-name' } | Should -Throw '*no longer matches an installed toolchain*'
         }
 
+        It 'rejects a restored provider installation whose manifest compiler is missing' {
+            $manifest = Resolve-LlvmInstalledToolchain -Selector 'llvm-mingw@20261117'
+            Remove-Item -LiteralPath (Join-Path $manifest.root_path $manifest.tools.clang)
+            $result = @(llvmup install llvm-mingw@20261117 --quiet 2>&1)
+            $result | Should -Contain $false
+            ($result | Out-String) | Should -Match 'compiler.*unavailable'
+        }
+
         It 'covers list --providers/--remote, resolve --config, config lock per host, run --locked, default shorthand, update and use --auto' {
             $prov = (llvmup list --providers) | Out-String
             $prov | Should -Match 'winlibs'

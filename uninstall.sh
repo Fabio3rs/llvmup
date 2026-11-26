@@ -105,6 +105,7 @@ if [[ -f $manifest ]]; then
     scripts=()
     while read -r platform mode name extra; do
         [[ $platform == common || $platform == bash ]] || continue
+        name=${name%$'\r'}
         [[ $name =~ ^(libexec/([a-zA-Z0-9_-]+/)*)?[a-zA-Z0-9_][a-zA-Z0-9_.-]*$ && -z $extra ]] || { print_error 'Invalid runtime manifest'; exit 1; }
         scripts+=("$name")
     done < "$manifest"

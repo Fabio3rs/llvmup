@@ -1435,7 +1435,7 @@ cmd_install() (
 
     if [ -d "$dest" ] && [ "$ENG_OPT_FORCE" -ne 1 ]; then
         if [ -f "$dest/.llvmup-toolchain.json" ] && jq -e '(.capabilities.compilers // []) | length > 0' "$dest/.llvmup-toolchain.json" >/dev/null 2>&1; then
-            eng_check_managed_asset "$(jq -c '.release = .release_tag' <<<"$plan")" "$(cat "$dest/.llvmup-toolchain.json")" "$policy"
+            eng_check_managed_asset "$(jq -c '.release = .release_tag' <<<"$plan")" "$(cat "$dest/.llvmup-toolchain.json")" "$policy" "$dest"
             if [ "$prov" = official ]; then llvm_selection_check "$dest" || exit 1; fi
             if [ "$ENG_OPT_DEFAULT" -eq 1 ]; then llvm-default-set "$name" || exit 1; fi
             eng_info "Toolchain '$name' is already installed at $dest"
@@ -1910,9 +1910,9 @@ cmd_lock() {
     printf '%s\n' "$lockf"
 }
 
-# eng_check_managed_asset <expected> <manifest> <policy>
+# eng_check_managed_asset <expected> <manifest> <policy> <root>
 eng_check_managed_asset() {
-    local want have
+    local want have compilers rel
     want="$(jq -r '.asset.digest // ""' <<<"$1")"
     have="$(jq -r '.asset.digest // ""' <<<"$2")"
     if [ -n "$want" ] && [ "$want" != "$have" ]; then
@@ -1928,18 +1928,29 @@ eng_check_managed_asset() {
     if [ "$3" = strict ] && ! jq -e '.verification.gpg == "valid" or .verification.attestation == "valid"' <<<"$2" >/dev/null; then
         eng_die "Strict verification cannot trust the existing toolchain: no authenticated origin is recorded."
     fi
+    compilers="$(jq -er '
+        .tools as $tools | .capabilities.compilers
+        | select(type == "array" and length > 0)
+        | map(. as $key | $tools[$key] // ("<missing " + $key + ">"))
+        | . + [$tools["clang++"], $tools["g++"]] | .[] | select(. != null)
+    ' <<<"$2")" || eng_die 'Installed toolchain has no recorded compiler.'
+    while IFS= read -r rel; do
+        [[ "$rel" =~ ^bin/[a-zA-Z0-9_.+-]+$ && -f "$4/$rel" && -x "$4/$rel" ]] ||
+            eng_die "Installed toolchain compiler '${rel:-missing from manifest}' is unavailable under '$4'. Remove it or reinstall with --force."
+    done <<<"$compilers"
 }
 
 eng_check_locked_install() {
-    local entry="$1" manifest="$2" policy="$3"
+    local entry="$1" manifest="$2" policy="$3" root
     policy="$(eng_policy "${policy:-warn}")" || return 1
-    eng_check_managed_asset "$entry" "$manifest" "$policy"
+    root="$(jq -r '.root_path' <<<"$manifest")"
+    eng_check_managed_asset "$entry" "$manifest" "$policy" "$root"
     if [ "$(jq -r '.provider' <<<"$entry")" = official ]; then
         local SCRIPT_DIR="$ENGINE_ROOT" PROFILE STRIP=0 COMPONENTS=() component
         PROFILE="$(jq -r '.profile // "full"' <<<"$entry")"
         while IFS= read -r component; do COMPONENTS+=("$component"); done < <(jq -r '.components[]?' <<<"$entry")
         source "$ENGINE_ROOT/libexec/llvmup-selection.sh"
-        llvm_selection_init && llvm_selection_check "$(jq -r '.root_path' <<<"$manifest")"
+        llvm_selection_init && llvm_selection_check "$root"
     fi
 }
 

@@ -189,7 +189,11 @@ Describe 'LLVMUP engine regressions' {
                 origin = 'managed'; id = $expected.canonical_id; provider = $expected.provider
                 provider_release = $expected.release; host = $hostIdentity
                 verification = @{ authenticode = 'valid'; methods = @('authenticode') }
+                root_path = $TestDrive; tools = @{ clang = 'bin/clang.exe' }
+                capabilities = @{ compilers = @('clang') }
             }
+            $null = New-Item -ItemType Directory -Path (Join-Path $TestDrive 'bin')
+            $null = New-Item -ItemType File -Path (Join-Path $TestDrive $manifest.tools.clang)
 
             { Assert-LlvmManagedAsset -Manifest $manifest -Expected $expected -Policy strict } | Should -Not -Throw
             $manifest.verification.authenticode = 'valid-unpinned'

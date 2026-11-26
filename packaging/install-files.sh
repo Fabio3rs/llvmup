@@ -8,6 +8,7 @@ install_files() (
     while read -r platform mode name extra; do
         [[ -z $platform || $platform == \#* ]] && continue
         [[ $platform == common || $platform == bash ]] || continue
+        name=${name%$'\r'}
         [[ $name =~ ^(libexec/([a-zA-Z0-9_-]+/)*)?[a-zA-Z0-9_][a-zA-Z0-9_.-]*$ && $mode =~ ^(644|755)$ && -z $extra ]] || { print_error 'Invalid runtime manifest'; exit 1; }
         [[ -f $INSTALL_SOURCE_DIR/$name && ! -L $INSTALL_SOURCE_DIR/$name ]] || { print_error "Script '$name' not found in $INSTALL_SOURCE_DIR."; exit 1; }
         sources+=("$INSTALL_SOURCE_DIR/$name"); targets+=("$INSTALL_DIR/$name"); modes+=("$mode")

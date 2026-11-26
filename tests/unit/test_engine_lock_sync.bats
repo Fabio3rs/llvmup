@@ -124,6 +124,25 @@ EOF
     [[ "$output" == *"no longer matches an installed toolchain"* ]]
 }
 
+@test "install reuse and locked commands reject a restored toolchain with missing compilers" {
+    write_config 23 llvm-mingw
+    "$LLVMUP_SCRIPT" config lock >/dev/null
+    local cid digest
+    cid="$(jq -r '.entries["linux-x64"].canonical_id' .llvmup-lock.json)"
+    digest="$(jq -r '.entries["linux-x64"].asset.digest' .llvmup-lock.json)"
+    fake_toolchain "$cid" llvm-mingw 23.1.6 20261117 "$digest"
+    rm "$LLVM_HOME/toolchains/$cid/bin/clang"
+    run "$LLVMUP_SCRIPT" install llvm-mingw@20261117 --name "$cid"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"compiler 'bin/clang' is unavailable"* ]]
+    run "$LLVMUP_SCRIPT" sync --locked
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"compiler 'bin/clang' is unavailable"* ]]
+    run "$LLVMUP_SCRIPT" run --locked -- true
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"compiler 'bin/clang' is unavailable"* ]]
+}
+
 @test "sync --locked reports a missing host entry, provider conflicts and weaker policies" {
     write_config 23 llvm-mingw
     "$LLVMUP_SCRIPT" config lock --platform windows >/dev/null
@@ -287,7 +306,8 @@ fn() { bash -c "source '$BATS_TEST_DIRNAME/../../llvm-functions.sh'; $*"; }
     # Stale lock (owner gone) and a backup whose installation is missing.
     mkdir -p "$tc/.lm.llvmup.lock" "$tc/lm.backup-123/bin" "$tc/lm.installing-123/bin"
     echo "$g" > "$tc/.lm.llvmup.lock/pid"
-    cp -r "$tc/lm.backup-123/." "$tc/lm.backup-123" 2>/dev/null || true
+    printf '#!/bin/sh\necho clang version 23.1.6\n' > "$tc/lm.backup-123/bin/clang"
+    chmod +x "$tc/lm.backup-123/bin/clang"
     write_managed_manifest_for_request "$tc/lm.backup-123" "$("$LLVMUP_SCRIPT" resolve llvm-mingw@23 --format json)"
     run "$LLVMUP_SCRIPT" install llvm-mingw@23 --name lm
     [ "$status" -eq 0 ]

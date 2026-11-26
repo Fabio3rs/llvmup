@@ -61,6 +61,15 @@ setup() {
     [ -d "$HOME/.llvm/toolchains/keep" ]
     [ "$(cat "$bin/unrelated")" = untouched ]
 }
+@test "install and uninstall accept a CRLF runtime inventory" {
+    sed 's/$/\r/' "$PACKAGE/packaging/runtime-files.tsv" > "$PACKAGE/packaging/runtime-files.tsv.crlf"
+    mv "$PACKAGE/packaging/runtime-files.tsv.crlf" "$PACKAGE/packaging/runtime-files.tsv"
+    run bash "$PACKAGE/install.sh" --no-profile
+    [ "$status" -eq 0 ]
+    run bash "$LLVMUP_PREFIX/bin/uninstall.sh"
+    [ "$status" -eq 0 ]
+    [ ! -e "$LLVMUP_PREFIX/bin/llvmup" ]
+}
 @test "incomplete package cannot change an existing installation" {
     bash "$PACKAGE/install.sh" --no-profile >/dev/null
     before=$(sha256sum "$LLVMUP_PREFIX/bin/llvmup")
