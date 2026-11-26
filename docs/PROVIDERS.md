@@ -66,22 +66,45 @@ Capabilities are discovered from the files actually present and recorded in
 
 ## Verified on real toolchains
 
-Windows 10 22H2 x64 host and a clean Windows Sandbox (PowerShell 5.1 only, no compilers, SDKs or
-7-Zip until added), toolchains installed by llvmup from the GitHub releases (cached archives with
-recorded metadata):
+`scripts/toolchain_matrix.ps1` installs each toolchain with llvmup from the GitHub releases and builds
+a fixed sample with `llvmup run`, with `PATH` reduced to `System32` (plus cmake/ninja for the CMake
+step). Reproduce with
+`pwsh -File scripts	oolchain_matrix.ps1 -LlvmHome C:\llvmup-matrix -Configs lm-x64,lm-i686,lm-arm64,wl-clang,wl-gcc -OutFile matrix.json`.
 
-| Configuration | Compile | Link | PE inspection | Execute | CMake + Ninja |
-| --- | --- | --- | --- | --- | --- |
-| llvm-mingw 20261117, x86_64 (Sandbox) | PASS | PASS | PASS (PE32+ x86-64) | PASS | see report |
-| llvm-mingw 20261117, i686 (Sandbox) | PASS | PASS | PASS (PE32 i386) | see report | see report |
-| llvm-mingw 20261117, aarch64 (Sandbox) | PASS | PASS | PASS (PE32+ ARM64) | SKIP (no ARM64 host) | see report |
-| llvm-mingw 20261117 Linux host -> x86_64 / aarch64 | PASS | PASS | PASS | x86_64 PASS on Windows | PASS |
+Sample: C17, C++23 (`std::vector`, ranges, `std::expected`, `std::filesystem`, `std::thread`,
+exceptions), a static library, a DLL with import library, a Windows resource (`.rc`), debug info, a
+check that every system include directory is inside the toolchain, a PE inspection (machine,
+sections, imported DLLs) and CMake + Ninja through `llvmup cmake-toolchain`.
 
-The sample (`C17`, `C++23` with `std::print`/`std::expected`/ranges, `std::vector`,
-`std::filesystem`, `std::thread`, exceptions, a static library, a DLL with import library, a Windows
-resource, debug info) is built only with the environment llvmup exports, with `PATH` reduced to
-`System32`. Run without llvmup's environment, the program fails with `STATUS_DLL_NOT_FOUND`, which
-shows its runtime DLLs come from the selected toolchain only.
+Windows 10 22H2 x64 host (PowerShell 7 and 5.1) and a clean Windows Sandbox (Windows PowerShell 5.1
+only, no compilers, SDKs or 7-Zip; package built by `packaging/build.py` and installed outside the
+checkout by the bootstrap; home `C:\llvmup-matrix`, no spaces):
+
+| Configuration | Compile | Link | PE inspection | Execute | Static lib | DLL | `.rc` | Debug info | Headers | CMake + Ninja |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| llvm-mingw 20261117 x86_64 (host, Sandbox) | PASS | PASS | PASS (x64) | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
+| llvm-mingw 20261117 i686 (host, Sandbox) | PASS | PASS | PASS (x86) | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
+| llvm-mingw 20261117 aarch64 (host, Sandbox) | PASS | PASS | PASS (ARM64) | SKIP (no ARM64 host) | PASS | PASS | PASS | PASS | PASS | PASS |
+| WinLibs 16.2.0 / LLVM 23.1.3 UCRT, Clang (host, Sandbox) | PASS | PASS | PASS (x64) | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
+| WinLibs 16.2.0 / LLVM 23.1.3 UCRT, GCC (host, Sandbox) | PASS | PASS | PASS (x64) | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
+| WinLibs GCC with a space in the toolchains path (host) | PASS | **FAIL** | - | - | FAIL | FAIL | FAIL | - | PASS | - |
+| llvm-mingw 20261117 on Linux (WSL1) -> x86_64 / aarch64 | PASS | PASS | PASS | x86_64 PASS on the Windows host | - | - | - | - | - | PASS |
+
+Notes:
+
+- The failing row is the documented upstream limitation: WinLibs GCC (`collect2`/`ld`) cannot link
+  when the installation path contains spaces; WinLibs Clang from the same bundle is unaffected.
+- C++ programs built with llvm-mingw need `libc++.dll` and `libunwind.dll` from the toolchain's
+  `<target>/bin`. Run without llvmup's environment they fail to load, which shows the runtime DLLs
+  come from the selected toolchain only. Copy them next to the program to run it elsewhere.
+- Official LLVM on Windows targets MSVC and needs Visual Studio/Windows SDK for hosted builds; the
+  matrix only checks that it starts (`official` configuration).
+- Official LLVM 23.1.6 for Linux x64 downloaded, verified (sha256) and extracted with the Bash
+  engine; the 282 MB `clang` could not be executed on WSL1 (`Exec format error`), so the install
+  was rejected by the validation step. This is a WSL1 limit, not a verified llvmup failure; it needs
+  a real Linux host or WSL2 (pending).
+- Windows PowerShell 5.1 (`-File`) rejects a lone `-` argument (for example `clang -x c -`) before
+  llvmup runs; use PowerShell 7 or pass a file instead.
 
 Not verified: WinLibs MCF threads, WinLibs i686/MSVCRT end to end, llvm-mingw MSVCRT and armv7
 execution, macOS hosts, Windows ARM64 hosts.

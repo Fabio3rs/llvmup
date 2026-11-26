@@ -1359,7 +1359,9 @@ cmd_install() {
     disc="$(eng_discover "$staging" "$prov")"
     jq -e '.capabilities.compilers | length > 0' <<<"$disc" >/dev/null || eng_die "Validation failed: no supported compiler found in $staging/bin"
     cc="$(jq -r '.tools.clang // .tools.gcc' <<<"$disc")"
-    "$staging/$cc" --version >/dev/null 2>&1 || eng_die "Validation failed: '$cc --version' failed"
+    local vout
+    vout="$("$staging/$cc" --version 2>&1)" || eng_die "Validation failed: '$cc --version' failed: $(printf '%s' "$vout" | head -3 | tr '
+' ' ')"
 
     eng_write_manifest "$staging" "$plan" "$name" "$ver" managed
 

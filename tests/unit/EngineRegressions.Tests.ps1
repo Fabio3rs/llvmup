@@ -160,6 +160,25 @@ Describe 'LLVMUP engine regressions' {
             Test-Path -LiteralPath (Join-Path $TestDrive 'evil-out') | Should -BeFalse
             Test-Path -LiteralPath (Join-Path (Split-Path $TestDrive -Parent) 'evil.txt') | Should -BeFalse
         }
+
+        It 'extracts ZIP entries whose full path exceeds MAX_PATH (Windows PowerShell 5.1 has no long path support)' -Skip:($env:OS -ne 'Windows_NT') {
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            $zipPath = Join-Path $TestDrive 'deep.zip'
+            $deep = (1..12 | ForEach-Object { 'segment_number_' + $_ }) -join '/'
+            $entryName = "root/$deep/constructor_destructor_no_store_hash_fn_imps.hpp"
+            $fs = [IO.File]::Open($zipPath, 'Create')
+            $zip = New-Object System.IO.Compression.ZipArchive($fs, [System.IO.Compression.ZipArchiveMode]::Create)
+            $e = $zip.CreateEntry($entryName)
+            $w = New-Object IO.StreamWriter($e.Open()); $w.Write('deep'); $w.Dispose()
+            $zip.Dispose(); $fs.Dispose()
+
+            $dest = Join-Path $TestDrive 'deep-out'
+            $expected = Join-Path $dest ($entryName.Substring(5).Replace('/', '\'))
+            $expected.Length | Should -BeGreaterThan 260
+            $null = Invoke-LlvmArchiveExtract -ArchivePath $zipPath -DestinationPath $dest -Extractor 'zip'
+            $content = [IO.File]::ReadAllText('\\?\' + $expected.Replace('\\?\', ''))
+            $content | Should -Be 'deep'
+        }
     }
 
     Context 'Verification policy' {

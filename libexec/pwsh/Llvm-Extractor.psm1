@@ -404,6 +404,7 @@ function Expand-LlvmZipDotNet {
     $null = New-Item -ItemType Directory -Path $fullDest -Force
     $fullDestWithSep = $fullDest.TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
     $createdDirs = @{}
+    $IsLongPathWin = ([IO.Path]::DirectorySeparatorChar -eq '\')
 
     $zip = [System.IO.Compression.ZipFile]::OpenRead($ArchivePath)
     try {
@@ -424,6 +425,9 @@ function Expand-LlvmZipDotNet {
             if (-not $targetPath.StartsWith($fullDestWithSep, [StringComparison]::OrdinalIgnoreCase)) {
                 throw "ZIP entry escapes destination: $($entry.FullName)"
             }
+            # Extended-length form so deep trees (libstdc++ ext/pb_ds, Python lib-dynload) extract on
+            # runtimes without long path support; the on-disk result is identical.
+            if ($IsLongPathWin -and $targetPath.Length -ge 240 -and -not $targetPath.StartsWith('\\')) { $targetPath = '\\?\' + $targetPath }
             if ($entry.FullName.EndsWith('/') -or $entry.FullName.EndsWith('\')) {
                 if (-not $createdDirs.ContainsKey($targetPath)) {
                     $null = [IO.Directory]::CreateDirectory($targetPath)
@@ -802,7 +806,9 @@ function Invoke-LlvmArchiveExtract {
     $caps = Get-LlvmAvailableExtractors -Custom7ZipPath $Custom7ZipPath -Format $format -IncludePython:$needPython
     $chosen = Resolve-LlvmExtractorChoice -Format $format -Extractor $Extractor -Caps $caps -ArchivePath $ArchivePath
 
-    $rawStage = "$DestinationPath.raw-$([guid]::NewGuid().ToString('N'))"
+    # Short suffix: Windows PowerShell 5.1 / .NET Framework still enforce MAX_PATH (260) and these
+    # directories sit in front of every extracted path.
+    $rawStage = "$DestinationPath.raw-$([guid]::NewGuid().ToString('N').Substring(0, 8))"
     $null = New-Item -ItemType Directory -Path $rawStage -Force
     $tarStage = $null
     $strategy = 'direct'

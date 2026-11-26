@@ -170,8 +170,9 @@ function Invoke-LlvmInstallPrebuiltFromRecipe {
 
     $lockHandle = Enter-LlvmToolchainLock -ToolchainsPath $ToolchainsPath -InstallName $installName
     $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ('llvmup-op-' + [guid]::NewGuid().ToString('N'))
-    $stagingPath = "$installPath.installing-$([guid]::NewGuid().ToString('N'))"
-    $backupPath = "$installPath.backup-$([guid]::NewGuid().ToString('N'))"
+    $suffix = [guid]::NewGuid().ToString('N').Substring(0, 8)
+    $stagingPath = "$installPath.installing-$suffix"
+    $backupPath = "$installPath.backup-$suffix"
     $published = $false
 
     try {
