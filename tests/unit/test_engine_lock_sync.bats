@@ -251,3 +251,23 @@ fn() { bash -c "source '$BATS_TEST_DIRNAME/../../llvm-functions.sh'; $*"; }
     [ "$status" -eq 0 ]
     [[ "$output" == *"wl"* ]]
 }
+
+@test "install reclaims a stale lock, refuses a live one and restores an interrupted replacement" {
+    local tc="$LLVM_HOME/toolchains" g=999999
+    # Stale lock (owner gone) and a backup whose installation is missing.
+    mkdir -p "$tc/.lm.llvmup.lock" "$tc/lm.backup-123/bin" "$tc/lm.installing-123/bin"
+    echo "$g" > "$tc/.lm.llvmup.lock/pid"
+    cp -r "$tc/lm.backup-123/." "$tc/lm.backup-123" 2>/dev/null || true
+    jq -n '{schema: 1, id: "lm", origin: "managed", provider: "llvm-mingw", llvm_version: "23.1.6", tools: {clang: "bin/clang"}, capabilities: {compilers: ["clang"]}}' > "$tc/lm.backup-123/.llvmup-toolchain.json"
+    run "$LLVMUP_SCRIPT" install llvm-mingw@23 --name lm
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"stale lock"* ]]
+    [[ "$output" == *"Restored 'lm'"* ]]
+    [[ "$output" == *"already installed"* ]]
+    [ -d "$tc/lm" ] && [ ! -e "$tc/lm.backup-123" ] && [ ! -e "$tc/lm.installing-123" ] && [ ! -e "$tc/.lm.llvmup.lock" ]
+
+    mkdir "$tc/.lm.llvmup.lock" && echo "$$" > "$tc/.lm.llvmup.lock/pid"
+    run "$LLVMUP_SCRIPT" install llvm-mingw@23 --name lm
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"Another llvmup operation"* ]]
+}

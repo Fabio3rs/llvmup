@@ -68,8 +68,8 @@ foreach ($a in $Archive) {
     $cands = @()
     switch ($format) {
         'zip' { $cands = @(@('zip', ''), @('7z', ''), @('python', '')) }
-        '7z' { $cands = @(@('7z', '')) }
-        'exe' { $cands = @(@('7z', '')) }
+        '7z' { $cands = @(, @('7z', '')) }
+        'exe' { $cands = @(, @('7z', '')) }
         default { $cands = @(@('7z', 'stream'), @('7z', 'temp'), @('tar', ''), @('python', '')) }
     }
     if ($Backend.Count) { $cands = @($cands | Where-Object { $Backend -contains (($_[0], $_[1]) -join ':').TrimEnd(':') -or $Backend -contains $_[0] }) }

@@ -318,16 +318,46 @@ function Enter-LlvmToolchainLock {
     }
     $lockPath = Join-Path $ToolchainsPath ".$InstallName.llvmup.lock"
     try {
-        $stream = [IO.File]::Open($lockPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
-        $bytes = [Text.Encoding]::UTF8.GetBytes("pid=$PID`n")
-        $stream.Write($bytes, 0, $bytes.Length)
-        $stream.Flush()
-        return [pscustomobject]@{
-            LockPath = $lockPath
-            Stream = $stream
-        }
+        # The lock is the exclusive open handle, not the file's existence: the OS releases it when the
+        # process ends, so a killed or crashed operation never leaves a permanent lock behind.
+        $stream = New-Object IO.FileStream($lockPath, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None, 4096, [IO.FileOptions]::DeleteOnClose)
     } catch {
         throw "Another llvmup operation is currently installing or modifying '$InstallName' ($lockPath)."
+    }
+    $bytes = [Text.Encoding]::UTF8.GetBytes("pid=$PID`n")
+    $stream.SetLength(0)
+    $stream.Write($bytes, 0, $bytes.Length)
+    $stream.Flush()
+    Repair-LlvmInterruptedInstall -ToolchainsPath $ToolchainsPath -InstallName $InstallName
+    return [pscustomobject]@{
+        LockPath = $lockPath
+        Stream = $stream
+    }
+}
+
+function Repair-LlvmInterruptedInstall {
+    # Called with the toolchain lock held: leftovers of an interrupted operation on this name are
+    # either restored (a backup taken while replacing an installation that never got republished)
+    # or removed (staging trees). Never touches other installations.
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$ToolchainsPath,
+        [Parameter(Mandatory = $true)][string]$InstallName
+    )
+    $installPath = Join-Path $ToolchainsPath $InstallName
+    $escaped = [regex]::Escape($InstallName)
+    $siblings = @(Get-ChildItem -LiteralPath $ToolchainsPath -Directory -Force -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match "^$escaped\.(installing|backup)-[0-9a-f]{32}" })
+    foreach ($b in @($siblings | Where-Object { $_.Name -match "^$escaped\.backup-[0-9a-f]{32}$" } | Sort-Object LastWriteTime -Descending)) {
+        if (-not (Test-Path -LiteralPath $installPath)) {
+            Move-Item -LiteralPath $b.FullName -Destination $installPath -ErrorAction Stop
+            Write-Warning "Restored '$InstallName' from the backup of an interrupted replacement."
+        } else {
+            Remove-Item -LiteralPath $b.FullName -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+    foreach ($s in @($siblings | Where-Object { $_.Name -match "^$escaped\.installing-" })) {
+        Remove-Item -LiteralPath $s.FullName -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -335,12 +365,10 @@ function Exit-LlvmToolchainLock {
     [CmdletBinding()]
     param($LockHandle)
     if (-not $LockHandle) { return }
+    # DeleteOnClose removes the lock file together with the handle (also when the process dies).
     try {
         if ($LockHandle.Stream) { $LockHandle.Stream.Dispose() }
     } catch {}
-    if ($LockHandle.LockPath -and (Test-Path -LiteralPath $LockHandle.LockPath)) {
-        Remove-Item -LiteralPath $LockHandle.LockPath -Force -ErrorAction SilentlyContinue
-    }
 }
 
 Export-ModuleMember -Function @(
@@ -350,5 +378,6 @@ Export-ModuleMember -Function @(
     'Invoke-LlvmDownloadFile',
     'Get-LlvmCachedOrDownload',
     'Enter-LlvmToolchainLock',
-    'Exit-LlvmToolchainLock'
+    'Exit-LlvmToolchainLock',
+    'Repair-LlvmInterruptedInstall'
 )

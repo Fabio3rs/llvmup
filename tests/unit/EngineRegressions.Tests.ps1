@@ -7,7 +7,7 @@ Describe 'LLVMUP engine regressions' {
         $script:repoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
         $pwshDir = Join-Path (Join-Path $script:repoRoot 'libexec') 'pwsh'
         Import-Module (Join-Path $script:repoRoot 'Llvm-Functions.psm1') -Force -Global -DisableNameChecking
-        foreach ($m in @('Llvm-Extractor', 'Llvm-Verifier', 'Llvm-Recipes', 'Llvm-Manifest', 'Llvm-Installer', 'Llvm-CMake', 'Llvm-Environment')) {
+        foreach ($m in @('Llvm-Extractor', 'Llvm-Downloader', 'Llvm-Verifier', 'Llvm-Recipes', 'Llvm-Manifest', 'Llvm-Installer', 'Llvm-CMake', 'Llvm-Environment')) {
             Import-Module (Join-Path $pwshDir "$m.psm1") -Force -Global -DisableNameChecking
         }
         $script:isWin = ($env:OS -eq 'Windows_NT')
@@ -301,6 +301,61 @@ Describe 'LLVMUP engine regressions' {
             $cross = New-LlvmCMakeToolchainFile -Manifest $m -Target 'aarch64-w64-mingw32'
             $cross | Should -Match 'set\(CMAKE_SYSTEM_NAME Windows\)'
             $cross | Should -Match 'set\(CMAKE_SYSTEM_PROCESSOR ARM64\)'
+        }
+    }
+
+    Context 'Installation lock and interrupted operations' {
+        It 'reclaims a lock file left by a dead process but refuses a held lock' {
+            $tc = Join-Path $TestDrive 'lock-tc'
+            $null = New-Item -ItemType Directory -Path $tc -Force
+            Set-Content -LiteralPath (Join-Path $tc '.tc1.llvmup.lock') -Value 'pid=999999'
+            $h = Enter-LlvmToolchainLock -ToolchainsPath $tc -InstallName 'tc1'
+            try {
+                { Enter-LlvmToolchainLock -ToolchainsPath $tc -InstallName 'tc1' } | Should -Throw '*Another llvmup operation*'
+            } finally { Exit-LlvmToolchainLock -LockHandle $h }
+            Test-Path -LiteralPath (Join-Path $tc '.tc1.llvmup.lock') | Should -BeFalse
+            $h2 = Enter-LlvmToolchainLock -ToolchainsPath $tc -InstallName 'tc1'
+            Exit-LlvmToolchainLock -LockHandle $h2
+        }
+
+        It 'restores the backup of an interrupted replacement and removes staging leftovers' {
+            $tc = Join-Path $TestDrive 'repair-tc'
+            $g = 'a' * 32
+            $backup = Join-Path $tc "tc2.backup-$g"
+            $staging = Join-Path $tc "tc2.installing-$g.raw-$g"
+            $other = Join-Path $tc 'tc2-other'
+            foreach ($d in @($backup, $staging, $other)) { $null = New-Item -ItemType Directory -Path (Join-Path $d 'bin') -Force }
+            $h = Enter-LlvmToolchainLock -ToolchainsPath $tc -InstallName 'tc2' 3>$null
+            Exit-LlvmToolchainLock -LockHandle $h
+            Test-Path -LiteralPath (Join-Path $tc 'tc2\bin') | Should -BeTrue
+            Test-Path -LiteralPath $backup | Should -BeFalse
+            Test-Path -LiteralPath $staging | Should -BeFalse
+            Test-Path -LiteralPath $other | Should -BeTrue
+        }
+    }
+
+    Context '7-Zip streaming failure handling' {
+        It 'does not deadlock when the tar side exits early and reports its error' -Skip:($env:OS -ne 'Windows_NT') {
+            $dir = Join-Path $TestDrive 'fake7z-stream'
+            $null = New-Item -ItemType Directory -Path $dir -Force
+            $fake = Join-Path $dir '7z.cmd'
+            # -si (tar side): fail at once. -so (decompressor): write forever.
+            Set-Content -LiteralPath $fake -Encoding Ascii -Value @(
+                '@echo off',
+                'echo %* | findstr /c:"-si" >nul && (echo ERROR: Headers Error 1>&2 & exit /b 2)',
+                ':loop',
+                'echo 0123456789012345678901234567890123456789012345678901234567890123456789',
+                'goto loop')
+            $module = Join-Path $script:repoRoot 'libexec\pwsh\Llvm-Extractor.psm1'
+            $job = Start-Job -ScriptBlock {
+                param($m, $f, $o)
+                $mod = Import-Module $m -DisableNameChecking -PassThru
+                & $mod { param($f, $o) try { Invoke-Llvm7ZipStreamTar -SevenZipPath $f -ArchivePath 'x.tar.zst' -OutputDir $o; 'no-error' } catch { "error: $($_.Exception.Message)" } } $f $o
+            } -ArgumentList $module, $fake, (Join-Path $dir 'out')
+            $finished = Wait-Job -Job $job -Timeout 60
+            if (-not $finished) { Stop-Job $job; Remove-Job $job -Force; throw 'Invoke-Llvm7ZipStreamTar deadlocked' }
+            $result = Receive-Job $job; Remove-Job $job -Force
+            "$result" | Should -Match 'tar extraction failed with exit code 2: ERROR: Headers Error'
         }
     }
 

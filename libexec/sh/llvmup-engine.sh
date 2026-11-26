@@ -1250,6 +1250,36 @@ cmd_resolve() {
     esac
 }
 
+# eng_acquire_lock <lockdir> <name>: atomic mkdir lock that records its owner; a lock left by a
+# process that no longer exists (killed, power loss) is reclaimed instead of blocking forever.
+eng_acquire_lock() {
+    local lock="$1" name="$2" owner
+    if mkdir "$lock" 2>/dev/null; then printf '%s\n' "$$" > "$lock/pid"; return 0; fi
+    owner="$(cat "$lock/pid" 2>/dev/null || true)"
+    if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then
+        eng_warn "Removing a stale lock of '$name' left by process $owner."
+        rm -rf "$lock"
+        if mkdir "$lock" 2>/dev/null; then printf '%s\n' "$$" > "$lock/pid"; return 0; fi
+    fi
+    eng_die "Another llvmup operation is currently installing or modifying '$name' ($lock)."
+}
+
+# eng_repair_interrupted <toolchains> <name> (lock held): restore the backup of an interrupted
+# replacement when the installation is missing; remove staging leftovers. Mirrors PowerShell.
+eng_repair_interrupted() {
+    local tc="$1" name="$2" d
+    for d in "$tc/$name".backup-*; do
+        [ -d "$d" ] || continue
+        if [ ! -e "$tc/$name" ]; then
+            mv "$d" "$tc/$name" && eng_warn "Restored '$name' from the backup of an interrupted replacement."
+        else
+            rm -rf "$d"
+        fi
+    done
+    for d in "$tc/$name".installing-*; do [ -d "$d" ] && rm -rf "$d"; done
+    return 0
+}
+
 cmd_install() {
     eng_parse_common "$@"
     local sel="${ENG_POSITIONAL[0]:-latest}" prov expr split
@@ -1283,13 +1313,14 @@ cmd_install() {
     [ "$ENGINE_QUIET" = 1 ] || eng_path_warnings "$prov" "$dest"
 
     local lock="$tc/.$name.llvmup.lock"
-    mkdir "$lock" 2>/dev/null || eng_die "Another llvmup operation is currently installing or modifying '$name' ($lock)."
+    eng_acquire_lock "$lock" "$name"
+    eng_repair_interrupted "$tc" "$name"
     local work staging backup
     work="$(mktemp -d)"
     staging="$dest.installing-$$"
     backup="$dest.backup-$$"
     # shellcheck disable=SC2064
-    trap "rm -rf '$work' '$staging' '$staging.raw-$$'; rmdir '$lock' 2>/dev/null" EXIT
+    trap "rm -rf '$work' '$staging' '$staging.raw-$$'; rm -rf '$lock'" EXIT
 
     if [ -d "$dest" ] && [ "$ENG_OPT_FORCE" -ne 1 ]; then
         if [ -f "$dest/.llvmup-toolchain.json" ] && jq -e '(.capabilities.compilers // []) | length > 0' "$dest/.llvmup-toolchain.json" >/dev/null 2>&1; then

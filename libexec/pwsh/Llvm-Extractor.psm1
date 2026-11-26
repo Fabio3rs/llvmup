@@ -547,23 +547,41 @@ function Invoke-Llvm7ZipStreamTar {
         $errB = $procB.StandardError.ReadToEndAsync()
         $outB = $procB.StandardOutput.ReadToEndAsync()
         $copyFailed = $null
+        $tarExitedEarly = $false
         try {
-            $procA.StandardOutput.BaseStream.CopyTo($procB.StandardInput.BaseStream, 1048576)
+            # Copy asynchronously and watch the tar side: when it exits before the stream ends, a write
+            # to its stdin may block instead of failing (observed on .NET Framework / Windows
+            # PowerShell 5.1), and the decompressor would then wait forever on a full pipe.
+            $copy = $procA.StandardOutput.BaseStream.CopyToAsync($procB.StandardInput.BaseStream, 1048576)
+            while (-not $copy.Wait(250)) {
+                if ($procB.HasExited) {
+                    $tarExitedEarly = $true
+                    try { $procA.Kill() } catch {}
+                    $null = $copy.Wait(10000)
+                    break
+                }
+            }
+            if ($copy.IsFaulted) { $copyFailed = $copy.Exception.GetBaseException().Message }
         } catch {
-            $copyFailed = $_.Exception.Message
+            $copyFailed = $_.Exception.GetBaseException().Message
         } finally {
             try { $procB.StandardInput.Close() } catch {}
         }
-        $procA.WaitForExit()
-        $procB.WaitForExit()
-        $null = $outB.Result
-        if ($procA.ExitCode -ne 0) {
-            throw "7-Zip decompression failed with exit code $($procA.ExitCode): $($errA.Result.Trim())"
+        if (($copyFailed -or $tarExitedEarly) -and -not $procA.HasExited) {
+            try { $procA.Kill() } catch {}
         }
+        if ($tarExitedEarly -and -not $copyFailed) { $copyFailed = 'the tar extractor exited before the end of the stream' }
+        $procB.WaitForExit()
+        $procA.WaitForExit()
+        $null = $outB.Result
+        # The extractor's own error explains a broken pipe better than the decompressor's exit status.
         if ($procB.ExitCode -ne 0) {
             throw "7-Zip tar extraction failed with exit code $($procB.ExitCode): $($errB.Result.Trim())"
         }
         if ($copyFailed) { throw "7-Zip stream copy failed: $copyFailed" }
+        if ($procA.ExitCode -ne 0) {
+            throw "7-Zip decompression failed with exit code $($procA.ExitCode): $($errA.Result.Trim())"
+        }
     } finally {
         foreach ($p in @($procA, $procB)) {
             if ($p -and -not $p.HasExited) { try { $p.Kill() } catch {} }
