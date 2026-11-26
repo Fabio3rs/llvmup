@@ -30,12 +30,23 @@ Rules:
 
 ## 7-Zip strategies for `.tar.*`
 
-- `stream` (default): one 7-Zip process decompresses to stdout, a second reads the tar from stdin.
-  The bytes flow through .NET process streams, never through the PowerShell pipeline (which would
-  turn them into text on PowerShell 5.1), and no intermediate `.tar` is written. If the tar side
-  exits early, the decompressor is stopped and the tar side's error is reported (a pipe with no
-  reader can otherwise block forever; observed on Windows PowerShell 5.1).
-- `temp` (`LLVMUP_7Z_TAR_STRATEGY=temp`): decompress to a temporary `.tar`, then extract it.
+`LLVMUP_7Z_TAR_STRATEGY` selects how the two 7-Zip processes (decompressor `-so`, tar extractor
+`-si -ttar`) are connected:
+
+- `pipe` (Windows default): cmd.exe's binary pipe. Fastest in the benchmark and the only connection
+  that worked in Windows Sandbox. The decompressor's errors go to a temporary file and fail the
+  extraction. Paths containing `%` or `"` cannot be passed safely through cmd.exe; `auto` then uses
+  `stream`.
+- `stream` (default elsewhere): the processes are wired through .NET process streams by an explicit
+  copy loop - never through the PowerShell pipeline, which turns bytes into text on PowerShell 5.1.
+  7-Zip's tar side stops reading at the end-of-archive marker and exits 0 while the decompressor
+  still writes zero padding: the remainder is drained and must be padding. A failing tar side stops
+  the decompressor and its error is reported. If the tar side exits without extracting anything
+  (observed in Windows Sandbox: banner, exit 0, nothing read), `auto` retries the same archive with
+  `pipe`; nothing has been written at that point.
+- `temp`: decompress to a temporary `.tar`, then extract it (needs the full `.tar` size in temp).
+
+No intermediate `.tar` is written by `pipe` or `stream`.
 
 ## Benchmark
 
@@ -58,6 +69,8 @@ produced identical trees.
 | official `clang+llvm-23.1.6-x86_64-pc-windows-msvc.tar.zst` (276 MB -> 4.28 GB, 4,701) | 7-Zip stream | - | - | **24.1 s** | 0 |
 | | Python 3.14 tarfile | - | - | 27.1 s | 0 |
 | | 7-Zip temp `.tar` | 12.9 s | 26.7 s | 39.6 s | 4.28 GB |
+| | 7-Zip `pipe` (cmd.exe), idle host | - | - | **19 s** | 0 |
+| | 7-Zip `stream` (explicit .NET copy loop), idle host | - | - | 40 s | 0 |
 | | inbox tar | not possible (no zstd) | | | |
 | winlibs `...-r3.7z` (189 MB -> 1.71 GB, 12,931) | 7-Zip | - | - | 33.9 s | 0 |
 | llvm-mingw `20261117-ucrt-x86_64.zip` (191 MB -> 753 MB, 9,069) | Python zipfile | - | - | 31.0 s | 0 |
@@ -67,8 +80,10 @@ produced identical trees.
 
 Conclusions used by `auto`:
 
-- `.tar.zst`/`.tar.xz` with 7-Zip: streaming is ~40% faster than the temp-file strategy and needs no
-  temporary space, so it stays the default.
+- `.tar.zst`/`.tar.xz` with 7-Zip: connecting the processes directly is faster than the temp-file
+  strategy and needs no temporary space. The cmd.exe pipe beats the .NET copy loop by about 2x, so it
+  is the Windows default. (The first `stream` row used `Stream.CopyTo`, which could deadlock and was
+  replaced by the explicit loop.)
 - `.tar.zst` is preferred over the 3.3x larger `.tar.xz` of the same official release whenever a
   zstd-capable backend exists (smaller download, faster extraction).
 - `.zip`: the built-in reader needs no external program and is faster than 7-Zip; Python is

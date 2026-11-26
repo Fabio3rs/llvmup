@@ -125,7 +125,7 @@ Describe 'LLVMUP engine regressions' {
                 & $sz.path a -txz $xz $tar -bd *> $null
             } finally { Pop-Location }
 
-            foreach ($strategy in @('stream', 'temp')) {
+            foreach ($strategy in @('stream', 'pipe', 'temp')) {
                 $env:LLVMUP_7Z_TAR_STRATEGY = $strategy
                 $dest = Join-Path $TestDrive "out-$strategy"
                 $r = Invoke-LlvmArchiveExtract -ArchivePath $xz -DestinationPath $dest -Extractor '7z'
@@ -371,8 +371,11 @@ Describe 'LLVMUP engine regressions' {
                 # -so: write 3 MiB of the given byte value.
                 Set-Content -LiteralPath $fake -Encoding Ascii -Value @(
                     '@echo off',
-                    'echo %* | findstr /c:"-si" >nul && exit /b 0',
+                    "echo %* | findstr /c:`"-si`" >nul && (powershell -NoProfile -Command `"`$i = [Console]::OpenStandardInput(); `$b = New-Object byte[] 65536; [void]`$i.Read(`$b, 0, 65536)`" & exit /b 0)",
                     "powershell -NoProfile -Command `"`$b = New-Object byte[] 3145728; if ($Byte) { for (`$i = 0; `$i -lt `$b.Length; `$i++) { `$b[`$i] = $Byte } }; `$o = [Console]::OpenStandardOutput(); `$o.Write(`$b, 0, `$b.Length); `$o.Flush()`"")
+                # The tar side 'extracted' something before finishing, as 7-Zip does before the end marker.
+                $null = New-Item -ItemType Directory -Path (Join-Path $dir 'out') -Force
+                Set-Content -LiteralPath (Join-Path (Join-Path $dir 'out') 'f.txt') -Value x
                 $job = Start-Job -ScriptBlock {
                     param($m, $f, $o)
                     $mod = Import-Module $m -DisableNameChecking -PassThru
@@ -384,6 +387,22 @@ Describe 'LLVMUP engine regressions' {
             }
             & $run 0 | Should -Be 'no-error'
             & $run 65 | Should -Match 'non-padding data'
+        }
+
+        It 'marks a tar side that exits without reading so the cmd.exe pipe can take over' -Skip:($env:OS -ne 'Windows_NT') {
+            $dir = Join-Path $TestDrive 'fake7z-noread'
+            $null = New-Item -ItemType Directory -Path $dir -Force
+            $fake = Join-Path $dir '7z.cmd'
+            Set-Content -LiteralPath $fake -Encoding Ascii -Value @('@echo off', 'echo %* | findstr /c:"-si" >nul && exit /b 0', ':loop', 'echo data', 'goto loop')
+            $module = Join-Path $script:repoRoot 'libexec\pwsh\Llvm-Extractor.psm1'
+            $job = Start-Job -ScriptBlock {
+                param($m, $f, $o)
+                $mod = Import-Module $m -DisableNameChecking -PassThru
+                & $mod { param($f, $o) try { Invoke-Llvm7ZipStreamTar -SevenZipPath $f -ArchivePath 'x.tar.zst' -OutputDir $o; 'no-error' } catch { "error: $($_.Exception.Message)" } } $f $o
+            } -ArgumentList $module, $fake, (Join-Path $dir 'out')
+            if (-not (Wait-Job -Job $job -Timeout 60)) { Stop-Job $job; Remove-Job $job -Force; throw 'stream deadlocked' }
+            $r = "$(Receive-Job $job)"; Remove-Job $job -Force
+            $r | Should -Match 'LLVMUP_7Z_TAR_SIDE_DID_NOT_READ'
         }
     }
 

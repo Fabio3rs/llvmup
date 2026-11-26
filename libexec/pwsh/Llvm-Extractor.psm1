@@ -553,6 +553,7 @@ function Invoke-Llvm7ZipStreamTar {
         $dst = $procB.StandardInput.BaseStream
         $buf = New-Object byte[] 1048576
         $draining = $false
+        $written = [long]0
         try {
             # Explicit copy loop (about 4,000 iterations for a 4 GB toolchain). Before each write the
             # tar side is checked: 7-Zip stops reading at the tar end-of-archive marker and exits 0
@@ -563,7 +564,7 @@ function Invoke-Llvm7ZipStreamTar {
             while (($n = $src.Read($buf, 0, $buf.Length)) -gt 0) {
                 if (-not $draining -and $procB.HasExited) { $draining = $true }
                 if (-not $draining) {
-                    try { $dst.Write($buf, 0, $n) } catch { $draining = $true }
+                    try { $dst.Write($buf, 0, $n); $written += $n } catch { $draining = $true }
                     if (-not $draining) { continue }
                 }
                 if ($procB.HasExited -and $procB.ExitCode -ne 0) { try { $procA.Kill() } catch {}; break }
@@ -582,8 +583,14 @@ function Invoke-Llvm7ZipStreamTar {
             $procB.WaitForExit()
             # Data the tar side never consumed is acceptable only when it finished successfully and the
             # remainder is padding. The chunk in flight when it stopped may hold the end marker.
+            if ($procB.ExitCode -eq 0 -and -not @(Get-ChildItem -LiteralPath $OutputDir -Force -ErrorAction SilentlyContinue).Count) {
+                # Seen in Windows Sandbox: the tar side, started by .NET, printed its banner and exited
+                # 0 without reading or extracting anything ($written bytes reached its pipe). Distinct
+                # marker so the caller can retry with the cmd.exe pipe.
+                throw [System.IO.EndOfStreamException]::new('LLVMUP_7Z_TAR_SIDE_DID_NOT_READ: the 7-Zip tar extractor exited before reading its input.')
+            }
             if ($procB.ExitCode -eq 0 -and $trailingNonZero) {
-                $copyFailed = "the tar extractor stopped before the end of the stream (non-padding data follows; $trailingBytes bytes checked)"
+                $copyFailed = "the tar extractor stopped before the end of the stream (non-padding data follows; $trailingBytes bytes checked). 7-Zip tar side said: $($errB.Result.Trim()) $($outB.Result.Trim())"
             }
         }
         $procB.WaitForExit()
@@ -605,6 +612,46 @@ function Invoke-Llvm7ZipStreamTar {
     }
 }
 
+function Invoke-Llvm7ZipCmdPipe {
+    # Same two 7-Zip processes as Invoke-Llvm7ZipStreamTar, connected by cmd.exe's binary pipe.
+    # Used when the .NET-connected tar side does not read its input (observed in Windows Sandbox),
+    # or explicitly with LLVMUP_7Z_TAR_STRATEGY=pipe. The decompressor's stderr goes to a file and
+    # any error there fails the extraction; the exit code is the tar side's.
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$SevenZipPath,
+        [Parameter(Mandatory = $true)][string]$ArchivePath,
+        [Parameter(Mandatory = $true)][string]$OutputDir
+    )
+    foreach ($path in @($SevenZipPath, $ArchivePath, $OutputDir)) {
+        # cmd.exe expands %VAR% even inside quotes; refuse instead of guessing.
+        if ($path -match '[%"]') { throw "The cmd.exe pipe cannot safely pass the path '$path' (contains % or a quote)." }
+    }
+    $errFile = Join-Path ([IO.Path]::GetTempPath()) ('llvmup-7z-' + [guid]::NewGuid().ToString('N') + '.err')
+    $line = '"{0}" x "{1}" -so -bd -bsp0 2>"{2}" | "{0}" x -si -ttar "-o{3}" -y -bd -bsp0 -bso0' -f $SevenZipPath, $ArchivePath, $errFile, $OutputDir
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = Join-Path $env:SystemRoot 'System32\cmd.exe'
+    $psi.Arguments = '/d /s /c "' + $line + '"'
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $psi.RedirectStandardError = $true
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    try {
+        $errTar = $proc.StandardError.ReadToEnd()
+        $proc.WaitForExit()
+        $errDec = if (Test-Path -LiteralPath $errFile) { (Get-Content -LiteralPath $errFile -Raw) } else { '' }
+        if ($errDec -and $errDec.Trim()) {
+            throw "7-Zip decompression reported errors: $($errDec.Trim())"
+        }
+        if ($proc.ExitCode -ne 0) {
+            throw "7-Zip tar extraction failed with exit code $($proc.ExitCode): $($errTar.Trim())"
+        }
+    } finally {
+        $proc.Dispose()
+        Remove-Item -LiteralPath $errFile -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Get-LlvmArchiveFormat {
     param([Parameter(Mandatory = $true)][string]$Name)
     $n = $Name.ToLowerInvariant()
@@ -620,9 +667,12 @@ function Get-LlvmArchiveFormat {
 }
 
 function Get-Llvm7ZipTarStrategy {
-    $strategy = if ($env:LLVMUP_7Z_TAR_STRATEGY) { $env:LLVMUP_7Z_TAR_STRATEGY.ToLowerInvariant() } else { 'stream' }
-    if ($strategy -notin @('stream', 'temp')) {
-        throw "Invalid LLVMUP_7Z_TAR_STRATEGY '$strategy'. Expected stream or temp."
+    # Windows default: cmd.exe's binary pipe between the two 7-Zip processes (fastest in the
+    # benchmark and the only pipe that works in Windows Sandbox). 'stream' wires them through .NET.
+    $default = if (Test-LlvmIsWindows) { 'pipe' } else { 'stream' }
+    $strategy = if ($env:LLVMUP_7Z_TAR_STRATEGY) { $env:LLVMUP_7Z_TAR_STRATEGY.ToLowerInvariant() } else { $default }
+    if ($strategy -notin @('stream', 'temp', 'pipe')) {
+        throw "Invalid LLVMUP_7Z_TAR_STRATEGY '$strategy'. Expected stream, pipe or temp."
     }
     return $strategy
 }
@@ -790,8 +840,23 @@ function Invoke-LlvmArchiveExtract {
                 $szPath = $caps.sevenzip.path
                 if ($format -in @('tar.xz', 'tar.gz', 'tar.zst')) {
                     $strategy = Get-Llvm7ZipTarStrategy
-                    if ($strategy -eq 'stream') {
-                        Invoke-Llvm7ZipStreamTar -SevenZipPath $szPath -ArchivePath $ArchivePath -OutputDir $rawStage
+                    if ($strategy -eq 'pipe' -and -not $env:LLVMUP_7Z_TAR_STRATEGY -and (@($szPath, $ArchivePath, $rawStage) -match '[%"]').Count) {
+                        $strategy = 'stream'   # paths cmd.exe cannot pass safely
+                    }
+                    if ($strategy -eq 'pipe') {
+                        Invoke-Llvm7ZipCmdPipe -SevenZipPath $szPath -ArchivePath $ArchivePath -OutputDir $rawStage
+                    } elseif ($strategy -eq 'stream') {
+                        try {
+                            Invoke-Llvm7ZipStreamTar -SevenZipPath $szPath -ArchivePath $ArchivePath -OutputDir $rawStage
+                        } catch {
+                            # Only when the tar side consumed nothing (so nothing can be half-extracted)
+                            # and the system pipe is available: same tool, same archive, other pipe.
+                            $nothing = -not @(Get-ChildItem -LiteralPath $rawStage -Force -ErrorAction SilentlyContinue).Count
+                            if ("$($_.Exception.Message)" -notmatch 'LLVMUP_7Z_TAR_SIDE_DID_NOT_READ' -or -not $nothing -or -not (Test-LlvmIsWindows)) { throw }
+                            Write-Verbose '7-Zip tar side did not read from the .NET pipe; using the cmd.exe pipe.'
+                            $strategy = 'pipe'
+                            Invoke-Llvm7ZipCmdPipe -SevenZipPath $szPath -ArchivePath $ArchivePath -OutputDir $rawStage
+                        }
                     } else {
                         $tarStage = "$DestinationPath.tarstage-$([guid]::NewGuid().ToString('N'))"
                         $null = New-Item -ItemType Directory -Path $tarStage -Force
