@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `scripts/toolchain_matrix.ps1`: reproducible real-toolchain matrix (compile, link, PE inspection,
+  execution, static library, DLL, resource, debug info, header origin, CMake + Ninja)
 - Providers `winlibs` (GCC + LLVM/Clang + MinGW-w64, Windows) and `llvm-mingw` (Windows, Linux and
   macOS hosts, several Windows targets) next to `official`, described by JSON recipes in
   `libexec/recipes` and served by a PowerShell and a Bash engine with identical schemas
@@ -48,6 +50,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   environment activation, and cache restoration
 
 ### Fixed
+- Windows PowerShell 5.1: installing WinLibs/llvm-mingw from ZIP no longer exceeds MAX_PATH on a
+  clean Windows (short staging suffixes, extended-length extraction targets)
+- Bash engine: a failing compiler validation now shows the compiler's own output
 - PowerShell tab completion was never registered (missing `Get-ArgumentCompleter` shim replaced
   the real cmdlet)
 - `llvmup.cmd` with a single argument (`help`, `list`, `status`, ...) used the first character

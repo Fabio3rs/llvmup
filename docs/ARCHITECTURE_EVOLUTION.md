@@ -117,17 +117,24 @@ Pre-existing in the committed code before this pass, found by real runs:
 
 | Suite | Environment | Result |
 | --- | --- | --- |
-| Pester 6.1.0 | PowerShell 7.7, Windows 10 22H2 | all passed (see final count in the report) |
-| Pester 6.1.0 | Windows PowerShell 5.1 | all passed |
-| Bats 1.10 | WSL1 Ubuntu 24.04 (`llvmup-test`, imported from a cached rootfs) | all passed |
-| Engine parity (Bash vs PowerShell, recorded metadata) | WSL + pwsh.exe | 19/19 |
+| Pester 6.2.0 | PowerShell 7.7, Windows 10 22H2 | 218/218 |
+| Pester 6.2.0 | Windows PowerShell 5.1 | 218/218 |
+| Bats 1.10 | WSL1 Ubuntu 24.04 (`llvmup-test`, imported from a cached rootfs) | 354/354 |
+| Engine parity (Bash vs PowerShell, recorded metadata) | WSL with `pwsh.exe` (Store) and with PowerShell 7.7 for Linux installed in the distro | 19/19 in both |
 | Completion (Bash/Zsh Bats; PowerShell `TabExpansion2`) | WSL; PS 5.1 and 7 | passed |
 | Action provider path (composite bash steps executed locally) | WSL Ubuntu 24.04, real GitHub | resolve + download + install + `env --format github` in 41 s |
 | Linux -> Windows cross (llvm-mingw 20261117) | WSL + Windows host | x86_64/aarch64 compile/link/inspect PASS, x86_64 execute PASS, CMake cross PASS |
-| Windows Sandbox end to end (clean Windows, PS 5.1 only, package bootstrap) | Windows Sandbox | see `docs/PROVIDERS.md` matrix |
+| Windows Sandbox end to end (clean Windows, PS 5.1 only, package built by `packaging/build.py` and bootstrapped outside the checkout) | Windows Sandbox + `scripts/toolchain_matrix.ps1` | llvm-mingw x64/i686/arm64 and WinLibs Clang/GCC: every step PASS (arm64 Execute SKIP); see `docs/PROVIDERS.md` |
+| Real-toolchain matrix on the host (PS 7 and 5.1) | `scripts/toolchain_matrix.ps1` | all PASS; WinLibs GCC with a space in the path FAILs at link (documented upstream limit) |
+
+Bugs found by these runs and fixed: Windows PowerShell 5.1 extraction exceeded MAX_PATH in a clean
+Sandbox (long `.installing-<guid>.raw-<guid>` prefixes; now 8-hex suffixes and extended-length ZIP
+targets); the Bash engine hid the compiler's own message when validation failed.
 
 Not executed (prepared only): GitHub workflows (`tests.yml`, `action-e2e.yml`), macOS hosts,
-Windows ARM64 execution, Linux official real install.
+Windows ARM64 execution. Official LLVM for Linux was downloaded, verified and extracted by the Bash
+engine, but its 282 MB `clang` cannot be executed on WSL1 (`Exec format error`); a real Linux host or
+WSL2 (not installed here) is needed to finish that check.
 
 ## 6. Decisions
 
