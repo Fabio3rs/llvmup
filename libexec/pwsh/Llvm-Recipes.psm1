@@ -406,8 +406,10 @@ function Resolve-LlvmRecipeInstallPlan {
     if ($VersionExpression -match ',') {
         throw "Compound version expressions such as '$VersionExpression' are not supported; use a single selector (e.g. '23', '~23.1', '>=23.1.4' or '23.*')."
     }
+    $formatsFromProbe = $false
     if (-not $AvailableFormats -or $AvailableFormats.Count -eq 0) {
         $AvailableFormats = Get-LlvmPlanFormats -HostOs $hostOs -HostArch $hostArch -Extractor $Extractor
+        $formatsFromProbe = -not $env:LLVMUP_ASSET_FORMATS
     }
 
     if ($Profile -and ($recipe.profiles -notcontains $Profile)) {
@@ -483,6 +485,21 @@ function Resolve-LlvmRecipeInstallPlan {
     }
 
     if ($candidates.Count -eq 0) {
+        if ($formatsFromProbe) {
+            # Distinguish "nothing matches" from "a matching asset exists but nothing here can unpack it".
+            $any = $null
+            try {
+                $any = Resolve-LlvmRecipeInstallPlan -Provider $Provider -Releases $flatReleases -VersionExpression $VersionExpression -ReleaseTag $ReleaseTag `
+                    -Platform $hostOs -Arch $hostArch -Crt $Crt -Threads $Threads -Target $Target -Compiler $Compiler -Profile $Profile `
+                    -PreferInstaller:$PreferInstaller -ArchiveOnly:$ArchiveOnly -AvailableFormats @('tar.xz', 'tar.zst', 'tar.gz', 'tar', 'zip', '7z', 'exe')
+            } catch { $any = $null }
+            if ($any) {
+                $usable = if ($AvailableFormats -and $AvailableFormats.Count) { $AvailableFormats -join ', ' } else { 'none' }
+                throw ("Release '$($any.release_tag)' of provider '$Provider' has a matching asset ($($any.asset.name)), but no local extractor can unpack it " +
+                    "(formats usable here: $usable; extractor=$Extractor). Install 7-Zip (https://www.7-zip.org/, detected in its default location or via LLVMUP_7Z_PATH) " +
+                    "or a tar with xz/zstd support, or choose another --extractor.")
+            }
+        }
         if ($ReleaseTag) {
             throw "No compatible asset found in provider '$Provider' release '$ReleaseTag' for $hostOs $hostArch (crt=$(if ($Crt) { $Crt } else { 'default' }))."
         }

@@ -107,7 +107,9 @@ try {
 
 $modulePath = Join-Path $InstallDir 'Llvm-Functions.psm1'
 $module = $modulePath.Replace("'", "''")
-$importCmd = "Import-Module '$module' -Force"
+# -DisableNameChecking: the module exports legacy names (Activate-Llvm, ...) that would otherwise
+# print an "unapproved verbs" warning in every new PowerShell session.
+$importCmd = "Import-Module '$module' -Force -DisableNameChecking"
 
 $shouldAddToPath = $AddToPath -or (-not $NoProfile -and -not $NoPath -and -not $explicitProfile)
 if ($shouldAddToPath) {

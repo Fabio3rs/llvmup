@@ -443,5 +443,42 @@ Describe 'LLVMUP Recipes, Multi-Provider Engine, and Ergonomic CLI' {
                 Pop-Location
             }
         }
+
+        It 'covers list --providers/--remote, resolve --config, config lock per host, run --locked, default shorthand, update and use --auto' {
+            $prov = (llvmup list --providers) | Out-String
+            $prov | Should -Match 'winlibs'
+            $prov | Should -Match 'llvm-mingw'
+            ((llvmup list --remote --provider llvm-mingw) | Out-String) | Should -Match '20261117'
+
+            Push-Location $script:projectDir
+            try {
+                llvmup pin llvm-mingw@20261117 --crt ucrt --target x86_64-w64-mingw32 | Should -BeTrue
+                ((llvmup resolve --config) | Out-String) | Should -Match '20261117'
+
+                llvmup config lock | Should -BeTrue
+                llvmup config lock --platform linux --arch x64 | Should -BeTrue
+                $lock = Get-Content -LiteralPath (Join-Path $script:projectDir '.llvmup-lock.json') -Raw | ConvertFrom-Json
+                @($lock.entries.PSObject.Properties.Name | Sort-Object) | Should -Be @('linux-x64', 'windows-x64')
+                $lock.entries.'linux-x64'.asset.name | Should -Be 'llvm-mingw-20261117-ucrt-ubuntu-22.04-x86_64.tar.xz'
+
+                $null = llvmup run --locked -- cmd /d /c "echo LOCKED=%LLVMUP_ACTIVE_PROVIDER% && exit /b 4"
+                $LASTEXITCODE | Should -Be 4
+
+                # Project config selects llvm-mingw; a manual 'use' overrides it until 'use --auto'.
+                llvmup use winlibs@23.1.3 | Should -BeTrue
+                $env:LLVMUP_ACTIVE_PROVIDER | Should -Be 'winlibs'
+                llvmup use --auto | Should -BeTrue
+                $env:LLVMUP_SESSION_OVERRIDE | Should -BeNullOrEmpty
+                $env:LLVMUP_ACTIVE_PROVIDER | Should -Be 'llvm-mingw'
+            } finally {
+                Pop-Location
+            }
+
+            llvmup default winlibs@23.1.3 | Should -BeTrue
+            (llvmup default) | Should -Match 'winlibs'
+            $upd = (llvmup update llvm-mingw@20261117 2>&1 | Out-String)
+            $upd | Should -Match 'up to date'
+            llvmup update no-such-toolchain 2>$null | Should -BeFalse
+        }
     }
 }

@@ -42,7 +42,7 @@ if (-not $NoProfile -and $ProfilePath) {
         }
     }
     $module = (Join-Path $PSScriptRoot 'Llvm-Functions.psm1').Replace("'", "''")
-    $pattern = '(?m)^# LLVMUP module - Start\r?\n' + [regex]::Escape("Import-Module '$module' -Force") + '\r?\n# LLVMUP module - End(?:\r?\n|$)'
+    $pattern = '(?m)^# LLVMUP module - Start\r?\n' + [regex]::Escape("Import-Module '$module' -Force") + '(?: -DisableNameChecking)?\r?\n# LLVMUP module - End(?:\r?\n|$)'
     foreach ($targetProfile in $profileTargets) {
         if (-not (Test-Path -LiteralPath $targetProfile)) { continue }
         $text = [IO.File]::ReadAllText($targetProfile)

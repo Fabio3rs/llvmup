@@ -304,6 +304,18 @@ Describe 'LLVMUP engine regressions' {
         }
     }
 
+    Context 'Missing extraction backends' {
+        It 'explains that a matching asset exists but cannot be unpacked instead of claiming no release matches' {
+            Remove-Item Env:LLVMUP_ASSET_FORMATS -ErrorAction SilentlyContinue
+            $releases = @((Get-Content -LiteralPath (Join-Path $script:repoRoot 'tests\fixtures\releases\official.json') -Raw | ConvertFrom-Json) | ForEach-Object { $_ })
+            Mock Get-LlvmPlanFormats -ModuleName Llvm-Recipes { @('zip') }
+            { Resolve-LlvmRecipeInstallPlan -Provider official -Releases $releases -VersionExpression '23' -Platform windows -Arch x64 -ArchiveOnly } |
+                Should -Throw "*has a matching asset (clang+llvm-23.1.6-x86_64-pc-windows-msvc.tar.*), but no local extractor can unpack it*Install 7-Zip*"
+            { Resolve-LlvmRecipeInstallPlan -Provider official -Releases $releases -VersionExpression '99' -Platform windows -Arch x64 -ArchiveOnly } |
+                Should -Throw "*No stable release of provider 'official' matches '99'*"
+        }
+    }
+
     Context 'Environment delta details' {
         BeforeAll {
             $script:mkRoot = {
@@ -380,6 +392,16 @@ Describe 'LLVMUP engine regressions' {
             $p.ExitCode | Should -Be 7
             ($lines -join "`n") | Should -Match 'arg=\[a b\]'
             ($stamps['second'] - $stamps['first']) | Should -BeGreaterThan 1.0
+        }
+
+        It 'keeps a single argument intact (help, list) and exits 0' -Skip:($env:OS -ne 'Windows_NT') {
+            $env:LLVM_HOME = $script:lhome
+            $env:LLVM_TOOLCHAINS_DIR = Join-Path $script:lhome 'toolchains'
+            $help = & $script:launcher help 2>&1 | ForEach-Object { "$_" }
+            $LASTEXITCODE | Should -Be 0
+            ($help -join "`n") | Should -Match 'Usage: llvmup'
+            $null = & $script:launcher list 2>&1
+            $LASTEXITCODE | Should -Be 0
         }
     }
 }

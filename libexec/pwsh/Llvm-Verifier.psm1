@@ -333,7 +333,7 @@ function Invoke-LlvmAssetVerify {
             throw "Strict verification requires a valid GPG signature or GitHub/Sigstore attestation for '$($Plan.provider)' ($attestRepo). Install gpg or gh, or use --verify warn."
         }
         if ($result.methods.Count -eq 0) {
-            $result.methods = if ($result.checksum -eq 'valid') { @('checksum-only') } else { @('unverified') }
+            $result.methods = @(if ($result.checksum -eq 'valid') { 'checksum-only' } else { 'unverified' })
         }
         if ($Policy -eq 'warn' -and -not $Quiet) {
             if ($result.checksum -eq 'valid') {

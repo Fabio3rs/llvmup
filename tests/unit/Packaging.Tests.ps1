@@ -100,6 +100,21 @@ Describe 'LLVMUP package installation' {
         Test-Path (Join-Path $destination 'Llvm-Functions.psm1') | Should -BeTrue
         Should -Invoke Invoke-WebRequest -Times 2 -Exactly -ParameterFilter { $Uri -like 'https://github.com/Fabio3rs/llvmup/releases/download/v0.0.0-test/*' -and $TimeoutSec -eq 120 }
     }
+    It 'installs from a local package directory or a mirror and rejects unsupported URLs' {
+        $assets = Join-Path $TestDrive 'bootstrap-assets'
+        Test-Path (Join-Path $assets 'llvmup-windows.zip') | Should -BeTrue
+        Mock Invoke-WebRequest { throw 'network must not be used' }
+        & (Join-Path $repo 'packaging/bootstrap.ps1') -Version v0.0.0-test -InstallDir $destination -NoProfile -PackageDir $assets
+        Test-Path (Join-Path $destination 'llvmup.cmd') | Should -BeTrue
+        Should -Invoke Invoke-WebRequest -Times 0 -Exactly
+
+        Mock Invoke-WebRequest {
+            Copy-Item -LiteralPath (Join-Path (Join-Path $TestDrive 'bootstrap-assets') (([string]$Uri).Split('/')[-1])) -Destination $OutFile
+        }
+        & (Join-Path $repo 'packaging/bootstrap.ps1') -Version v0.0.0-test -InstallDir $destination -NoProfile -BaseUrl 'https://mirror.example/llvmup/'
+        Should -Invoke Invoke-WebRequest -Times 2 -Exactly -ParameterFilter { $Uri -like 'https://mirror.example/llvmup/*' }
+        { & (Join-Path $repo 'packaging/bootstrap.ps1') -Version v0.0.0-test -InstallDir $destination -NoProfile -BaseUrl 'ftp://mirror.example' } | Should -Throw '*Unsupported bootstrap URL*'
+    }
     It 'rejects a bad checksum without installing anything' {
         Mock Invoke-WebRequest {
             if ($Uri -like '*/SHA256SUMS') { (('0' * 64) + '  llvmup-windows.zip') | Set-Content $OutFile }

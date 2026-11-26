@@ -1099,9 +1099,19 @@ function Invoke-LlvmUpConfig {
             $provider = if ($cfg.provider) { $cfg.provider } else { 'official' }
             $recipe = Get-LlvmRecipe -Provider $provider
             $releases = Invoke-LlvmProviderReleases -Provider $provider -ApiUrl $recipe.api_url
-            $plan = Resolve-LlvmRecipeInstallPlan -Provider $provider -Releases $releases -VersionExpression $cfg.version -ReleaseTag $cfg.release -Crt $cfg.crt -Threads $cfg.threads -Target $cfg.target -Compiler $cfg.compiler -Profile $(if ($cfg.profile) { $cfg.profile } else { 'full' }) -ArchiveOnly
+            $lockOs = ''; $lockArch = ''; $lockVerify = ''
+            for ($i = 1; $i -lt $Tokens.Count; $i++) {
+                switch ($Tokens[$i]) {
+                    '--platform' { $lockOs = $Tokens[++$i] }
+                    '--arch' { $lockArch = $Tokens[++$i] }
+                    '--verify' { $lockVerify = $Tokens[++$i] }
+                    default { throw "Unknown config lock option: $($Tokens[$i])" }
+                }
+            }
+            if ($cfg.kind -eq 'source') { throw "Source builds ($($cfg.version)) cannot be locked; only prebuilt provider assets have a reproducible identity." }
+            $plan = Resolve-LlvmRecipeInstallPlan -Provider $provider -Releases $releases -VersionExpression $cfg.version -ReleaseTag $cfg.release -Platform $lockOs -Arch $lockArch -Crt $cfg.crt -Threads $cfg.threads -Target $cfg.target -Compiler $cfg.compiler -Profile $(if ($cfg.profile) { $cfg.profile } else { 'full' }) -ArchiveOnly
             $lockPath = Join-Path $cfg.root '.llvmup-lock.json'
-            $null = Write-LlvmLockfileEntry -LockPath $lockPath -Plan $plan -Profile $(if ($cfg.profile) { $cfg.profile } else { 'full' }) -Components @($cfg.components) -VerifyPolicy (Resolve-LlvmVerifyPolicy)
+            $null = Write-LlvmLockfileEntry -LockPath $lockPath -Plan $plan -Profile $(if ($cfg.profile) { $cfg.profile } else { 'full' }) -Components @($cfg.components) -VerifyPolicy (Resolve-LlvmVerifyPolicy -RequestedPolicy $lockVerify)
             return $lockPath
         }
         default { throw 'Available config subcommands: init, load, apply, activate, lock' }
@@ -1324,18 +1334,33 @@ function llvmup {
             }
             'update' {
                 $sel = if ($tokens.Count) { $tokens[0] } else { '' }
-                $targets = if ($sel) {
-                    @((Resolve-LlvmInstalledToolchain -Selector $sel -ToolchainsPath $toolchainsPath -HomePath $homePath))
+                $targets = @(if ($sel) {
+                    Resolve-LlvmInstalledToolchain -Selector $sel -ToolchainsPath $toolchainsPath -HomePath $homePath
                 } else {
-                    @(Get-LlvmAllToolchains -ToolchainsPath $toolchainsPath -HomePath $homePath | Where-Object { $_.origin -eq 'managed' })
-                }
+                    Get-LlvmAllToolchains -ToolchainsPath $toolchainsPath -HomePath $homePath | Where-Object { $_.origin -eq 'managed' }
+                })
+                if ($sel -and -not $targets[0]) { throw "No installed toolchain matches '$sel'." }
+                $ok = $true
                 foreach ($t in $targets) {
-                    if (-not $t -or $t.origin -ne 'managed') { continue }
+                    if (-not $t) { continue }
+                    if ($t.origin -ne 'managed') { Write-Warning "Skipping $($t.install_name): $($t.origin) toolchains are not updated."; continue }
+                    # Same provider, LLVM major and CRT; never replaces the installation, aliases, default or pins.
                     $majorExpr = if ($t.llvm_version -match '^(\d+)\.') { "$($matches[1]).*" } else { 'latest' }
-                    $crtArg = if ($t.variant -and $t.variant.crt -and $t.variant.crt -ne 'system') { $t.variant.crt } else { '' }
-                    $null = Invoke-LlvmInstallPrebuiltFromRecipe -Selector $majorExpr -Provider $t.provider -Crt $crtArg -ArchiveOnly -ToolchainsPath $toolchainsPath -HomePath $homePath
+                    $crtArg = if ($t.variant -and $t.variant.crt -and $t.variant.crt -notin @('system', 'unknown')) { $t.variant.crt } else { '' }
+                    try {
+                        $res = Invoke-LlvmInstallPrebuiltFromRecipe -Selector $majorExpr -Provider $t.provider -Crt $crtArg -ArchiveOnly -ResolveOnly -ToolchainsPath $toolchainsPath -HomePath $homePath
+                        if (Resolve-LlvmInstalledToolchain -Selector $res.canonical_id -ToolchainsPath $toolchainsPath -HomePath $homePath -ErrorAction SilentlyContinue) {
+                            Write-Output "$($t.install_name): up to date ($($res.canonical_id))"
+                            continue
+                        }
+                        Write-Output "$($t.install_name): installing $($res.canonical_id)"
+                        $null = Invoke-LlvmInstallPrebuiltFromRecipe -Selector $majorExpr -Provider $t.provider -ReleaseTag $res.release -Crt $crtArg -ArchiveOnly -ToolchainsPath $toolchainsPath -HomePath $homePath
+                    } catch {
+                        Write-Warning "$($t.install_name): $($_.Exception.Message)"
+                        $ok = $false
+                    }
                 }
-                return $true
+                return $ok
             }
             'pick' { return Invoke-LlvmUpPick -Tokens $tokens }
             'toolchain' {

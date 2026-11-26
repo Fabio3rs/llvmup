@@ -65,7 +65,8 @@ $tokens = @($args | ForEach-Object { [string]$_ })
 $rawTokens = ConvertFrom-LlvmWin32CommandLine ([Environment]::CommandLine)
 $sentinel = [Array]::IndexOf($rawTokens, '--llvmup-args')
 if ($sentinel -ge 0) {
-    $tokens = if ($sentinel + 1 -lt $rawTokens.Count) { @($rawTokens[($sentinel + 1)..($rawTokens.Count - 1)]) } else { @() }
+    # @() keeps a single argument as an array (an 'if' expression would unroll it to a string).
+    $tokens = @(if ($sentinel + 1 -lt $rawTokens.Count) { $rawTokens[($sentinel + 1)..($rawTokens.Count - 1)] })
 }
 $first = if ($tokens.Count -gt 0) { $tokens[0].ToLowerInvariant() } else { '' }
 if ($first -in @('activate', 'deactivate', 'use', 'pick')) {
