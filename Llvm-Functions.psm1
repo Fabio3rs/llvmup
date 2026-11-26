@@ -193,12 +193,6 @@ function Get-LlvmDiskUsage {
         [switch]$HumanReadable
     )
 
-    $coreModulePath = Join-Path $PSScriptRoot 'Llvm-Functions-Core.psm1'
-    if (-not (Test-Path $coreModulePath)) {
-        $coreModulePath = Join-Path $PSScriptRoot '..\Llvm-Functions-Core.psm1'
-    }
-    if (Test-Path $coreModulePath) { Import-Module -Force -DisableNameChecking $coreModulePath }
-
     if (-not (Get-Command -Name Get-LlvmDiskUsageData -ErrorAction SilentlyContinue)) {
         throw "Core disk usage function not available (Get-LlvmDiskUsageData)"
     }
@@ -233,7 +227,7 @@ $pwshLib = Join-Path (Join-Path $PSScriptRoot 'libexec') 'pwsh'
 foreach ($helperMod in @('Llvm-Manifest.psm1', 'Llvm-Recipes.psm1', 'Llvm-Resolver.psm1', 'Llvm-Downloader.psm1', 'Llvm-Verifier.psm1', 'Llvm-Extractor.psm1', 'Llvm-Environment.psm1', 'Llvm-Runner.psm1', 'Llvm-ConfigEngine.psm1', 'Llvm-CMake.psm1', 'Llvm-Installer.psm1')) {
     $helperPath = Join-Path $pwshLib $helperMod
     if (Test-Path -LiteralPath $helperPath) {
-        Import-Module $helperPath -Force -DisableNameChecking -ErrorAction SilentlyContinue
+        Import-Module $helperPath -DisableNameChecking -ErrorAction SilentlyContinue
     }
 }
 

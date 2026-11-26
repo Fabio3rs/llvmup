@@ -57,6 +57,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   available for callers of the standalone PowerShell installer.
 
 ### Fixed
+- Linux release packages built from Windows checkouts use LF line endings.
+- Windows uninstall removes its profile block when the recorded module path uses
+  an equivalent spelling, including a Windows short path.
 - Locked sync and execution ignore local aliases that share the recorded toolchain name.
 - Aliases reject a replacement toolchain with a different recorded identity.
 - PowerShell strict reuse accepts recorded Authenticode verification against a pinned publisher.

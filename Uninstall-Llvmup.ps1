@@ -41,12 +41,23 @@ if (-not $NoProfile -and $ProfilePath) {
             }
         }
     }
-    $module = (Join-Path $PSScriptRoot 'Llvm-Functions.psm1').Replace("'", "''")
-    $pattern = '(?m)^# LLVMUP module - Start\r?\n' + [regex]::Escape("Import-Module '$module' -Force") + '(?: -DisableNameChecking)?\r?\n# LLVMUP module - End(?:\r?\n|$)'
+    $module = Join-Path $PSScriptRoot 'Llvm-Functions.psm1'
+    $moduleItem = Get-Item -LiteralPath $module -ErrorAction SilentlyContinue
+    $comparison = if ($env:OS -eq 'Windows_NT') { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
+    $pattern = "(?m)^# LLVMUP module - Start\r?\nImport-Module '(?<path>(?:[^'\r\n]|'')+)' -Force(?: -DisableNameChecking)?\r?\n# LLVMUP module - End(?:\r?\n|$)"
     foreach ($targetProfile in $profileTargets) {
         if (-not (Test-Path -LiteralPath $targetProfile)) { continue }
         $text = [IO.File]::ReadAllText($targetProfile)
-        $updated = [regex]::Replace($text, $pattern, '')
+        $updated = [regex]::Replace($text, $pattern, [System.Text.RegularExpressions.MatchEvaluator]{
+            param($match)
+            $recordedPath = $match.Groups['path'].Value.Replace("''", "'")
+            if ([string]::Equals($recordedPath, $module, $comparison)) { return '' }
+            if ($moduleItem -and [IO.Path]::IsPathRooted($recordedPath)) {
+                $recordedItem = Get-Item -LiteralPath $recordedPath -ErrorAction SilentlyContinue
+                if ($recordedItem -and [string]::Equals($recordedItem.FullName, $moduleItem.FullName, $comparison)) { return '' }
+            }
+            return $match.Value
+        })
         if ($updated -ne $text) {
             Copy-Item -LiteralPath $targetProfile -Destination ($targetProfile + '.llvmup-backup') -Force
             [IO.File]::WriteAllText($targetProfile, $updated, [Text.UTF8Encoding]::new($true))

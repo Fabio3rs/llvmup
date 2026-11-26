@@ -61,6 +61,13 @@ Describe 'LLVMUP package installation' {
         { & $installer -InstallDir $destination -NoProfile } | Should -Throw '*Missing runtime file*'
         (Get-FileHash (Join-Path $destination 'Llvm-Functions.psm1')).Hash | Should -Be $before
     }
+    It 'removes a profile block that uses an equivalent absolute module path' {
+        & $installer -InstallDir $destination -ProfilePath $profileFile
+        $text = (Get-Content -LiteralPath $profileFile -Raw).Replace('custom install', 'custom install\.')
+        [IO.File]::WriteAllText($profileFile, $text)
+        & (Join-Path $destination 'Uninstall-Llvmup.ps1') -ProfilePath $profileFile
+        (Get-Content -LiteralPath $profileFile -Raw).Trim() | Should -Be '# existing profile'
+    }
     It 'rolls back a failed replacement and leaves the profile untouched' {
         & $installer -InstallDir $destination -NoProfile
         $before = (Get-FileHash (Join-Path $destination 'Activate-Llvm.ps1')).Hash

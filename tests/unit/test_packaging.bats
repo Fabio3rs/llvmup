@@ -18,6 +18,28 @@ setup() {
     [ -e "$PACKAGE/githubreleases.json" ]
     grep -q "version='v0.0.0-test'" "$BATS_TEST_TMPDIR/dist/bootstrap.sh"
 }
+@test "Unix package and bootstrap use LF even when built from CRLF files" {
+    local checkout="$BATS_TEST_TMPDIR/crlf-checkout" platform mode name
+    mkdir -p "$checkout/packaging"
+    cp "$REPO/packaging/build.py" "$checkout/packaging/"
+    while read -r platform mode name; do
+        [[ $platform != \#* ]] || continue
+        mkdir -p "$checkout/$(dirname "$name")"
+        cp "$REPO/$name" "$checkout/$name"
+    done < <(tr -d '\r' < "$REPO/packaging/runtime-files.tsv")
+    for name in packaging/runtime-files.tsv packaging/bootstrap.sh packaging/install-files.sh install.sh llvmup; do
+        sed 's/\r$//; s/$/\r/' "$REPO/$name" > "$checkout/$name"
+    done
+    cp "$REPO/packaging/"{bootstrap.ps1,Install-Llvmup.ps1} "$checkout/packaging/"
+    python3 "$checkout/packaging/build.py" v0.0.0-test --output "$checkout/dist"
+    mkdir "$checkout/extract"
+    tar -xzf "$checkout/dist/llvmup-linux.tar.gz" -C "$checkout/extract"
+    ! grep -q $'\r' "$checkout/dist/bootstrap.sh"
+    run bash "$checkout/extract/llvmup/install.sh" --no-profile
+    [ "$status" -eq 0 ]
+    run "$LLVMUP_PREFIX/bin/llvmup" list
+    [ "$status" -eq 0 ]
+}
 @test "package installs from another cwd, repeats, and uninstalls without checkout or directory variables" {
     echo '# keep profile' > "$HOME/.bashrc"
     run bash "$PACKAGE/install.sh" --no-profile
