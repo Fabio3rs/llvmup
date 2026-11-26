@@ -69,7 +69,7 @@ Capabilities are discovered from the files actually present and recorded in
 `scripts/toolchain_matrix.ps1` installs each toolchain with llvmup from the GitHub releases and builds
 a fixed sample with `llvmup run`, with `PATH` reduced to `System32` (plus cmake/ninja for the CMake
 step). Reproduce with
-`pwsh -File scripts	oolchain_matrix.ps1 -LlvmHome C:\llvmup-matrix -Configs lm-x64,lm-i686,lm-arm64,wl-clang,wl-gcc -OutFile matrix.json`.
+`pwsh -File scripts\toolchain_matrix.ps1 -LlvmHome C:\llvmup-matrix -Configs lm-x64,lm-i686,lm-arm64,wl-clang,wl-gcc -OutFile matrix.json`.
 
 Sample: C17, C++23 (`std::vector`, ranges, `std::expected`, `std::filesystem`, `std::thread`,
 exceptions), a static library, a DLL with import library, a Windows resource (`.rc`), debug info, a
