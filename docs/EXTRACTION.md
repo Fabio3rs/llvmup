@@ -78,6 +78,21 @@ produced identical trees.
 | | 7-Zip | - | - | 47.9 s | 0 |
 | llvm-mingw `ubuntu-22.04-x86_64.tar.xz` (84 MB) on Windows | 7-Zip | refused: archive contains symbolic links ("Dangerous link path was ignored") | | | |
 
+Second run on an idle host (PowerShell 7.7, 7-Zip 26.06, `-Repeat 1`, archives from the llvmup
+cache; every backend of an archive produced an identical tree, `equivalent = true`):
+
+| Archive | Backend | Total |
+| --- | --- | --- |
+| llvm-mingw `20261117-ucrt-x86_64.zip` (9,069 files) | built-in .NET ZIP | **12.1 s** |
+| | Python zipfile | 13.9 s |
+| | 7-Zip | 17.1 s |
+| winlibs `...-r3.7z` (12,931 files) | 7-Zip | 27.6 s |
+| winlibs `...-r3.zip` | built-in .NET ZIP | **27.6 s** |
+| | Python zipfile | 34.1 s |
+| | 7-Zip | 38.9 s |
+
+On an idle host the built-in reader is the fastest for ZIP, which matches the `auto` policy.
+
 Conclusions used by `auto`:
 
 - `.tar.zst`/`.tar.xz` with 7-Zip: connecting the processes directly is faster than the temp-file
