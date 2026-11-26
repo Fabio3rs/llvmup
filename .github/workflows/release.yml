@@ -23,6 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Check out the release source
@@ -34,6 +36,14 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: python3 release-source/packaging/build.py "$RELEASE_TAG" --output "$GITHUB_WORKSPACE/dist"
+      # Build provenance for the packages (the SHA256SUMS file is still published and verified by
+      # the bootstraps). Pin this action to a commit SHA before the first release.
+      - name: Attest build provenance of the release packages
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/llvmup-windows.zip
+            dist/llvmup-linux.tar.gz
       - name: Publish verified tag
         env:
           GH_TOKEN: ${{ github.token }}

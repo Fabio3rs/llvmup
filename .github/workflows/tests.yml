@@ -82,6 +82,21 @@ jobs:
     - name: Check Bash and PowerShell engine parity on recorded release metadata
       run: bash tests/integration/engine_parity.sh
 
+    - name: Cross-compile for Windows with llvm-mingw installed by the Bash engine
+      run: |
+        export LLVM_HOME="$RUNNER_TEMP/llvmup-cross"
+        engine="$PWD/libexec/sh/llvmup-engine.sh"
+        bash "$engine" install llvm-mingw@latest --crt ucrt
+        cat > "$RUNNER_TEMP/x.cpp" <<'CPP'
+        #include <vector>
+        #include <iostream>
+        int main() { std::vector<int> v{1, 2, 3}; std::cout << v.size() << "\n"; }
+        CPP
+        for t in x86_64-w64-mingw32 aarch64-w64-mingw32; do
+          bash "$engine" run llvm-mingw@latest --target "$t" -- "$t-clang++" -std=c++23 "$RUNNER_TEMP/x.cpp" -o "$RUNNER_TEMP/x-$t.exe"
+          file "$RUNNER_TEMP/x-$t.exe" | grep -q PE32+
+        done
+
     - name: Prepare lightweight LLVM fixture for action smoke test
       run: |
         fixture="$RUNNER_TEMP/llvmup-data/toolchains/llvmorg-20.1.8/bin"
