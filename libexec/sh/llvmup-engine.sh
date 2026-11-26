@@ -115,10 +115,13 @@ eng_now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 # Selectors and recipes
 # ---------------------------------------------------------------------------------------------
 
+ENG_SELECTOR_PATTERN='^([A-Za-z0-9][A-Za-z0-9-]*)@(.+)$'
+ENG_SHA256_PATTERN='^(sha256:)?([0-9a-fA-F]{64})$'
+
 # Prints "<provider>\t<expression>" ("" provider when none was given).
 eng_split_selector() {
     local sel="$1" explicit="${2:-}" prov="" expr="$1"
-    if [[ "$sel" =~ ^([A-Za-z0-9][A-Za-z0-9-]*)@(.+)$ ]]; then
+    if [[ "$sel" =~ $ENG_SELECTOR_PATTERN ]]; then
         prov="$(printf '%s' "${BASH_REMATCH[1]}" | tr '[:upper:]' '[:lower:]')"
         expr="${BASH_REMATCH[2]}"
     fi
@@ -164,7 +167,7 @@ eng_http_get() {
     local url="$1" out="$2" hdr="${3:-/dev/null}"
     local auth=()
     local token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
-    if [ -n "$token" ] && [[ "$url" =~ ^https://(api\.)?github\.com/ ]]; then
+    if [ -n "$token" ] && [[ "$url" == https://api.github.com/* ]]; then
         auth=(-H "Authorization: Bearer $token")
     fi
     if command -v curl >/dev/null 2>&1; then
@@ -190,6 +193,9 @@ eng_releases() {
     if [ -z "$fixture" ] && [ "$provider" = official ] && [ -n "${LLVMUP_RELEASES_FILE:-}" ]; then
         fixture="$LLVMUP_RELEASES_FILE"
     fi
+    if [ -z "$fixture" ] && [ "$provider" = official ] && [ "${LLVM_TEST_MODE:-0}" = 1 ]; then
+        fixture="$ENGINE_ROOT/githubreleases.json"
+    fi
     if [ -n "$fixture" ]; then
         [ -f "$fixture" ] || eng_die "$key does not exist: $fixture"
         jq -c 'if type == "array" then . else [.] end' "$fixture"
@@ -199,20 +205,30 @@ eng_releases() {
     local api
     api="$(jq -r '.api_url' "$(eng_recipe_path "$provider")")"
     local tmp
-    tmp="$(mktemp -d)"
+    tmp="$(mktemp -d)" || return 1
     local url="$api?per_page=100" page=1 max_pages="${LLVMUP_MAX_RELEASE_PAGES:-5}"
-    local files=()
+    local files=() rc=0
     while [ -n "$url" ] && [ "$page" -le "$max_pages" ]; do
+        if [[ "$url" != https://api.github.com/* ]]; then
+            rm -rf -- "$tmp"
+            eng_die "Refusing a release API page outside api.github.com."
+        fi
         if ! eng_http_get "$url" "$tmp/p$page.json" "$tmp/h$page.txt"; then
-            rm -rf "$tmp"
+            rm -rf -- "$tmp"
+            if [ "$provider" = official ] && [ -f "$ENGINE_ROOT/githubreleases.json" ]; then
+                eng_warn 'GitHub API unavailable; falling back to bundled official release metadata.'
+                jq -c . "$ENGINE_ROOT/githubreleases.json"
+                return
+            fi
             eng_die "GitHub API request failed for provider '$provider' (page $page)"
         fi
         files+=("$tmp/p$page.json")
         url="$(tr -d '\r' < "$tmp/h$page.txt" | grep -i '^link:' | grep -o '<[^>]*>; rel="next"' | sed 's/^<//; s/>; rel="next"$//' | head -1)"
         page=$((page + 1))
     done
-    jq -cs 'add' "${files[@]}"
-    rm -rf "$tmp"
+    jq -ces 'if all(.[]; type == "array") then add else error("Unexpected release API response") end' "${files[@]}" || rc=$?
+    rm -rf -- "$tmp"
+    return "$rc"
 }
 
 # ---------------------------------------------------------------------------------------------
@@ -263,11 +279,29 @@ eng_formats() {
         return
     fi
     local f=()
-    if command -v unzip >/dev/null 2>&1 || [ "$(eng_tar_flavor)" = bsd ] || eng_find_7z >/dev/null; then f+=(zip); fi
-    if eng_find_7z >/dev/null; then f+=(7z); fi
-    if eng_tar_supports xz || eng_find_7z >/dev/null; then f+=(tar.xz); fi
-    if eng_tar_supports zstd; then f+=(tar.zst); fi
-    if command -v tar >/dev/null 2>&1; then f+=(tar.gz tar); fi
+    local extractor="${ENG_OPT_EXTRACTOR:-auto}" have_7z=0 have_tar=0 flavor
+    if [ "$extractor" = python ]; then
+        eng_require python3 'archive extraction'
+        python3 "$ENGINE_ROOT/libexec/llvmup-extract.py" probe | jq -ce '
+            if .data_filter then ["tar","zip"] + (if .xz then ["tar.xz"] else [] end)
+                + (if .gz then ["tar.gz"] else [] end) + (if .zstd then ["tar.zst"] else [] end)
+            else error("Python tarfile lacks the data extraction filter") end'
+        return
+    fi
+    case "$extractor" in
+        auto|7z) if eng_find_7z >/dev/null; then have_7z=1; fi ;;
+    esac
+    case "$extractor" in
+        auto|tar) if command -v tar >/dev/null 2>&1; then have_tar=1; fi ;;
+    esac
+    flavor="$(eng_tar_flavor)"
+    if [ "$have_7z" -eq 1 ] || { [ "$have_tar" -eq 1 ] && [ "$flavor" = bsd ]; } ||
+       { [[ "$extractor" = auto || "$extractor" = zip ]] && command -v unzip >/dev/null 2>&1; }; then f+=(zip); fi
+    if [ "$have_7z" -eq 1 ]; then f+=(7z); fi
+    if [ "$have_7z" -eq 1 ] || { [ "$have_tar" -eq 1 ] && eng_tar_supports xz; }; then f+=(tar.xz); fi
+    if [ "$have_tar" -eq 1 ] && eng_tar_supports zstd; then f+=(tar.zst); fi
+    if [ "$have_tar" -eq 1 ]; then f+=(tar.gz tar); fi
+    if [ "$have_7z" -eq 1 ] && [ "$have_tar" -eq 0 ]; then f+=(tar.gz tar); fi
     printf '%s\n' "${f[@]}" | jq -Rsc 'split("\n") | map(select(length > 0))'
 }
 
@@ -377,7 +411,8 @@ eng_version_satisfies() {
     if [[ "$expr" =~ ^[0-9]+$ ]]; then [[ "$cand" == "$expr".* ]]; return; fi
     if [[ "$expr" =~ ^[0-9]+\.[0-9]+$ ]]; then [[ "$cand" == "$expr".* ]]; return; fi
     if [[ "$expr" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then [ "$cand" = "$expr" ]; return; fi
-    if [[ "$expr" =~ ^llvmorg-([0-9.]+)$ ]]; then [ "$cand" = "${BASH_REMATCH[1]}" ]; return; fi
+    local tag_pattern='^llvmorg-([0-9.]+)$'
+    if [[ "$expr" =~ $tag_pattern ]]; then [ "$cand" = "${BASH_REMATCH[1]}" ]; return; fi
     if command -v llvm-match-version-list >/dev/null 2>&1; then
         local out
         out="$(EXPRESSION_DEBUG=0 EXPRESSION_VERBOSE=0 llvm-match-version-list "$expr" "llvmorg-$cand" 2>/dev/null)" || return 1
@@ -403,7 +438,7 @@ eng_resolve_plan() {
     if [ "$os" != "$(eng_norm_os)" ] && [ -z "${LLVMUP_ASSET_FORMATS:-}" ]; then
         formats='["tar.xz","tar.gz","tar","zip","7z"]'   # portable baseline for other hosts
     else
-        formats="$(eng_formats)"
+        formats="$(eng_formats)" || return 1
     fi
     cands="$(jq -c -n --slurpfile rs <(printf '%s' "$releases") --slurpfile rc "$recipe" \
         --arg os "$os" --arg arch "$arch" --arg crt "$crt" --arg threads "$threads" --arg release "$release" \
@@ -464,8 +499,8 @@ eng_resolve_plan() {
 # ---------------------------------------------------------------------------------------------
 
 eng_download() {
-    # eng_download <url> <dest>
-    local url="$1" dest="$2"
+    # eng_download <url> <dest> [expected sha256]
+    local url="$1" dest="$2" expected="${3:-}"
     case "$url" in
         file://*)
             [ "${LLVMUP_ALLOW_FILE_URLS:-0}" = 1 ] || eng_die "Refusing unsupported download scheme: $url"
@@ -473,14 +508,14 @@ eng_download() {
         http://*|https://*) ;;
         *) eng_die "Refusing unsupported download scheme: $url" ;;
     esac
-    mkdir -p "$(dirname "$dest")"
-    local part="$dest.part-$$"
-    rm -f "$part"
+    mkdir -p -- "$(dirname "$dest")" || return 1
+    local part
+    part="$(mktemp "$dest.part.XXXXXXXX")" || return 1
     local ok=1
     if command -v curl >/dev/null 2>&1; then
         local progress=(-sS)
         [ "$ENGINE_QUIET" = 1 ] || [ ! -t 2 ] || progress=(-#)
-        curl -fL --retry 3 --retry-delay 2 --connect-timeout 30 "${progress[@]}" -H 'User-Agent: llvmup' -o "$part" "$url" && ok=0
+        curl -fL --proto-redir '=http,https' --retry 3 --retry-delay 2 --connect-timeout 30 "${progress[@]}" -H 'User-Agent: llvmup' -o "$part" "$url" && ok=0
     elif command -v wget >/dev/null 2>&1; then
         wget -q --tries=3 --timeout=60 -O "$part" "$url" && ok=0
     else
@@ -490,54 +525,49 @@ eng_download() {
         rm -f "$part"
         eng_die "Download failed: $url"
     fi
-    mv -f "$part" "$dest"
+    if [ -n "$expected" ]; then
+        local actual
+        actual="$(eng_sha256 "$part")"
+        if [ "$actual" != "$expected" ]; then
+            rm -f -- "$part"
+            eng_die "SHA256 digest mismatch for $(basename "$dest"). Expected: $expected, Actual: $actual"
+        fi
+    fi
+    mv -f -- "$part" "$dest" || { rm -f -- "$part"; return 1; }
 }
 
 eng_fetch_asset() {
-    # eng_fetch_asset <plan> <workdir> -> path to verified-by-digest (if known) archive
+    # eng_fetch_asset <plan> <workdir> -> archive path and cache status as JSON
     local plan="$1" work="$2"
-    local provider name url digest id key cache_dir dest
+    local provider name url digest id key cache_dir dest want=""
     provider="$(jq -r '.provider' <<<"$plan")"
     name="$(jq -r '.asset.name' <<<"$plan")"
     url="$(jq -r '.asset.url' <<<"$plan")"
     digest="$(jq -r '.asset.digest // ""' <<<"$plan")"
     id="$(jq -r '.asset.id // ""' <<<"$plan")"
+    case "$name" in ""|.|..|*/*|*\\*|*$'\n'*|*$'\r'*) eng_die "Invalid asset filename: $name" ;; esac
+    if [ -n "$digest" ]; then
+        [[ "$digest" =~ $ENG_SHA256_PATTERN ]] || eng_die "Unsupported asset digest for '$name'. An SHA256 digest is required."
+        want="$(printf '%s' "${BASH_REMATCH[2]}" | tr '[:upper:]' '[:lower:]')"
+    fi
     if [ -n "$digest" ]; then key="$digest"; elif [ -n "$id" ]; then key="id-$id"; else key="$name"; fi
     key="$(printf '%s' "$key" | tr -c 'A-Za-z0-9._-' '_' | cut -c1-80)"
     if [ "${LLVMUP_NO_CACHE:-0}" != 1 ] && [ "${ENG_NO_CACHE:-0}" != 1 ]; then
         cache_dir="$(eng_cache_dir)/$provider/$key"
         dest="$cache_dir/$name"
         if [ -f "$dest" ]; then
-            if [[ "$digest" =~ ^(sha256:)?([0-9a-fA-F]{64})$ ]]; then
-                local want="${BASH_REMATCH[2],,}"
-                if [ "$(eng_sha256 "$dest")" = "$want" ]; then
-                    ENG_CACHE_HIT=1
-                    printf '%s\n' "$dest"
-                    return 0
-                fi
-                eng_warn "Cached $name does not match its digest; downloading again"
-                rm -f "$dest"
-            else
-                ENG_CACHE_HIT=1
-                printf '%s\n' "$dest"
-                return 0
+            if [ -z "$want" ] || [ "$(eng_sha256 "$dest")" = "$want" ]; then
+                jq -cn --arg path "$dest" '{path:$path, cache_hit:1}'
+                return
             fi
+            eng_warn "Cached $name does not match its digest; downloading again"
         fi
     else
         dest="$work/$name"
     fi
     eng_info "Downloading $name"
-    eng_download "$url" "$dest"
-    if [[ "$digest" =~ ^(sha256:)?([0-9a-fA-F]{64})$ ]]; then
-        local want="${BASH_REMATCH[2],,}" got
-        got="$(eng_sha256 "$dest")"
-        if [ "$got" != "$want" ]; then
-            rm -f "$dest"
-            eng_die "SHA256 digest mismatch for $name. Expected: $want, Actual: $got"
-        fi
-    fi
-    ENG_CACHE_HIT=0
-    printf '%s\n' "$dest"
+    eng_download "$url" "$dest" "$want" || return 1
+    jq -cn --arg path "$dest" '{path:$path, cache_hit:0}'
 }
 
 eng_policy() {
@@ -580,8 +610,9 @@ eng_verify() {
         return
     fi
 
-    if [[ "$digest" =~ ^(sha256:)?([0-9a-fA-F]{64})$ ]]; then
-        expected="${BASH_REMATCH[2],,}"; actual="$(eng_sha256 "$file")"; algo=sha256
+    if [[ "$digest" =~ $ENG_SHA256_PATTERN ]]; then
+        expected="$(printf '%s' "${BASH_REMATCH[2]}" | tr '[:upper:]' '[:lower:]')"
+        actual="$(eng_sha256 "$file")"; algo=sha256
         [ "$expected" = "$actual" ] || eng_die "SHA256 digest mismatch for $name. Expected: $expected, Actual: $actual"
         checksum=valid
     fi
@@ -631,8 +662,8 @@ eng_verify() {
                     mkdir -p "$work/gnupg"; chmod 700 "$work/gnupg"
                     if gpg --batch --homedir "$work/gnupg" --import "$work/keys.asc" >/dev/null 2>&1; then
                         local st
-                        st="$(gpg --batch --homedir "$work/gnupg" --status-fd 1 --verify "$work/asset.sig" "$file" 2>/dev/null)" || true
-                        if grep -q '^\[GNUPG:\] VALIDSIG ' <<<"$st"; then
+                        if st="$(gpg --batch --homedir "$work/gnupg" --status-fd 1 --verify "$work/asset.sig" "$file" 2>/dev/null)" &&
+                           grep -q '^\[GNUPG:\] VALIDSIG ' <<<"$st"; then
                             gpg=valid; fpr="$(grep '^\[GNUPG:\] VALIDSIG ' <<<"$st" | awk '{print $3}' | head -1)"
                             methods+=(gpg); ident="gpg:$fpr"
                         elif grep -q '^\[GNUPG:\] NO_PUBKEY ' <<<"$st"; then
@@ -767,7 +798,10 @@ eng_extract() {
             else
                 "$sz" x -bd -bso0 -y "-o$raw" "$arc" || rc=$?
             fi ;;
-        *) rm -rf "$raw"; eng_die "Invalid extractor '$ext'. Expected auto, 7z, tar, or zip." ;;
+        python)
+            eng_require python3 'archive extraction'
+            python3 "$ENGINE_ROOT/libexec/llvmup-extract.py" extract "$arc" "$raw" || rc=$? ;;
+        *) rm -rf "$raw"; eng_die "Invalid extractor '$ext'. Expected auto, 7z, tar, zip, or python." ;;
     esac
     if [ "$rc" -ne 0 ]; then rm -rf "$raw"; eng_die "Extraction failed ($ext, exit $rc): $arc"; fi
     if [ -z "$(ls -A "$raw")" ]; then rm -rf "$raw"; eng_die "Extraction produced no files: $arc"; fi
@@ -866,22 +900,19 @@ eng_discover() {
 }
 
 eng_write_manifest() {
-    # eng_write_manifest <root> <plan> <install-name> <verification-json> <origin>
-    local root="$1" plan="$2" name="$3" ver="$4" origin="${5:-managed}"
-    local disc
-    disc="$(eng_discover "$root" "$(jq -r '.provider' <<<"$plan")")"
-    jq -n --argjson p "$plan" --argjson d "$disc" --argjson v "$ver" --arg name "$name" --arg origin "$origin" \
+    local root="$1" plan="$2" name="$3" ver="$4" disc="$5"
+    jq -n --argjson p "$plan" --argjson d "$disc" --argjson v "$ver" --arg name "$name" \
         --arg now "$(eng_now)" --arg ext "${ENG_EXTRACTOR:-}" --argjson hit "${ENG_CACHE_HIT:-0}" '
         ($p.supported_targets + $d.capabilities.discovered_targets | unique) as $targets
         | {
-            schema: 1, id: $p.canonical_id, install_name: $name, origin: $origin, provider: $p.provider,
+            schema: 1, id: $p.canonical_id, install_name: $name, origin: "managed", provider: $p.provider,
             provider_release: $p.release_tag, provider_revision: $p.revision, llvm_version: $p.llvm_version,
             gcc_version: $p.gcc_version, mingw_version: $p.mingw_version, host: $p.host,
             supported_targets: ([$p.supported_targets[]] + ($d.capabilities.discovered_targets - $p.supported_targets)),
             default_target: $p.default_target, variant: $p.variant, tools: $d.tools, capabilities: $d.capabilities,
             asset: ($p.asset | del(.format) + {format: $p.asset.format}), verification: $v, installed_at: $now,
             installation: {extractor: $ext, cache_hit: ($hit == 1), engine: "bash"}
-          }' > "$root/.llvmup-toolchain.json"
+          }' > "$root/.llvmup-toolchain.json" || return 1
     jq -n --argjson p "$plan" --argjson v "$ver" '{schema:1, version:$p.release_tag, provider:$p.provider, asset_name:$p.asset.name,
         asset_digest:$p.asset.digest, policy:$v.policy, checksum:$v.checksum, gpg:$v.gpg, attestation:$v.attestation,
         methods:($v.methods | join("+")), gpg_fingerprint:$v.gpg_fingerprint, authenticated_identity:$v.authenticated_identity}' \
@@ -901,9 +932,9 @@ eng_read_manifest() {
         return 0
     fi
     # Legacy install: describe what is on disk; never invent provenance or verification.
-    local disc ver=""
+    local disc ver="" version_pattern='([0-9]+\.[0-9]+\.[0-9]+)'
     disc="$(eng_discover "$root" official)"
-    [[ "$name" =~ ([0-9]+\.[0-9]+\.[0-9]+) ]] && ver="${BASH_REMATCH[1]}"
+    [[ "$name" =~ $version_pattern ]] && ver="${BASH_REMATCH[1]}"
     local o="${origin:-legacy}"
     [[ "$name" == source-* ]] && [ -z "$origin" ] && o=source
     jq -c -n --arg n "$name" --arg r "$root" --arg o "$o" --arg v "$ver" --argjson d "$disc" \
@@ -958,7 +989,10 @@ eng_resolve_installed() {
         return 0
     fi
     local prov="" expr="$sel"
-    if [[ "$sel" =~ ^([a-z0-9][a-z0-9-]*)@(.+)$ ]]; then prov="${BASH_REMATCH[1]}"; expr="${BASH_REMATCH[2]}"; fi
+    if [[ "$sel" =~ $ENG_SELECTOR_PATTERN ]]; then
+        prov="$(printf '%s' "${BASH_REMATCH[1]}" | tr '[:upper:]' '[:lower:]')"
+        expr="${BASH_REMATCH[2]}"
+    fi
     local exact
     exact="$(jq -c --arg s "$sel" --arg p "$prov" --arg c "$crt" '[.[] | select((.install_name == $s or .id == $s) and ($p == "" or .provider == $p) and ($c == "" or .variant.crt == $c))] | if length == 1 then .[0] else empty end' <<<"$all")"
     if [ -n "$exact" ]; then printf '%s\n' "$exact"; return 0; fi
@@ -1066,7 +1100,10 @@ eng_delta() {
     root="$(jq -r '.root_path' <<<"$m")"
     [ -d "$root" ] || eng_die "Toolchain root directory does not exist: $root"
     # Target runtime directories (recipe layout.target_runtime_dirs) that exist for this toolchain.
-    local rtd="[]" rp eff_target pat dir
+    local rtd="[]" rp eff_target pat dir sdk_root=""
+    if [ "$(eng_norm_os)" = macos ] && [ "$(jq -r '.provider' <<<"$m")" = official ]; then
+        sdk_root="$(llvm-macos-sdk-root)"
+    fi
     eff_target="${target:-$(jq -r '.default_target // ""' <<<"$m")}"
     if [ -n "$eff_target" ] && rp="$(eng_recipe_path "$(jq -r '.provider // "official"' <<<"$m")" 2>/dev/null)"; then
         while IFS= read -r pat; do
@@ -1075,7 +1112,7 @@ eng_delta() {
             [ -d "$dir" ] && rtd="$(jq -c --arg d "$dir" '. + [$d]' <<<"$rtd")"
         done < <(jq -r '(.layout.target_runtime_dirs // [])[]' "$rp")
     fi
-    jq -c --arg target "$target" --arg compiler "$compiler" --argjson rtd "$rtd" '
+    jq -c --arg target "$target" --arg compiler "$compiler" --argjson rtd "$rtd" --arg sdk "$sdk_root" '
         . as $m
         | $m.root_path as $root
         | ($m.provider // "official") as $prov
@@ -1119,7 +1156,8 @@ eng_delta() {
                   + {_ACTIVE_LLVM: $m.install_name, _ACTIVE_LLVM_PATH: $root, LLVMUP_ACTIVE_VERSION: $m.install_name,
                      LLVMUP_ACTIVE_PATH: $root, LLVMUP_ACTIVE_ID: ($m.id // $m.install_name), LLVMUP_ACTIVE_PROVIDER: $prov,
                      LLVMUP_ACTIVE_COMPILER: $cc}
-                  + (if $tgt != "" then {LLVMUP_ACTIVE_TARGET: $tgt} else {} end)),
+                  + (if $tgt != "" then {LLVMUP_ACTIVE_TARGET: $tgt} else {} end)
+                  + (if $sdk != "" then {SDKROOT: $sdk} else {} end)),
             unset: (($resolved | map(select(.value == null) | .key)) + (if $tgt == "" then ["LLVMUP_ACTIVE_TARGET"] else [] end))
           }' <<<"$m" 2> >(sed 's/^jq: error (at <stdin>:[0-9]*): /Error: /' >&2)
 }
@@ -1132,7 +1170,9 @@ eng_print_delta() {
         shell|sh|bash|zsh)
             local k v p
             while IFS= read -r k; do printf 'unset %s\n' "$k"; done < <(jq -r '.unset[]' <<<"$d")
-            while IFS=$'\t' read -r k v; do printf 'export %s=%q\n' "$k" "$v"; done < <(jq -r '.set | to_entries[] | [.key, .value] | @tsv' <<<"$d")
+            while IFS= read -r -d '' k && IFS= read -r -d '' v; do
+                printf 'export %s=%q\n' "$k" "$v"
+            done < <(jq -j '.set | to_entries[] | .key, "\u0000", .value, "\u0000"' <<<"$d")
             p="$(jq -r '.prepend_path | join(":")' <<<"$d")"
             [ -z "$p" ] || printf 'export PATH=%q:"$PATH"\n' "$p"
             ;;
@@ -1150,7 +1190,9 @@ eng_apply_delta_to_process() {
     # Apply a delta to the current (child) process environment without eval.
     local d="$1" k v
     while IFS= read -r k; do unset "$k"; done < <(jq -r '.unset[]' <<<"$d")
-    while IFS=$'\t' read -r k v; do export "$k=$v"; done < <(jq -r '.set | to_entries[] | [.key, .value] | @tsv' <<<"$d")
+    while IFS= read -r -d '' k && IFS= read -r -d '' v; do
+        export "$k=$v"
+    done < <(jq -j '.set | to_entries[] | .key, "\u0000", .value, "\u0000"' <<<"$d")
     local p
     p="$(jq -r '.prepend_path | join(":")' <<<"$d")"
     [ -z "$p" ] || export PATH="$p:$PATH"
@@ -1193,6 +1235,10 @@ eng_resolve_exe() {
 ENG_OPT_PROVIDER="" ENG_OPT_RELEASE="" ENG_OPT_CRT="" ENG_OPT_THREADS="" ENG_OPT_TARGET="" ENG_OPT_COMPILER=""
 ENG_OPT_PLATFORM="" ENG_OPT_ARCH="" ENG_OPT_NAME="" ENG_OPT_FORMAT="" ENG_OPT_VERIFY="" ENG_OPT_EXTRACTOR=""
 ENG_OPT_FORCE=0 ENG_OPT_INSTALL=0 ENG_OPT_LOCKED=0 ENG_OPT_CONFIG=0 ENG_OPT_JSON=0 ENG_OPT_OUTPUT="" ENG_OPT_TOOLCHAIN="" ENG_OPT_PROFILE=""
+ENG_OPT_COMPONENTS=()
+ENG_OPT_STRIP=0
+ENG_OPT_DEFAULT=0
+VERBOSE=0
 ENG_POSITIONAL=()
 
 eng_parse_common() {
@@ -1212,6 +1258,10 @@ eng_parse_common() {
             --verify) ENG_OPT_VERIFY="${2:?--verify requires a value}"; shift 2 ;;
             --extractor) ENG_OPT_EXTRACTOR="${2:?--extractor requires a value}"; shift 2 ;;
             --profile|-p) ENG_OPT_PROFILE="${2:?--profile requires a value}"; shift 2 ;;
+            --component) ENG_OPT_COMPONENTS+=("${2:?--component requires a value}"); shift 2 ;;
+            --strip) ENG_OPT_STRIP=1; shift ;;
+            --default|-d) ENG_OPT_DEFAULT=1; shift ;;
+            --verbose|-v) VERBOSE=1; shift ;;
             --output|-o) ENG_OPT_OUTPUT="${2:?--output requires a value}"; shift 2 ;;
             --toolchain) ENG_OPT_TOOLCHAIN="${2:?--toolchain requires a value}"; shift 2 ;;
             --force) ENG_OPT_FORCE=1; shift ;;
@@ -1264,13 +1314,17 @@ cmd_resolve() {
 # eng_acquire_lock <lockdir> <name>: atomic mkdir lock that records its owner; a lock left by a
 # process that no longer exists (killed, power loss) is reclaimed instead of blocking forever.
 eng_acquire_lock() {
-    local lock="$1" name="$2" owner
-    if mkdir "$lock" 2>/dev/null; then printf '%s\n' "$$" > "$lock/pid"; return 0; fi
+    local lock="$1" name="$2" owner reclaim="$1.reclaim"
+    if mkdir "$lock" 2>/dev/null; then printf '%s\n' "${BASHPID:-$$}" > "$lock/pid"; return; fi
     owner="$(cat "$lock/pid" 2>/dev/null || true)"
-    if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then
-        eng_warn "Removing a stale lock of '$name' left by process $owner."
-        rm -rf "$lock"
-        if mkdir "$lock" 2>/dev/null; then printf '%s\n' "$$" > "$lock/pid"; return 0; fi
+    if [[ "$owner" =~ ^[1-9][0-9]*$ ]] && ! kill -0 "$owner" 2>/dev/null && mkdir "$reclaim" 2>/dev/null; then
+        if [ "$(cat "$lock/pid" 2>/dev/null)" = "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then
+            eng_warn "Removing a stale lock of '$name' left by process $owner."
+            rm -f -- "$lock/pid"
+            rmdir -- "$lock"
+        fi
+        rmdir -- "$reclaim"
+        if mkdir "$lock" 2>/dev/null; then printf '%s\n' "${BASHPID:-$$}" > "$lock/pid"; return; fi
     fi
     eng_die "Another llvmup operation is currently installing or modifying '$name' ($lock)."
 }
@@ -1278,66 +1332,108 @@ eng_acquire_lock() {
 # eng_repair_interrupted <toolchains> <name> (lock held): restore the backup of an interrupted
 # replacement when the installation is missing; remove staging leftovers. Mirrors PowerShell.
 eng_repair_interrupted() {
-    local tc="$1" name="$2" d
+    local tc="$1" name="$2" d suffix transaction
+    for transaction in "$tc/.$name.llvmup-txn."*; do
+        [ -d "$transaction" ] && [ ! -L "$transaction" ] || continue
+        suffix="${transaction##*.llvmup-txn.}"
+        [[ "$suffix" =~ ^[[:alnum:]]{8}$ ]] || continue
+        if [ -d "$transaction/previous" ] && [ ! -e "$tc/$name" ]; then
+            mv -- "$transaction/previous" "$tc/$name" || return 1
+            eng_warn "Restored '$name' from the backup of an interrupted replacement."
+        fi
+        [ -e "$transaction/previous" ] || rm -rf -- "$transaction"
+    done
     for d in "$tc/$name".backup-*; do
         [ -d "$d" ] || continue
+        suffix="${d##*.backup-}"
+        [[ "$suffix" =~ ^[0-9]+$ ]] || continue
         if [ ! -e "$tc/$name" ]; then
-            mv "$d" "$tc/$name" && eng_warn "Restored '$name' from the backup of an interrupted replacement."
-        else
-            rm -rf "$d"
+            mv -- "$d" "$tc/$name" || return 1
+            eng_warn "Restored '$name' from the backup of an interrupted replacement."
         fi
     done
-    for d in "$tc/$name".installing-*; do [ -d "$d" ] && rm -rf "$d"; done
+    for d in "$tc/$name".installing-*; do
+        [ -d "$d" ] || continue
+        suffix="${d##*.installing-}"
+        if [[ "$suffix" =~ ^[0-9]+$ ]] && [ ! -f "$d/.llvmup-toolchain.json" ] &&
+           [ ! -x "$d/bin/clang" ] && [ ! -x "$d/bin/gcc" ]; then
+            rm -rf -- "$d"
+        fi
+    done
     return 0
 }
 
-cmd_install() {
+cmd_install() (
     eng_parse_common "$@"
     local sel="${ENG_POSITIONAL[0]:-latest}" prov expr split
     split="$(eng_split_selector "$sel" "$ENG_OPT_PROVIDER")" || exit 1
     IFS=$'\t' read -r prov expr <<<"$split"
     prov="${prov:-official}"; expr="${expr:-latest}"
-    if [ -n "$ENG_OPT_PROFILE" ] && [ "$ENG_OPT_PROFILE" != full ]; then
-        eng_die "Provider '$prov' currently supports only the 'full' profile (requested '$ENG_OPT_PROFILE')."
-    fi
     local os arch policy plan
     os="$(eng_norm_os "$ENG_OPT_PLATFORM")"; arch="$(eng_norm_arch "$ENG_OPT_ARCH")"
     [ "$os" = "$(eng_norm_os)" ] || eng_die "Cannot install a toolchain for host '$os' on $(eng_norm_os); use 'resolve --platform' to inspect it."
-    policy="$(eng_policy "$ENG_OPT_VERIFY")"
-    plan="$(eng_resolve_plan "$prov" "$expr" "$ENG_OPT_RELEASE" "$ENG_OPT_CRT" "$ENG_OPT_THREADS" "$os" "$arch" "$ENG_OPT_TARGET")" || exit 1
-    if [ -n "${ENG_LOCKED_ASSET:-}" ] && [ "$(jq -r '.asset.name' <<<"$plan")" != "$ENG_LOCKED_ASSET" ]; then
-        eng_die "Locked asset '$ENG_LOCKED_ASSET' differs from resolved asset '$(jq -r '.asset.name' <<<"$plan")'. Update the lockfile with 'llvmup config lock'."
+    if [ "$prov" = official ]; then
+        local SCRIPT_DIR="$ENGINE_ROOT" PROFILE="$ENG_OPT_PROFILE" STRIP="$ENG_OPT_STRIP"
+        local COMPONENTS=("${ENG_OPT_COMPONENTS[@]}")
+        source "$ENGINE_ROOT/libexec/llvmup-selection.sh"
+        llvm_selection_init || exit 1
+        if [ "$LLVM_SELECTION_ENABLED" -eq 1 ]; then
+            [ "$os" = linux ] || eng_die 'Selective installation supports Linux in the Bash engine.'
+            [ "${ENG_OPT_EXTRACTOR:-auto}" = auto ] || eng_die 'Selective installation uses the selection engine; omit --extractor.'
+        fi
+    elif { [ -n "$ENG_OPT_PROFILE" ] && [ "$ENG_OPT_PROFILE" != full ]; } ||
+         [ "${#ENG_OPT_COMPONENTS[@]}" -gt 0 ] || [ "$ENG_OPT_STRIP" -eq 1 ]; then
+        eng_die "Provider '$prov' supports only full, unstripped installations."
     fi
-    if [ -n "${ENG_LOCKED_DIGEST:-}" ]; then
-        local up
+    policy="$(eng_policy "$ENG_OPT_VERIFY")" || exit 1
+    plan="$(eng_resolve_plan "$prov" "$expr" "$ENG_OPT_RELEASE" "$ENG_OPT_CRT" "$ENG_OPT_THREADS" "$os" "$arch" "$ENG_OPT_TARGET")" || exit 1
+    if [ -n "${locked_entry:-}" ]; then
+        jq -e --argjson entry "$locked_entry" '
+            .canonical_id == $entry.canonical_id and
+            .asset.name == $entry.asset.name and
+            (($entry.asset.id // "" | tostring) as $id | $id == "" or (.asset.id | tostring) == $id)
+        ' <<<"$plan" >/dev/null || eng_die "Locked asset '$(jq -r '.asset.name' <<<"$locked_entry")' differs from the resolved installation identity. Update the lockfile with 'llvmup config lock'."
+    fi
+    local locked_digest= up
+    if [ -n "${locked_entry:-}" ]; then
+        locked_digest="$(jq -r '.asset.digest // ""' <<<"$locked_entry")"
+    fi
+    if [ -n "${LLVMUP_EXPECTED_ASSET_JSON:-}" ]; then
+        jq -e --argjson expected "$LLVMUP_EXPECTED_ASSET_JSON" '
+            .canonical_id == $expected.canonical_id and .release_tag == $expected.release and
+            .asset.name == $expected.asset_name and .asset.id == $expected.asset_id and
+            .asset.digest == $expected.asset_digest
+        ' <<<"$plan" >/dev/null || eng_die 'Resolved asset changed since the installation was planned.'
+    fi
+    if [ -n "$locked_digest" ]; then
         up="$(jq -r '.asset.digest // ""' <<<"$plan")"
-        [ -z "$up" ] || [ "$up" = "$ENG_LOCKED_DIGEST" ] || eng_die "Locked digest $ENG_LOCKED_DIGEST differs from the upstream digest $up."
-        plan="$(jq -c --arg d "$ENG_LOCKED_DIGEST" '.asset.digest = $d' <<<"$plan")"
+        [ -z "$up" ] || [ "$up" = "$locked_digest" ] || eng_die "Locked digest $locked_digest differs from the upstream digest $up."
+        plan="$(jq -c --arg d "$locked_digest" '.asset.digest = $d' <<<"$plan")"
     fi
     if [ -n "$ENG_OPT_COMPILER" ]; then plan="$(jq -c --arg c "$ENG_OPT_COMPILER" '.variant.default_compiler = $c' <<<"$plan")"; fi
 
     local name tc dest
     name="${ENG_OPT_NAME:-$(jq -r '.canonical_id' <<<"$plan")}"
-    case "$name" in ""|.|..|*/*|*\\*) eng_die "Invalid installation name: $name" ;; esac
+    case "$name" in ""|.*|*/*|*\\*|*$'\n'*|*$'\r'*) eng_die "Invalid installation name: $name" ;; esac
     tc="$(eng_toolchains)"; dest="$tc/$name"
-    mkdir -p "$tc"
+    mkdir -p -- "$tc" || exit 1
+    if [ "$prov" = official ]; then llvm_space_snapshot 'before installation' "$tc"; fi
     [ "$ENGINE_QUIET" = 1 ] || eng_path_warnings "$prov" "$dest"
 
-    local lock="$tc/.$name.llvmup.lock"
-    eng_acquire_lock "$lock" "$name"
-    eng_repair_interrupted "$tc" "$name"
-    local work staging backup
-    work="$(mktemp -d)"
-    staging="$dest.installing-$$"
-    backup="$dest.backup-$$"
-    # shellcheck disable=SC2064
-    trap "rm -rf '$work' '$staging' '$staging.raw-$$'; rm -rf '$lock'" EXIT
+    install_lock="$tc/.$name.llvmup.lock"
+    eng_acquire_lock "$install_lock" "$name" || exit 1
+    install_work=
+    install_transaction=
+    trap 'if [ -n "$install_work" ]; then rm -rf -- "$install_work"; fi
+          if [ -n "$install_transaction" ] && [ ! -e "$install_transaction/previous" ]; then rm -rf -- "$install_transaction"; fi
+          rm -f -- "$install_lock/pid"; rmdir -- "$install_lock"' EXIT
+    eng_repair_interrupted "$tc" "$name" || exit 1
 
     if [ -d "$dest" ] && [ "$ENG_OPT_FORCE" -ne 1 ]; then
         if [ -f "$dest/.llvmup-toolchain.json" ] && jq -e '(.capabilities.compilers // []) | length > 0' "$dest/.llvmup-toolchain.json" >/dev/null 2>&1; then
-            if [ "$policy" = strict ] && ! jq -e '.verification.gpg == "valid" or .verification.attestation == "valid"' "$dest/.llvmup-toolchain.json" >/dev/null; then
-                eng_die "Strict verification cannot trust the existing toolchain: no authenticated origin is recorded."
-            fi
+            eng_check_managed_asset "$(jq -c '.release = .release_tag' <<<"$plan")" "$(cat "$dest/.llvmup-toolchain.json")" "$policy"
+            if [ "$prov" = official ]; then llvm_selection_check "$dest" || exit 1; fi
+            if [ "$ENG_OPT_DEFAULT" -eq 1 ]; then llvm-default-set "$name" || exit 1; fi
             eng_info "Toolchain '$name' is already installed at $dest"
             printf '%s\n' "$dest"
             return 0
@@ -1345,25 +1441,40 @@ cmd_install() {
         eng_die "Incomplete toolchain already exists at $dest. Remove it or pass --force."
     fi
 
+    local work staging backup
+    work="$(mktemp -d)" || exit 1
+    install_work="$work"
+    install_transaction="$(mktemp -d "$tc/.$name.llvmup-txn.XXXXXXXX")" || exit 1
+    staging="$install_transaction/staging"
+    backup="$install_transaction/previous"
     eng_info "Installing $prov ($(jq -r '.release_tag' <<<"$plan"), LLVM $(jq -r '.llvm_version' <<<"$plan")) -> $name"
-    local archive ver
-    archive="$(eng_fetch_asset "$plan" "$work")" || exit 1
-    [ "$(basename "$archive")" != "" ] || exit 1
-    case "$archive" in "$(eng_cache_dir)"/*) ENG_CACHE_HIT="${ENG_CACHE_HIT:-0}" ;; esac
+    local fetch archive ver
+    fetch="$(eng_fetch_asset "$plan" "$work")" || exit 1
+    archive="$(jq -er '.path | strings | select(length > 0)' <<<"$fetch")" || exit 1
+    ENG_CACHE_HIT="$(jq -r '.cache_hit' <<<"$fetch")"
     ver="$(eng_verify "$plan" "$archive" "$work" "$policy")" || exit 1
-    eng_extract "$archive" "$staging" "${ENG_OPT_EXTRACTOR:-auto}"
+    if [ "$prov" = official ] && [ "$LLVM_SELECTION_ENABLED" -eq 1 ]; then
+        python3 "$ENGINE_ROOT/libexec/llvmup-selection.py" extract --archive "$archive" --root "$staging" "${LLVM_SELECTION_ARGS[@]}" || exit 1
+        ENG_EXTRACTOR=selection
+    else
+        eng_extract "$archive" "$staging" "${ENG_OPT_EXTRACTOR:-auto}" || exit 1
+    fi
+    if [ "$prov" = official ]; then llvm_selection_finalize "$staging" || exit 1; fi
     [ -d "$staging/bin" ] || eng_die "Staging directory is missing bin/ for $prov"
 
     # Validate: a compiler must exist and answer --version.
     local disc cc
     disc="$(eng_discover "$staging" "$prov")"
     jq -e '.capabilities.compilers | length > 0' <<<"$disc" >/dev/null || eng_die "Validation failed: no supported compiler found in $staging/bin"
-    cc="$(jq -r '.tools.clang // .tools.gcc' <<<"$disc")"
+    if [ "$prov" = official ]; then
+        jq -e '.tools.clang and .tools["clang++"]' <<<"$disc" >/dev/null || eng_die 'Validation failed: official LLVM requires clang and clang++.'
+    fi
     local vout
-    vout="$("$staging/$cc" --version 2>&1)" || eng_die "Validation failed: '$cc --version' failed: $(printf '%s' "$vout" | head -3 | tr '
-' ' ')"
+    while IFS= read -r cc; do
+        vout="$("$staging/$cc" --version 2>&1)" || eng_die "Validation failed: '$cc --version' failed: $vout"
+    done < <(jq -r '[.tools.clang, .tools["clang++"], .tools.gcc] | .[] | strings' <<<"$disc")
 
-    eng_write_manifest "$staging" "$plan" "$name" "$ver" managed
+    eng_write_manifest "$staging" "$plan" "$name" "$ver" "$disc" || exit 1
 
     if [ -e "$dest" ]; then mv "$dest" "$backup" || eng_die "Cannot move existing installation aside"; fi
     if ! mv "$staging" "$dest"; then
@@ -1371,9 +1482,11 @@ cmd_install() {
         eng_die "Failed to publish $dest"
     fi
     rm -rf "$backup"
+    if [ "$ENG_OPT_DEFAULT" -eq 1 ]; then llvm-default-set "$name" || exit 1; fi
+    if [ "$prov" = official ]; then llvm_space_snapshot 'after installation' "$dest"; fi
     eng_info "[OK] Installed '$name' at $dest (verify=$(jq -r '.methods | join("+")' <<<"$ver"))"
     printf '%s\n' "$dest"
-}
+)
 
 cmd_env() {
     eng_parse_common "$@"
@@ -1755,24 +1868,31 @@ eng_lock_entry() {
 
 eng_policy_rank() { case "$1" in skip) echo 0 ;; warn) echo 1 ;; strict) echo 2 ;; *) echo 1 ;; esac; }
 
+eng_config_components() (
+    cd -- "$1" || exit 1
+    llvm-config-load >/dev/null || exit 1
+    printf '%s\n' "${LLVM_CONFIG_COMPONENTS[@]}" | jq -Rsc 'split("\n") | map(select(length > 0))'
+)
+
 cmd_lock() {
     # llvmup config lock [--platform OS] [--arch A] [--verify P]: resolve the project request and record it.
     eng_parse_common "$@"
-    local cfg root os arch plan lockf policy tmp
+    local cfg root os arch plan lockf policy tmp components
     cfg="$(eng_project_config)" || eng_die "No .llvmup-config file found"
     root="$(dirname "$cfg")"
     eng_load_config_request "$cfg"
     [ "$CFG_KIND" = prebuilt ] || eng_die "Source builds ($CFG_EXPR) cannot be locked; only prebuilt provider assets have a reproducible identity."
+    components="$(eng_config_components "$root")" || return 1
     os="$(eng_norm_os "$ENG_OPT_PLATFORM")"; arch="$(eng_norm_arch "$ENG_OPT_ARCH")"
     plan="$(eng_resolve_plan "$CFG_PROVIDER" "$CFG_EXPR" "$CFG_RELEASE" "$CFG_CRT" "$CFG_THREADS" "$os" "$arch" "$CFG_TARGET")" || exit 1
-    policy="$(eng_policy "$ENG_OPT_VERIFY")"
+    policy="$(eng_policy "$ENG_OPT_VERIFY")" || return 1
     lockf="$root/.llvmup-lock.json"
     if [ -f "$lockf" ]; then
         jq -e '.schema == 1' "$lockf" >/dev/null 2>&1 || eng_die "Unsupported lockfile schema in $lockf"
     fi
     tmp="$lockf.tmp-$$"
     { if [ -f "$lockf" ]; then cat "$lockf"; else printf '{"schema":1,"entries":{}}'; fi; } |
-        jq --argjson plan "$plan" --arg key "$(eng_host_key "$os" "$arch")" --arg profile "${CFG_PROFILE:-full}" \
+        jq --argjson plan "$plan" --arg key "$(eng_host_key "$os" "$arch")" --arg profile "${CFG_PROFILE:-full}" --argjson components "$components" \
            --arg policy "$policy" --arg now "$(eng_now)" '
             .entries = (.entries // {})
             | .entries[$key] = {
@@ -1781,18 +1901,41 @@ cmd_lock() {
                 host: {os: $plan.host.os, arch: $plan.host.arch}, variant: $plan.variant,
                 target: ($plan.default_target // ""),
                 asset: {name: $plan.asset.name, url: $plan.asset.url, digest: ($plan.asset.digest // ""), id: (($plan.asset.id // "") | tostring)},
-                profile: $profile, components: [], verify_policy: $policy, locked_at: $now }' > "$tmp" && mv "$tmp" "$lockf" ||
+                profile: $profile, components: $components, verify_policy: $policy, locked_at: $now }' > "$tmp" && mv "$tmp" "$lockf" ||
         { rm -f "$tmp"; eng_die "Failed to write $lockf"; }
     printf '%s\n' "$lockf"
 }
 
-# eng_check_locked_install <entry> <manifest>: the installed toolchain must be the locked asset.
-eng_check_locked_install() {
+# eng_check_managed_asset <expected> <manifest> <policy>
+eng_check_managed_asset() {
     local want have
     want="$(jq -r '.asset.digest // ""' <<<"$1")"
     have="$(jq -r '.asset.digest // ""' <<<"$2")"
-    if [ -n "$want" ] && [ -n "$have" ] && [ "$want" != "$have" ]; then
-        eng_die "Installed toolchain '$(jq -r '.install_name' <<<"$2")' digest $have differs from the lockfile digest $want."
+    if [ -n "$want" ] && [ "$want" != "$have" ]; then
+        eng_die "Installed toolchain digest '${have:-missing}' differs from the requested asset digest '$want'."
+    fi
+    jq -e --argjson expected "$1" '
+        .origin == "managed" and .id == $expected.canonical_id and
+        .provider == $expected.provider and .provider_release == $expected.release and
+        .host.os == $expected.host.os and .host.arch == $expected.host.arch and
+        (($expected.asset.name // "") as $name | $name == "" or .asset.name == $name) and
+        (($expected.asset.id // "" | tostring) as $id | $id == "" or (.asset.id | tostring) == $id)
+    ' <<<"$2" >/dev/null || eng_die "Installed toolchain identity or asset differs from the requested managed installation."
+    if [ "$3" = strict ] && ! jq -e '.verification.gpg == "valid" or .verification.attestation == "valid"' <<<"$2" >/dev/null; then
+        eng_die "Strict verification cannot trust the existing toolchain: no authenticated origin is recorded."
+    fi
+}
+
+eng_check_locked_install() {
+    local entry="$1" manifest="$2" policy="$3"
+    policy="$(eng_policy "${policy:-warn}")" || return 1
+    eng_check_managed_asset "$entry" "$manifest" "$policy"
+    if [ "$(jq -r '.provider' <<<"$entry")" = official ]; then
+        local SCRIPT_DIR="$ENGINE_ROOT" PROFILE STRIP=0 COMPONENTS=() component
+        PROFILE="$(jq -r '.profile // "full"' <<<"$entry")"
+        while IFS= read -r component; do COMPONENTS+=("$component"); done < <(jq -r '.components[]?' <<<"$entry")
+        source "$ENGINE_ROOT/libexec/llvmup-selection.sh"
+        llvm_selection_init && llvm_selection_check "$(jq -r '.root_path' <<<"$manifest")"
     fi
 }
 
@@ -1807,28 +1950,31 @@ cmd_sync() {
     eng_load_config_request "$cfg"
 
     if [ "$locked" -eq 1 ]; then
-        local entry prov cid crt m policy want
-        entry="$(eng_lock_entry "$root/.llvmup-lock.json")"
+        local entry locked_entry prov cid crt m policy want component
+        entry="$(eng_lock_entry "$root/.llvmup-lock.json")" || return 1
         prov="$(jq -r '.provider' <<<"$entry")"; cid="$(jq -r '.canonical_id' <<<"$entry")"
         crt="$(jq -r '.variant.crt // "" | select(. != "system" and . != "unknown")' <<<"$entry")"
         [ "$CFG_PROVIDER" = "$prov" ] || eng_die "Lockfile provider '$prov' conflicts with .llvmup-config provider '$CFG_PROVIDER'."
         [ -z "$CFG_CRT" ] || [ -z "$crt" ] || [ "$CFG_CRT" = "$crt" ] || eng_die "Lockfile CRT '$crt' conflicts with .llvmup-config CRT '$CFG_CRT'."
-        want="$(jq -r '.verify_policy // "warn"' <<<"$entry")"
-        policy="$(eng_policy "${ENG_OPT_VERIFY:-$want}")"
+        want="$(eng_policy "$(jq -r '.verify_policy // "warn"' <<<"$entry")")" || return 1
+        policy="$(eng_policy "${ENG_OPT_VERIFY:-$want}")" || return 1
         [ "$(eng_policy_rank "$policy")" -ge "$(eng_policy_rank "$want")" ] || eng_die "Verification policy '$policy' is weaker than the locked policy '$want'."
         if m="$(eng_resolve_installed "$cid" 2>/dev/null)"; then
-            eng_check_locked_install "$entry" "$m"
+            eng_check_locked_install "$entry" "$m" "$policy" || return 1
             eng_info "Locked toolchain '$cid' is already installed."
             jq -r '.root_path' <<<"$m"
             return 0
         fi
-        ENG_LOCKED_DIGEST="$(jq -r '.asset.digest // ""' <<<"$entry")"
-        ENG_LOCKED_ASSET="$(jq -r '.asset.name // ""' <<<"$entry")"
-        export ENG_LOCKED_DIGEST ENG_LOCKED_ASSET
+        locked_entry="$entry"
         local args=("$prov@latest" --release "$(jq -r '.release' <<<"$entry")" --name "$cid" --verify "$policy")
         [ -z "$crt" ] || args+=(--crt "$crt")
-        local tgt; tgt="$(jq -r '.target // ""' <<<"$entry")"
+        local tgt threads
+        tgt="$(jq -r '.target // ""' <<<"$entry")"
+        threads="$(jq -r '.variant.threads // "" | select(. != "system" and . != "unknown")' <<<"$entry")"
         [ -z "$tgt" ] || [ "$prov" = official ] || args+=(--target "$tgt")
+        [ -z "$threads" ] || args+=(--threads "$threads")
+        args+=(--profile "$(jq -r '.profile // "full"' <<<"$entry")")
+        while IFS= read -r component; do args+=(--component "$component"); done < <(jq -r '.components[]?' <<<"$entry")
         cmd_install "${args[@]}"
         return
     fi
@@ -1843,6 +1989,9 @@ cmd_sync() {
     [ -z "$CFG_THREADS" ] || args+=(--threads "$CFG_THREADS")
     [ -z "$CFG_TARGET" ] || args+=(--target "$CFG_TARGET")
     [ -z "$CFG_PROFILE" ] || args+=(--profile "$CFG_PROFILE")
+    local components component
+    components="$(eng_config_components "$root")" || return 1
+    while IFS= read -r component; do args+=(--component "$component"); done < <(jq -r '.[]' <<<"$components")
     [ -z "$CFG_NAME" ] || args+=(--name "$CFG_NAME")
     [ -z "$ENG_OPT_VERIFY" ] || args+=(--verify "$ENG_OPT_VERIFY")
     cmd_install "${args[@]}"
@@ -1852,11 +2001,14 @@ cmd_sync() {
 eng_locked_manifest() {
     local cfg entry cid m
     cfg="$(eng_project_config)" || eng_die "--locked needs a project .llvmup-config and .llvmup-lock.json."
-    entry="$(eng_lock_entry "$(dirname "$cfg")/.llvmup-lock.json")"
+    entry="$(eng_lock_entry "$(dirname "$cfg")/.llvmup-lock.json")" || return 1
     cid="$(jq -r '.canonical_id' <<<"$entry")"
     m="$(eng_resolve_installed "$cid" 2>/dev/null)" || eng_die "Locked toolchain '$cid' is not installed; run 'llvmup sync --locked'."
-    eng_check_locked_install "$entry" "$m"
-    printf '%s\n' "$m"
+    eng_check_locked_install "$entry" "$m" "$(jq -r '.verify_policy // "warn"' <<<"$entry")" || return 1
+    jq -c --argjson entry "$entry" '
+        .default_target = ($entry.target // .default_target) |
+        .variant.default_compiler = ($entry.variant.default_compiler // .variant.default_compiler)
+    ' <<<"$m"
 }
 
 cmd_list_remote() {
@@ -1915,7 +2067,7 @@ Usage: llvmup-engine.sh <command> [options]
 
 Commands:
   resolve [provider@]<expr> [--provider P] [--release TAG] [--crt C] [--platform OS] [--arch A] [--format tag|json|plan]
-  install [provider@]<expr> [--name N] [--crt C] [--release TAG] [--force] [--no-cache] [--verify warn|strict|skip] [--extractor auto|tar|7z|zip]
+  install [provider@]<expr> [--name N] [--crt C] [--release TAG] [--force] [--no-cache] [--verify warn|strict|skip] [--extractor auto|tar|7z|zip|python]
   env [selector|--config] [--target T] [--compiler C] [--format shell|github|json]
   run [selector] [--target T] [--compiler C] [--install] -- <command> [args...]
   which <tool> [--toolchain S]      where [S]      info [S] [--json]      status [--json]

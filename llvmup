@@ -64,14 +64,14 @@ engine_exec() {
     exec bash "$LLVMUP_ENGINE" "$@"
 }
 
-# True when the arguments need the provider engine (non-official provider or provider-only option).
+# Explicit provider requests and recipe-specific options use the provider engine.
 needs_provider_engine() {
     local prev="" a
     for a in "$@"; do
         case "$a" in
-            winlibs@*|llvm-mingw@*|--crt|--release|--target|--compiler|--extractor|--threads) return 0 ;;
+            official@*|winlibs@*|llvm-mingw@*|--crt|--release|--target|--compiler|--extractor|--threads) return 0 ;;
         esac
-        if [ "$prev" = --provider ] && [ "$a" != official ]; then return 0; fi
+        if [ "$prev" = --provider ]; then return 0; fi
         prev="$a"
     done
     return 1

@@ -29,7 +29,6 @@ powershell 644 Activate-LlvmVsCode.ps1
 powershell 644 Deactivate-Llvm.ps1
 powershell 644 Download-Llvm.ps1
 powershell 644 libexec/Llvm-Selection.psm1
-powershell 644 Download-Llvm-Enhanced.ps1
 powershell 644 Get-UserHome.psm1
 powershell 644 Install-Llvm.ps1
 powershell 644 Llvm-Completion.psm1

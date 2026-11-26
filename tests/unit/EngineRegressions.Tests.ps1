@@ -342,13 +342,15 @@ Describe 'LLVMUP engine regressions' {
             $g = 'a' * 32
             $backup = Join-Path $tc "tc2.backup-$g"
             $staging = Join-Path $tc "tc2.installing-$g.raw-$g"
+            $shortStaging = Join-Path $tc 'tc2.installing-0123abcd.raw-9876abcd'
             $other = Join-Path $tc 'tc2-other'
-            foreach ($d in @($backup, $staging, $other)) { $null = New-Item -ItemType Directory -Path (Join-Path $d 'bin') -Force }
+            foreach ($d in @($backup, $staging, $shortStaging, $other)) { $null = New-Item -ItemType Directory -Path (Join-Path $d 'bin') -Force }
             $h = Enter-LlvmToolchainLock -ToolchainsPath $tc -InstallName 'tc2' 3>$null
             Exit-LlvmToolchainLock -LockHandle $h
             Test-Path -LiteralPath (Join-Path $tc 'tc2\bin') | Should -BeTrue
             Test-Path -LiteralPath $backup | Should -BeFalse
             Test-Path -LiteralPath $staging | Should -BeFalse
+            Test-Path -LiteralPath $shortStaging | Should -BeFalse
             Test-Path -LiteralPath $other | Should -BeTrue
         }
     }
@@ -535,6 +537,15 @@ Describe 'LLVMUP engine regressions' {
             ($help -join "`n") | Should -Match 'Usage: llvmup'
             $null = & $script:launcher list 2>&1
             $LASTEXITCODE | Should -Be 0
+        }
+
+        It 'runs with a System32-only PATH' -Skip:($env:OS -ne 'Windows_NT') {
+            $env:PATH = Join-Path $env:SystemRoot 'System32'
+            $env:LLVM_HOME = $script:lhome
+            $env:LLVM_TOOLCHAINS_DIR = Join-Path $script:lhome 'toolchains'
+            $help = & $script:launcher help
+            $LASTEXITCODE | Should -Be 0
+            ($help -join "`n") | Should -Match 'Usage: llvmup'
         }
     }
 }

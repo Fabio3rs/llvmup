@@ -65,6 +65,9 @@ function Invoke-LlvmInstallPrebuiltFromRecipe {
     $recipe = Get-LlvmRecipe -Provider $effProvider
     $hostOs = Normalize-LlvmHostOs -Platform $Platform
     $hostArch = Normalize-LlvmHostArch -Arch $Arch
+    if (-not $ResolveOnly -and $hostOs -ne (Normalize-LlvmHostOs)) {
+        throw "Cannot install a toolchain for host '$hostOs' on $(Normalize-LlvmHostOs). Use 'llvmup resolve --platform' to inspect it."
+    }
 
     $selectionModule = Join-Path (Split-Path $PSScriptRoot -Parent) 'Llvm-Selection.psm1'
     Import-Module $selectionModule -Force -DisableNameChecking
@@ -78,6 +81,9 @@ function Invoke-LlvmInstallPrebuiltFromRecipe {
             }
             if ($Strip -and $hostOs -ne 'linux') {
                 throw 'Strip is supported only for Linux ELF executables'
+            }
+            if ($selection.selective -and $Extractor -ne 'auto') {
+                throw 'Selective installation uses the selection engine. Omit --extractor.'
             }
             if ($selection.selective) { $ArchiveOnly = $true }
         }
@@ -117,6 +123,12 @@ function Invoke-LlvmInstallPrebuiltFromRecipe {
     if ($LockedEntry) {
         # Enforce the lock before any download: same provider, release, asset name and digest.
         $la = $LockedEntry.asset
+        if ($LockedEntry.canonical_id -and $plan.canonical_id -cne $LockedEntry.canonical_id) {
+            throw "Locked toolchain identity differs from the resolved identity '$($plan.canonical_id)'."
+        }
+        if ($la.id -and [string]$plan.asset.id -cne [string]$la.id) {
+            throw "Locked asset ID differs from the upstream asset ID."
+        }
         if ($LockedEntry.provider -and $plan.provider -ne $LockedEntry.provider) {
             throw "Locked provider '$($LockedEntry.provider)' differs from resolved provider '$($plan.provider)'."
         }
@@ -158,8 +170,19 @@ function Invoke-LlvmInstallPrebuiltFromRecipe {
         }
     }
 
+    if ($env:LLVMUP_EXPECTED_ASSET_JSON) {
+        $expected = ConvertFrom-Json -InputObject $env:LLVMUP_EXPECTED_ASSET_JSON -ErrorAction Stop
+        if ($plan.canonical_id -cne $expected.canonical_id -or $plan.release_tag -cne $expected.release -or
+            $plan.asset.name -cne $expected.asset_name -or [string]$plan.asset.id -cne [string]$expected.asset_id -or
+            [string]$plan.asset.digest -cne [string]$expected.asset_digest) {
+            throw 'Resolved asset changed since the installation was planned.'
+        }
+    }
+
     $installName = if ($Name) { $Name } else { $plan.canonical_id }
-    if ($installName -in @('.', '..') -or $installName.Contains('/') -or $installName.Contains('\')) {
+    if ($installName -match '[<>:"/\\|?*\x00-\x1f]' -or $installName -match '[. ]$' -or
+        $installName -match '^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\.|$)' -or
+        $installName -match '\.(installing|backup)-(?:[0-9a-f]{8}|[0-9a-f]{32})(?:\.(raw|tarstage)-[0-9a-f]+)?$') {
         throw "Invalid installation name: $installName"
     }
     $installPath = Join-Path $ToolchainsPath $installName
@@ -181,18 +204,15 @@ function Invoke-LlvmInstallPrebuiltFromRecipe {
             if (-not $existingManifest -or -not $existingManifest.capabilities -or $existingManifest.capabilities.compilers.Count -eq 0) {
                 throw "Incomplete toolchain already exists at $installPath. Remove it or pass --force."
             }
+            Assert-LlvmManagedAsset -Manifest $existingManifest -Expected @{
+                canonical_id = $plan.canonical_id
+                provider = $plan.provider
+                release = $plan.release_tag
+                host = $plan.host
+                asset = $plan.asset
+            } -Policy $policy
             if ($effProvider -eq 'official' -and $selection) {
                 Invoke-LlvmSelection -Operation check -Root $installPath -Selection $selection
-            }
-            if ($policy -eq 'strict') {
-                $verFile = Join-Path $installPath '.llvmup-verification.json'
-                if (-not (Test-Path -LiteralPath $verFile)) {
-                    throw 'Strict verification cannot trust the existing toolchain: verification record is missing.'
-                }
-                $verRec = Get-Content -LiteralPath $verFile -Raw | ConvertFrom-Json
-                if ($verRec.gpg -ne 'valid' -and $verRec.attestation -ne 'valid') {
-                    throw 'Strict verification cannot trust the existing toolchain: no authenticated origin is recorded.'
-                }
             }
             if (-not $Quiet) {
                 Write-Host "[INFO] Toolchain '$installName' is already installed at $installPath" -ForegroundColor Cyan
@@ -253,7 +273,7 @@ function Invoke-LlvmInstallPrebuiltFromRecipe {
             }
         }
 
-        $null = Test-LlvmRecipeStagingValid -Plan $plan -StagingRoot $stagingPath
+        $discovered = Test-LlvmRecipeStagingValid -Plan $plan -StagingRoot $stagingPath
 
         # Write compatible verification marker + rich versioned toolchain manifest
         $legacyVer = [ordered]@{
@@ -287,7 +307,7 @@ function Invoke-LlvmInstallPrebuiltFromRecipe {
             -SupportedTargets $plan.supported_targets `
             -DefaultTarget $plan.default_target `
             -Variant $plan.variant `
-            -Root $stagingPath `
+            -Discovered $discovered `
             -Asset $plan.asset `
             -Verification $verifyResult
 

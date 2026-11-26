@@ -559,15 +559,3 @@ EOF
     grep -Fx "LLVMUP_ACTIVE_VERSION=$TEST_VERSION" "$GITHUB_ENV"
     ! grep -q '^SDKROOT=' "$GITHUB_ENV"
 }
-
-@test "warn verification reports unverified when neither integrity nor provenance was checked" {
-    local artifact="$TEST_DIR/artifact.tar.xz"
-    local verification_temp="$TEST_DIR/verification"
-    mkdir -p "$verification_temp"
-    printf 'artifact\n' > "$artifact"
-
-    llvm-verify-release-asset "$artifact" "" "" "" "" "$verification_temp" warn
-
-    [ "$LLVMUP_VERIFICATION_METHODS" = "unverified" ]
-    [ "$LLVMUP_VERIFICATION_CHECKSUM" = "not-provided" ]
-}

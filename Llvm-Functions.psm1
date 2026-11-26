@@ -648,6 +648,8 @@ function Invoke-LlvmUpResolve {
     $release = ''
     $crt = ''
     $threads = ''
+    $target = ''
+    $extractor = 'auto'
     $useConfig = $false
     for ($i = 0; $i -lt $Tokens.Count; $i++) {
         switch ($Tokens[$i]) {
@@ -662,6 +664,8 @@ function Invoke-LlvmUpResolve {
             '--release' { if (++$i -ge $Tokens.Count) { throw '--release requires a value' }; $release = $Tokens[$i] }
             '--crt' { if (++$i -ge $Tokens.Count) { throw '--crt requires a value' }; $crt = $Tokens[$i] }
             '--threads' { if (++$i -ge $Tokens.Count) { throw '--threads requires a value' }; $threads = $Tokens[$i] }
+            '--target' { if (++$i -ge $Tokens.Count) { throw '--target requires a value' }; $target = $Tokens[$i] }
+            '--extractor' { if (++$i -ge $Tokens.Count) { throw '--extractor requires a value' }; $extractor = $Tokens[$i] }
             '--config' { $useConfig = $true }
             default { if ($Tokens[$i].StartsWith('-')) { throw "Unknown resolve option: $($Tokens[$i])" }; $version = $Tokens[$i] }
         }
@@ -674,6 +678,8 @@ function Invoke-LlvmUpResolve {
         if (-not $provider -and $cfg.provider) { $provider = $cfg.provider }
         if (-not $crt -and $cfg.crt) { $crt = $cfg.crt }
         if (-not $release -and $cfg.release) { $release = $cfg.release }
+        if (-not $threads -and $cfg.threads) { $threads = $cfg.threads }
+        if (-not $target -and $cfg.target) { $target = $cfg.target }
     }
     $resolved = Invoke-LlvmInstallPrebuiltFromRecipe `
         -Selector $version `
@@ -683,6 +689,8 @@ function Invoke-LlvmUpResolve {
         -Arch $(if ($arch) { $arch } else { '' }) `
         -Crt $crt `
         -Threads $threads `
+        -Target $target `
+        -Extractor $extractor `
         -ArchiveOnly `
         -ResolveOnly `
         -ToolchainsPath (Get-LlvmSessionToolchainsPath) `
@@ -867,6 +875,7 @@ function Invoke-LlvmUpRun {
         if (-not $manifest) {
             throw "Locked toolchain '$($entry.canonical_id)' is not installed. Run 'llvmup sync --locked' first."
         }
+        Assert-LlvmLockedInstallation -Manifest $manifest -Entry $entry -Policy $entry.verify_policy
         if (-not $target -and $entry.target) { $target = [string]$entry.target }
         if (-not $compiler -and $entry.variant -and $entry.variant.default_compiler) { $compiler = [string]$entry.variant.default_compiler }
     } elseif ($selector) {
@@ -998,7 +1007,15 @@ function Invoke-LlvmUpPin {
 
 function Invoke-LlvmUpSync {
     param([string[]]$Tokens)
-    $locked = $Tokens -contains '--locked'
+    $locked = $false
+    $verify = ''
+    for ($i = 0; $i -lt $Tokens.Count; $i++) {
+        switch ($Tokens[$i]) {
+            '--locked' { $locked = $true }
+            '--verify' { if (++$i -ge $Tokens.Count) { throw '--verify requires a value' }; $verify = $Tokens[$i] }
+            default { throw "Unknown sync option: $($Tokens[$i])" }
+        }
+    }
     $cfgPath = Find-LlvmProjectConfigPath
     if (-not $cfgPath) { throw 'No .llvmup-config file found for sync.' }
     $cfg = Read-LlvmProjectConfigData -ConfigPath $cfgPath
@@ -1008,6 +1025,12 @@ function Invoke-LlvmUpSync {
     if ($locked) {
         $lockPath = Join-Path $cfg.root '.llvmup-lock.json'
         $entry = Get-LlvmLockfileEntryForHost -LockPath $lockPath
+        $lockedPolicy = if ($entry.verify_policy) { $entry.verify_policy } else { 'warn' }
+        $policy = if ($verify) { Resolve-LlvmVerifyPolicy -RequestedPolicy $verify } else { $lockedPolicy }
+        $rank = @{ skip = 0; warn = 1; strict = 2 }
+        if (-not $rank.ContainsKey($lockedPolicy) -or $rank[$policy] -lt $rank[$lockedPolicy]) {
+            throw "Verification policy '$policy' is weaker than or incompatible with the locked policy '$lockedPolicy'."
+        }
         if ($cfg.provider -and $entry.provider -ne $cfg.provider) {
             throw "Lockfile provider '$($entry.provider)' conflicts with .llvmup-config provider '$($cfg.provider)'."
         }
@@ -1016,9 +1039,7 @@ function Invoke-LlvmUpSync {
         }
         $existing = Resolve-LlvmInstalledToolchain -Selector $entry.canonical_id -ToolchainsPath $toolchainsPath -HomePath $homePath
         if ($existing) {
-            if ($existing.asset -and $entry.asset.digest -and $existing.asset.digest -and $existing.asset.digest -ne $entry.asset.digest) {
-                throw "Installed toolchain '$($entry.canonical_id)' digest differs from lockfile."
-            }
+            Assert-LlvmLockedInstallation -Manifest $existing -Entry $entry -Policy $policy
             return $true
         }
         $res = Invoke-LlvmInstallPrebuiltFromRecipe `
@@ -1027,10 +1048,11 @@ function Invoke-LlvmUpSync {
             -Crt $(if ($entry.variant.crt -and $entry.variant.crt -ne 'system') { $entry.variant.crt } else { '' }) `
             -Threads $(if ($entry.variant.threads -and $entry.variant.threads -ne 'system') { $entry.variant.threads } else { '' }) `
             -Target $(if ($entry.target) { $entry.target } else { '' }) `
+            -Compiler $(if ($entry.variant.default_compiler) { $entry.variant.default_compiler } else { '' }) `
             -Name $entry.canonical_id `
             -Profile $(if ($entry.profile) { $entry.profile } else { 'full' }) `
             -Components @($entry.components) `
-            -VerifyPolicy $(if ($entry.verify_policy) { $entry.verify_policy } else { 'warn' }) `
+            -VerifyPolicy $policy `
             -LockedEntry $entry `
             -ArchiveOnly `
             -ToolchainsPath $toolchainsPath `
@@ -1063,6 +1085,7 @@ function Invoke-LlvmUpSync {
         -Name $cfg.name `
         -Profile $(if ($cfg.profile) { $cfg.profile } else { 'full' }) `
         -Components @($cfg.components) `
+        -VerifyPolicy $verify `
         -ArchiveOnly `
         -ToolchainsPath $toolchainsPath `
         -HomePath $homePath

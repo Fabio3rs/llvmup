@@ -2,6 +2,31 @@
 
 This document records the baseline diagnostic, architectural decisions, implementation milestones, test progress, benchmarks, and platform verification status for evolving LLVMUP into a multiplatform, recipe-based LLVM/C/C++ distribution manager.
 
+## Pre-1.0 provider consolidation
+
+`llvmup`, `llvmup.cmd` and the root composite action install prebuilt releases through
+`libexec/sh/llvmup-engine.sh` on Unix and `libexec/pwsh/Llvm-Installer.psm1` on PowerShell.
+The historical `llvm-prebuilt` and `Download-Llvm.ps1` commands translate their existing options
+to those engines. Source builds continue through the source builder. The shell adapters apply
+and restore the environment in the current session.
+
+An install name is a user-facing label. The provider, release, host and upstream asset identify
+the installation behind it. Existing legacy directories are still available for activation.
+To install a verified provider asset when a legacy directory occupies the same name, select
+a different name with `--name`. Once installed, both toolchains can be addressed independently.
+
+The baseline at `4e18e1e` passed 218 Pester tests on each of Windows PowerShell 5.1 and
+PowerShell 7. The baseline WSL1 run had 342 passes, 11 failures in the legacy prebuilt suite
+and one skip. Resolution parity passed 19 cases against Windows PowerShell 5.1. The consolidation
+replaces tests of removed implementations with tests through the supported entry points,
+including offline installation, HTTP redirects, locked commands and launcher fallback.
+
+The consolidated Windows suites passed 180 Pester tests each. The full WSL1 run passed
+342 Bats tests with one skip. A follow-up run on the final Bash changes passed 85 targeted
+Bats tests and 20 Python selection tests. The 19 resolution cases matched on both Windows
+PowerShell 5.1 and PowerShell 7. The offline install, reuse and environment-export smoke
+test also ran with GNU Bash 3.2 built in the test distribution.
+
 ---
 
 ## 1. Initial Diagnostic (Baseline at `v0.8.0` / branch `dev`)

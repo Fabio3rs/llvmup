@@ -232,13 +232,16 @@ function New-LlvmToolchainManifest {
         [hashtable]$Variant = @{},
         [string]$Root = '',
         [hashtable]$Asset = @{},
-        [hashtable]$Verification = @{}
+        [hashtable]$Verification = @{},
+        $Discovered = $null
     )
 
-    $discovered = if ($Root -and (Test-Path -LiteralPath $Root -PathType Container)) {
-        Get-LlvmDiscoveredToolchainCapabilities -Root $Root -Provider $Provider -HostOs $HostOs -HostArch $HostArch
-    } else {
-        @{ tools = @{}; capabilities = @{} }
+    if (-not $Discovered) {
+        $Discovered = if ($Root -and (Test-Path -LiteralPath $Root -PathType Container)) {
+            Get-LlvmDiscoveredToolchainCapabilities -Root $Root -Provider $Provider -HostOs $HostOs -HostArch $HostArch
+        } else {
+            @{ tools = @{}; capabilities = @{} }
+        }
     }
 
     $targets = @($SupportedTargets)
@@ -657,7 +660,28 @@ function Resolve-LlvmInstalledToolchain {
     return ($sortedMatches | Select-Object -Last 1)
 }
 
+function Assert-LlvmManagedAsset {
+    param($Manifest, $Expected, [string]$Policy = 'warn')
+
+    if ($Manifest.origin -ne 'managed' -or $Manifest.id -cne $Expected.canonical_id -or
+        $Manifest.provider -cne $Expected.provider -or $Manifest.provider_release -cne $Expected.release -or
+        $Manifest.host.os -cne $Expected.host.os -or $Manifest.host.arch -cne $Expected.host.arch) {
+        throw "Installed toolchain '$($Manifest.install_name)' identity differs from the requested managed installation."
+    }
+    if ($Expected.asset.digest -and $Manifest.asset.digest -ne $Expected.asset.digest) {
+        throw "Installed toolchain '$($Manifest.install_name)' digest differs from the requested asset digest."
+    }
+    if (($Expected.asset.name -and $Manifest.asset.name -cne $Expected.asset.name) -or
+        ($Expected.asset.id -and [string]$Manifest.asset.id -cne [string]$Expected.asset.id)) {
+        throw "Installed toolchain '$($Manifest.install_name)' asset differs from the requested asset."
+    }
+    if ($Policy -eq 'strict' -and $Manifest.verification.gpg -ne 'valid' -and $Manifest.verification.attestation -ne 'valid') {
+        throw 'Strict verification cannot trust the existing toolchain: no authenticated origin is recorded.'
+    }
+}
+
 Export-ModuleMember -Function @(
+    'Assert-LlvmManagedAsset',
     'Get-LlvmAliasesPath',
     'Get-LlvmExternalRegistryPath',
     'Get-LlvmSessionStatePath',

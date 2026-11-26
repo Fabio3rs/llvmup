@@ -42,6 +42,9 @@ function Invoke-LlvmHttpGetJson {
         'X-GitHub-Api-Version' = '2022-11-28'
     }
     $token = if ($env:GITHUB_TOKEN) { $env:GITHUB_TOKEN } elseif ($env:GH_TOKEN) { $env:GH_TOKEN } else { $null }
+    if ($Url -notmatch '^https://api\.github\.com/') {
+        throw 'Refusing a release API page outside api.github.com.'
+    }
     if ($token) { $headers['Authorization'] = "Bearer $token" }
 
     $attempt = 1
@@ -270,6 +273,12 @@ function Get-LlvmCachedOrDownload {
         [switch]$Quiet
     )
 
+    if ($AssetName -in @('.', '..') -or $AssetName -match '[<>:"/\\|?*\x00-\x1f]' -or $AssetName -match '[. ]$') {
+        throw "Invalid asset filename: $AssetName"
+    }
+    if ($AssetDigest -and $AssetDigest -notmatch '^(sha256:)?[0-9a-f]{64}$') {
+        throw "Unsupported asset digest for '$AssetName'. An SHA256 digest is required."
+    }
     if (-not $CacheDir) { $CacheDir = Get-LlvmDownloadCacheDir }
     $cacheKeyRaw = if ($AssetDigest) { $AssetDigest } elseif ($AssetId) { "id-$AssetId" } else { $AssetName }
     $cacheKey = Get-LlvmSafeCacheKey -Value $cacheKeyRaw
@@ -328,7 +337,12 @@ function Enter-LlvmToolchainLock {
     $stream.SetLength(0)
     $stream.Write($bytes, 0, $bytes.Length)
     $stream.Flush()
-    Repair-LlvmInterruptedInstall -ToolchainsPath $ToolchainsPath -InstallName $InstallName
+    try {
+        Repair-LlvmInterruptedInstall -ToolchainsPath $ToolchainsPath -InstallName $InstallName
+    } catch {
+        $stream.Dispose()
+        throw
+    }
     return [pscustomobject]@{
         LockPath = $lockPath
         Stream = $stream
@@ -347,13 +361,11 @@ function Repair-LlvmInterruptedInstall {
     $installPath = Join-Path $ToolchainsPath $InstallName
     $escaped = [regex]::Escape($InstallName)
     $siblings = @(Get-ChildItem -LiteralPath $ToolchainsPath -Directory -Force -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -match "^$escaped\.(installing|backup)-[0-9a-f]{32}" })
-    foreach ($b in @($siblings | Where-Object { $_.Name -match "^$escaped\.backup-[0-9a-f]{32}$" } | Sort-Object LastWriteTime -Descending)) {
+        Where-Object { $_.Name -match "^$escaped\.(?:backup-(?:[0-9a-f]{8}|[0-9a-f]{32})|installing-(?:[0-9a-f]{8}|[0-9a-f]{32})(?:\.(?:raw|tarstage)-(?:[0-9a-f]{8}|[0-9a-f]{32}))?)$" })
+    foreach ($b in @($siblings | Where-Object { $_.Name -match "^$escaped\.backup-" } | Sort-Object LastWriteTime -Descending)) {
         if (-not (Test-Path -LiteralPath $installPath)) {
             Move-Item -LiteralPath $b.FullName -Destination $installPath -ErrorAction Stop
             Write-Warning "Restored '$InstallName' from the backup of an interrupted replacement."
-        } else {
-            Remove-Item -LiteralPath $b.FullName -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
     foreach ($s in @($siblings | Where-Object { $_.Name -match "^$escaped\.installing-" })) {

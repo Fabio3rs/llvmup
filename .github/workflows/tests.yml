@@ -98,19 +98,14 @@ jobs:
         done
 
     - name: Prepare lightweight LLVM fixture for action smoke test
-      run: |
-        fixture="$RUNNER_TEMP/llvmup-data/toolchains/llvmorg-20.1.8/bin"
-        mkdir -p "$fixture"
-        printf '#!/bin/sh\necho clang version 20.1.8\n' > "$fixture/clang"
-        printf '#!/bin/sh\necho clang version 20.1.8\n' > "$fixture/clang++"
-        printf '#!/bin/sh\nexit 0\n' > "$fixture/lld"
-        chmod +x "$fixture/clang" "$fixture/clang++" "$fixture/lld"
+      run: python3 tests/integration/action_fixture.py
 
     - name: Smoke test reusable action
       id: setup-llvm
       uses: ./
       env:
-        LLVMUP_RELEASES_FILE: ${{ github.workspace }}/githubreleases.json
+        LLVMUP_RELEASES_FILE: ${{ runner.temp }}/llvmup-action-releases.json
+        LLVMUP_ALLOW_FILE_URLS: '1'
       with:
         version: 20.1.8
         # Never persist the lightweight fake compiler under a production cache key.
@@ -181,19 +176,14 @@ jobs:
         & "$env:RUNNER_TEMP/installed llvmup/Uninstall-Llvmup.ps1" -NoProfile
 
     - name: Prepare lightweight LLVM fixture for Windows action smoke test
-      shell: pwsh
-      run: |
-        $bin = Join-Path $env:RUNNER_TEMP 'llvmup-data\toolchains\llvmorg-20.1.8\bin'
-        New-Item -ItemType Directory -Path $bin -Force | Out-Null
-        '@echo off', 'echo clang version 20.1.8' | Set-Content -Path (Join-Path $bin 'clang.cmd') -Encoding Ascii
-        '@echo off', 'echo clang version 20.1.8' | Set-Content -Path (Join-Path $bin 'clang++.cmd') -Encoding Ascii
-        '@echo off', 'exit /b 0' | Set-Content -Path (Join-Path $bin 'lld-link.cmd') -Encoding Ascii
+      run: python tests/integration/action_fixture.py
 
     - name: Smoke test reusable action on Windows
       id: setup-llvm-windows
       uses: ./
       env:
-        LLVMUP_RELEASES_FILE: ${{ github.workspace }}\githubreleases.json
+        LLVMUP_RELEASES_FILE: ${{ runner.temp }}/llvmup-action-releases.json
+        LLVMUP_ALLOW_FILE_URLS: '1'
       with:
         version: 20.1.8
         cache: false
@@ -250,19 +240,14 @@ jobs:
           jq -e '.version == "llvmorg-20.1.8" and .asset_name == "LLVM-20.1.8-macOS-ARM64.tar.xz"'
 
     - name: Prepare lightweight LLVM fixture for macOS action smoke test
-      run: |
-        fixture="$RUNNER_TEMP/llvmup-data/toolchains/llvmorg-20.1.8/bin"
-        mkdir -p "$fixture"
-        printf '#!/bin/sh\necho clang version 20.1.8\n' > "$fixture/clang"
-        printf '#!/bin/sh\necho clang version 20.1.8\n' > "$fixture/clang++"
-        printf '#!/bin/sh\nexit 0\n' > "$fixture/lld"
-        chmod +x "$fixture/clang" "$fixture/clang++" "$fixture/lld"
+      run: python3 tests/integration/action_fixture.py
 
     - name: Smoke test reusable action on macOS
       id: setup-llvm-macos
       uses: ./
       env:
-        LLVMUP_RELEASES_FILE: ${{ github.workspace }}/githubreleases.json
+        LLVMUP_RELEASES_FILE: ${{ runner.temp }}/llvmup-action-releases.json
+        LLVMUP_ALLOW_FILE_URLS: '1'
       with:
         version: 20.1.8
         cache: false

@@ -24,10 +24,13 @@ available result is a verified checksum.
 | --- | --- |
 | `warn` (default) | Verify everything available. A digest mismatch, a bad signature or a wrong identity fails. When nothing authenticates the origin, install with a warning. |
 | `strict` | Additionally require an authenticated origin from the provider's authorized identity. Providers without signatures cannot be installed in strict mode; llvmup never downgrades strict to warn. |
-| `skip` | Explicitly skip verification (documented, opt-in). |
+| `skip` | Skip signature, attestation and companion checksum verification. A SHA256 digest supplied by release metadata or a lockfile still constrains the download. |
 
-Select it with `--verify`, `LLVMUP_VERIFY_POLICY`, or the Action's `verify` input. Locked installs
-(`sync --locked`, `run --locked`) refuse a policy weaker than the one recorded in the lockfile.
+Select it with `--verify`, `LLVMUP_VERIFY_POLICY`, or the Action's `verify` input. Locked operations
+(`sync --locked`, `run --locked`) require the recorded provider, release, host, asset and any pinned
+digest to match the installed manifest. Locked operations under `strict` also require a recorded
+GPG or Sigstore verification. The lockfile can pin an archive digest when upstream provides one.
+The installed manifest records the archive verification result from installation time.
 
 ## What is recorded
 
@@ -51,6 +54,9 @@ verifier (for example `gh`) is not installed; `valid`/`invalid` are actual resul
 before manifests existed are reported as `unverified` rather than given an invented history.
 
 A download reused from the cache is checked again against the expected digest before extraction.
+The GitHub Action uses the same provider engines for `official`, `winlibs` and `llvm-mingw`.
+Its cache key includes the asset identity, component selection and policy. Installation checks that
+resolution still returns the asset announced before cache restore.
 Tokens (`GH_TOKEN`, `GITHUB_TOKEN`) are passed only to the processes that need them and never written
 to manifests, lockfiles or logs.
 

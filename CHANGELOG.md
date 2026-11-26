@@ -49,7 +49,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Manually triggered Linux and Windows Action E2E coverage for real downloads,
   environment activation, and cache restoration
 
+### Changed
+- The root GitHub Action, official prebuilt entry points, and provider commands use the same
+  installation engines. The Action cache includes the exact asset, verification policy, and
+  component selection.
+- Removed the redundant `Download-Llvm-Enhanced.ps1` forwarder. `Download-Llvm.ps1` remains
+  available for callers of the standalone PowerShell installer.
+
 ### Fixed
+- Locked commands and install reuse check the managed toolchain's identity and recorded asset.
+- `llvmup.cmd` works with a minimal Windows PATH and looks for PowerShell 7 only on PATH.
 - Windows PowerShell 5.1: installing WinLibs/llvm-mingw from ZIP no longer exceeds MAX_PATH on a
   clean Windows (short staging suffixes, extended-length extraction targets)
 - Bash engine: a failing compiler validation now shows the compiler's own output

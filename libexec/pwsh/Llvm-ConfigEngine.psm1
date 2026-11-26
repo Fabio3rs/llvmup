@@ -16,6 +16,7 @@ $script:ResolverModule = Join-Path $PSScriptRoot 'Llvm-Resolver.psm1'
 if ((Test-Path -LiteralPath $script:ResolverModule) -and -not (Get-Module -Name 'Llvm-Resolver')) {
     Import-Module $script:ResolverModule -DisableNameChecking
 }
+Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'Llvm-Selection.psm1') -DisableNameChecking
 
 function Set-LlvmIniSettingPreserving {
     [CmdletBinding()]
@@ -190,7 +191,20 @@ function Get-LlvmLockfileEntryForHost {
     return $lock.entries[$hostKey]
 }
 
+function Assert-LlvmLockedInstallation {
+    param($Manifest, $Entry, [string]$Policy = 'warn')
+    if ($Policy -and $Policy -notin @('skip', 'warn', 'strict')) {
+        throw "Unsupported locked verification policy '$Policy'."
+    }
+    Assert-LlvmManagedAsset -Manifest $Manifest -Expected $Entry -Policy $Policy
+    if ($Entry.provider -eq 'official') {
+        $selection = Get-LlvmSelection -Profile $Entry.profile -Components @($Entry.components | Where-Object { $_ })
+        Invoke-LlvmSelection -Operation check -Root $Manifest.root_path -Selection $selection
+    }
+}
+
 Export-ModuleMember -Function @(
+    'Assert-LlvmLockedInstallation',
     'Set-LlvmIniSettingPreserving',
     'Update-LlvmConfigPin',
     'Get-LlvmHostKey',

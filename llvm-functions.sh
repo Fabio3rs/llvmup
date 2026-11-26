@@ -1596,6 +1596,8 @@ llvm-config-load() {
         done
     }
 
+    local array_assignment='^[[:space:]]*([^=]+)=[[:space:]]*\['
+    local assignment='^[[:space:]]*([^=]+)=(.*)$'
     while IFS= read -r line; do
         # Skip comments and empty lines
         [[ "$line" =~ ^[[:space:]]*# ]] && continue
@@ -1609,7 +1611,7 @@ llvm-config-load() {
         fi
 
         # Handle array start
-        if [[ "$line" =~ ^[[:space:]]*([^=]+)=[[:space:]]*\[ ]]; then
+        if [[ "$line" =~ $array_assignment ]]; then
             key="${BASH_REMATCH[1]// /}"
             in_array=1
             array_type="$key"
@@ -1639,7 +1641,7 @@ llvm-config-load() {
         fi
 
         # Parse key=value pairs
-        if [[ "$line" =~ ^[[:space:]]*([^=]+)=(.*)$ ]]; then
+        if [[ "$line" =~ $assignment ]]; then
             key="${BASH_REMATCH[1]// /}"
             value="${BASH_REMATCH[2]}"
             # Remove quotes and whitespace
@@ -2369,496 +2371,35 @@ llvm-print-remote-release-candidates() {
     done <<< "$versions"
 }
 
-llvm-release-asset-pattern() {
-    local platform="$1"
-    local architecture="$2"
-
-    case "$platform:$architecture" in
-        Linux:X64) printf '(Linux-X64|x86_64-linux-gnu[^/]*)\\.tar\\.xz$\n' ;;
-        Linux:ARM64) printf '(Linux-ARM64|aarch64-linux-gnu[^/]*)\\.tar\\.xz$\n' ;;
-        macOS:ARM64) printf '(macOS-ARM64|arm64-apple-darwin[^/]*)\\.tar\\.xz$\n' ;;
-        *)
-            log_error "No pre-built LLVM archive mapping for $platform $architecture"
-            return 1
-            ;;
-    esac
-}
-
-# Resolve a remote, stable LLVM release and its platform asset. The JSON output
-# is shared by the CLI installer and GitHub Action so both use identical rules.
+# Compatibility function for callers that expect official release metadata as JSON.
 llvm-resolve-remote-release() {
-    local expression="${1:-latest}"
-    local platform
-    local architecture
-    local parsed_expression
-    local release_json=""
-    local selected_version=""
-    local releases_json=""
-    local asset_pattern
-    local asset_json
-    local asset_name
-    local candidate
-    local signature_url
-    local checksum_url
-    local attestation_url
-
-    command -v curl >/dev/null 2>&1 || {
-        log_error "The 'curl' command is required to resolve LLVM releases"
-        return 1
-    }
-    command -v jq >/dev/null 2>&1 || {
-        log_error "The 'jq' command is required to resolve LLVM releases"
-        return 1
-    }
-
-    platform="$(llvm-detect-platform "${2:-}")" || return 1
-    architecture="$(llvm-detect-architecture "${3:-}")" || return 1
-    parsed_expression="$(llvm-parse-version-expression "$expression" 2>/dev/null)" || {
+    local expression="${1:-latest}" platform="${2:-}" arch="${3:-}" engine parsed status
+    parsed="$(llvm-parse-version-expression "$expression" 2>/dev/null)" || {
         log_error "Invalid version expression: $expression"
         return 1
     }
-
-    case "$parsed_expression" in
-        selector:latest|type:prebuilt|type:prebuilt,selector:latest)
-            release_json="$(llvm-github-api-request /latest)" || {
-                log_error "Failed to resolve the latest stable LLVM release"
-                llvm-print-remote-release-candidates
-                return 1
-            }
-            ;;
-        type:source*|*type:source*)
-            log_error "Source-only expressions cannot select a pre-built release"
-            return 1
-            ;;
-        specific:*)
-            local specific_version="${parsed_expression#specific:}"
-            case "$(printf '%s' "$specific_version" | tr '[:upper:]' '[:lower:]')" in
-                source-*)
-                    log_error "Source installation identifiers cannot select a pre-built release: $specific_version"
-                    return 1
-                    ;;
-            esac
-            selected_version="$(llvm-normalize-version-id "$specific_version")" || return 1
-            release_json="$(llvm-github-api-request "/tags/$selected_version")" || {
-                log_error "LLVM release not found: $selected_version"
-                llvm-print-remote-release-candidates
-                return 1
-            }
-            ;;
-        *)
-            releases_json="$(llvm-get-remote-stable-releases)" || return 1
-            local remote_versions=()
-            local matching_versions=()
-            while IFS= read -r candidate; do remote_versions+=("$candidate"); done < <(jq -r '.[].tag_name' <<< "$releases_json")
-            while IFS= read -r candidate; do matching_versions+=("$candidate"); done < <(llvm-match-version-list "$expression" "${remote_versions[@]}" 2>/dev/null)
-
-            if [ ${#matching_versions[@]} -eq 0 ]; then
-                log_error "No stable remote LLVM release matches: $expression"
-                llvm-print-remote-release-candidates "$releases_json"
-                return 1
-            fi
-
-            selected_version="${matching_versions[0]}"
-            for candidate in "${matching_versions[@]:1}"; do
-                if llvm-version-compare "$candidate" "$selected_version" 2>/dev/null; then
-                    selected_version="$candidate"
-                fi
-            done
-            release_json="$(jq -c --arg tag "$selected_version" '[.[] | select(.tag_name == $tag)][0] // empty' <<< "$releases_json")"
-            ;;
-    esac
-
-    if [ -z "$release_json" ] || ! jq -e 'type == "object"' >/dev/null 2>&1 <<< "$release_json"; then
-        log_error "No release metadata found for expression: $expression"
-        llvm-print-remote-release-candidates "$releases_json"
-        return 1
-    fi
-
-    if [ "$(jq -r '.draft // false' <<< "$release_json")" = "true" ] ||
-       [ "$(jq -r '.prerelease // false' <<< "$release_json")" = "true" ]; then
-        log_error "Resolved LLVM release is not stable: $(jq -r '.tag_name' <<< "$release_json")"
-        llvm-print-remote-release-candidates "$releases_json"
-        return 1
-    fi
-
-    if ! jq -e '.tag_name | test("^llvmorg-[0-9]+\\.[0-9]+\\.[0-9]+$")' >/dev/null 2>&1 <<< "$release_json"; then
-        log_error "Resolved LLVM release does not use a stable release tag: $(jq -r '.tag_name' <<< "$release_json")"
-        llvm-print-remote-release-candidates "$releases_json"
-        return 1
-    fi
-
-    asset_pattern="$(llvm-release-asset-pattern "$platform" "$architecture")" || return 1
-    asset_json="$(jq -c --arg pattern "$asset_pattern" '
-        [.assets[]?
-          | select((.state // "uploaded") == "uploaded")
-          | select(.name | test($pattern; "i"))][0] // empty
-    ' <<< "$release_json")"
-
-    if [ -z "$asset_json" ] || ! jq -e 'type == "object"' >/dev/null 2>&1 <<< "$asset_json"; then
-        log_error "No pre-built LLVM archive found for $platform $architecture in $(jq -r '.tag_name' <<< "$release_json")"
-        return 1
-    fi
-
-    asset_name="$(jq -r '.name' <<< "$asset_json")"
-    signature_url="$(jq -r --arg name "$asset_name" '[.assets[]? | select(.name == ($name + ".sig"))][0].browser_download_url // ""' <<< "$release_json")"
-    checksum_url="$(jq -r --arg name "$asset_name" '[.assets[]? | select(.name == ($name + ".sha256") or .name == ($name + ".sha256sum") or .name == ($name + ".sha256.txt") or .name == ($name + ".sha256sum.txt"))][0].browser_download_url // ""' <<< "$release_json")"
-    attestation_url="$(jq -r --arg name "$asset_name" '[.assets[]? | select(.name == ($name + ".jsonl"))][0].browser_download_url // ""' <<< "$release_json")"
-
-    jq -cn \
-        --arg version "$(jq -r '.tag_name' <<< "$release_json")" \
-        --arg asset_name "$asset_name" \
-        --arg asset_url "$(jq -r '.browser_download_url' <<< "$asset_json")" \
-        --arg asset_digest "$(jq -r '.digest // ""' <<< "$asset_json")" \
-        --arg asset_id "$(jq -r '.id // ""' <<< "$asset_json")" \
-        --arg signature_url "$signature_url" \
-        --arg checksum_url "$checksum_url" \
-        --arg attestation_url "$attestation_url" \
-        --arg platform "$platform" \
-        --arg architecture "$architecture" \
-        '{version: $version, asset_name: $asset_name, asset_url: $asset_url,
-          asset_digest: $asset_digest, asset_id: $asset_id,
-          signature_url: $signature_url, checksum_url: $checksum_url,
-          attestation_url: $attestation_url, platform: $platform,
-          architecture: $architecture}'
-}
-
-# Resolve the public verification policy while preserving the legacy environment
-# variables used by older llvmup releases. An explicit argument always wins.
-llvm-resolve-verification-policy() {
-    local requested="${1:-}"
-    local skip_set=0
-    local require_set=0
-
-    case "${LLVMUP_SKIP_VERIFY:-}" in 1|true|TRUE) skip_set=1 ;; esac
-    case "${LLVMUP_REQUIRE_VERIFY:-}" in 1|true|TRUE) require_set=1 ;; esac
-
-    if [ -n "$requested" ]; then
-        :
-    elif [ -n "${LLVMUP_VERIFY_POLICY:-}" ]; then
-        requested="$LLVMUP_VERIFY_POLICY"
-    elif [ "$skip_set" -eq 1 ] && [ "$require_set" -eq 1 ]; then
-        log_error "LLVMUP_SKIP_VERIFY and LLVMUP_REQUIRE_VERIFY cannot both be enabled"
-        return 1
-    elif [ "$skip_set" -eq 1 ]; then
-        requested="skip"
-    elif [ "$require_set" -eq 1 ]; then
-        requested="strict"
-    else
-        requested="warn"
-    fi
-
-    requested="$(printf '%s' "$requested" | tr '[:upper:]' '[:lower:]')"
-    case "$requested" in
-        warn|strict|skip) printf '%s\n' "$requested" ;;
-        *)
-            log_error "Invalid verification policy: $requested (expected warn, strict, or skip)"
+    case "$parsed" in
+        *type:source*|specific:source-*)
+            log_error "Source installation identifiers cannot select a pre-built release: $expression"
             return 1
             ;;
     esac
-}
-
-llvm-compute-sha256() {
-    local file="$1"
-
-    if command -v sha256sum >/dev/null 2>&1; then
-        sha256sum "$file" | awk '{print $1}'
-    elif command -v shasum >/dev/null 2>&1; then
-        shasum -a 256 "$file" | awk '{print $1}'
-    else
-        return 127
-    fi
-}
-
-# Reset the result globals populated by llvm-verify-release-asset.
-llvm-reset-verification-result() {
-    LLVMUP_VERIFICATION_CHECKSUM="not-provided"
-    LLVMUP_VERIFICATION_GPG="not-provided"
-    LLVMUP_VERIFICATION_ATTESTATION="not-provided"
-    LLVMUP_VERIFICATION_METHODS=""
-    LLVMUP_VERIFICATION_GPG_FINGERPRINT=""
-}
-
-llvm-verification-add-method() {
-    local method="$1"
-    if [ -z "$LLVMUP_VERIFICATION_METHODS" ]; then
-        LLVMUP_VERIFICATION_METHODS="$method"
-    else
-        LLVMUP_VERIFICATION_METHODS="$LLVMUP_VERIFICATION_METHODS+$method"
-    fi
-}
-
-llvm-download-verification-material() {
-    local url="$1"
-    local destination="$2"
-
-    curl --fail --silent --show-error --location \
-        --connect-timeout 30 --max-time 300 --retry 2 \
-        "$url" -o "$destination"
-}
-
-llvm-verify-gpg-material() {
-    local artifact="$1"
-    local signature_url="$2"
-    local temp_dir="$3"
-    local signature_file="$temp_dir/$(basename "$artifact").sig"
-    local keys_file="$temp_dir/llvm-release-keys.asc"
-    local gpg_home="$temp_dir/gnupg"
-    local status_file="$temp_dir/gpg-status.txt"
-    local error_file="$temp_dir/gpg-error.txt"
-
-    [ -n "$signature_url" ] || {
-        LLVMUP_VERIFICATION_GPG="not-provided"
-        return 0
-    }
-
-    if ! command -v gpg >/dev/null 2>&1; then
-        LLVMUP_VERIFICATION_GPG="unavailable"
-        log_warn "GPG signature is available, but 'gpg' is not installed; trying another verifier."
-        return 0
-    fi
-
-    if ! llvm-download-verification-material "$signature_url" "$signature_file"; then
-        LLVMUP_VERIFICATION_GPG="unavailable"
-        log_warn "Could not download the GPG signature: $signature_url"
-        return 0
-    fi
-
-    if [ -n "${LLVMUP_RELEASE_KEYS_FILE:-}" ]; then
-        if [ ! -f "$LLVMUP_RELEASE_KEYS_FILE" ]; then
-            log_error "LLVMUP_RELEASE_KEYS_FILE does not exist: $LLVMUP_RELEASE_KEYS_FILE"
-            return 1
-        fi
-        cp "$LLVMUP_RELEASE_KEYS_FILE" "$keys_file" || return 1
-    elif ! llvm-download-verification-material \
-        "https://releases.llvm.org/release-keys.asc" "$keys_file"; then
-        LLVMUP_VERIFICATION_GPG="unavailable"
-        log_warn "Could not obtain the official LLVM release keys; trying another verifier."
-        return 0
-    fi
-
-    mkdir -p "$gpg_home" || return 1
-    chmod 700 "$gpg_home" || return 1
-    if ! gpg --batch --homedir "$gpg_home" --import "$keys_file" \
-        >"$temp_dir/gpg-import.txt" 2>&1; then
-        LLVMUP_VERIFICATION_GPG="unavailable"
-        log_warn "Could not import the official LLVM release keys into the isolated keyring."
-        return 0
-    fi
-
-    if gpg --batch --homedir "$gpg_home" --status-fd 1 \
-        --verify "$signature_file" "$artifact" >"$status_file" 2>"$error_file"; then
-        LLVMUP_VERIFICATION_GPG_FINGERPRINT="$(awk '$1 == "[GNUPG:]" && $2 == "VALIDSIG" { print $3; exit }' "$status_file")"
-        if [ -z "$LLVMUP_VERIFICATION_GPG_FINGERPRINT" ]; then
-            LLVMUP_VERIFICATION_GPG="error"
-            log_error "GPG returned success without a VALIDSIG fingerprint"
-            return 1
-        fi
-        LLVMUP_VERIFICATION_GPG="valid"
-        llvm-verification-add-method "gpg"
-        log_info "GPG signature verified with LLVM release key $LLVMUP_VERIFICATION_GPG_FINGERPRINT"
-        return 0
-    fi
-
-    if grep -q '\[GNUPG:\] NO_PUBKEY ' "$status_file"; then
-        LLVMUP_VERIFICATION_GPG="unavailable"
-        log_warn "The signature key is not present in the official LLVM release key set; trying another verifier."
-        return 0
-    fi
-
-    LLVMUP_VERIFICATION_GPG="invalid"
-    log_error "LLVM GPG signature validation failed for $(basename "$artifact")"
-    [ -s "$error_file" ] && sed -n '1,10p' "$error_file" >&2
-    return 1
-}
-
-llvm-verify-attestation-material() {
-    local artifact="$1"
-    local attestation_url="$2"
-    local temp_dir="$3"
-    local bundle_file="$temp_dir/$(basename "$artifact").jsonl"
-    local output_file="$temp_dir/gh-attestation-output.txt"
-
-    [ -n "$attestation_url" ] || {
-        LLVMUP_VERIFICATION_ATTESTATION="not-provided"
-        return 0
-    }
-
-    if ! command -v gh >/dev/null 2>&1 ||
-       ! gh attestation verify --help >/dev/null 2>&1; then
-        LLVMUP_VERIFICATION_ATTESTATION="unavailable"
-        log_warn "A GitHub attestation is available, but a compatible 'gh' CLI is not installed; trying another verifier."
-        return 0
-    fi
-
-    if ! llvm-download-verification-material "$attestation_url" "$bundle_file"; then
-        LLVMUP_VERIFICATION_ATTESTATION="unavailable"
-        log_warn "Could not download the GitHub attestation bundle: $attestation_url"
-        return 0
-    fi
-
-    if [ -z "${GH_TOKEN:-}" ] && [ -n "${GITHUB_TOKEN:-}" ]; then
-        export GH_TOKEN="$GITHUB_TOKEN"
-    fi
-
-    if gh attestation verify "$artifact" --repo llvm/llvm-project \
-        --bundle "$bundle_file" >"$output_file" 2>&1; then
-        LLVMUP_VERIFICATION_ATTESTATION="valid"
-        llvm-verification-add-method "sigstore"
-        log_info "GitHub/Sigstore attestation verified for llvm/llvm-project"
-        return 0
-    fi
-
-    LLVMUP_VERIFICATION_ATTESTATION="invalid"
-    log_error "GitHub/Sigstore attestation validation failed for $(basename "$artifact")"
-    [ -s "$output_file" ] && sed -n '1,15p' "$output_file" >&2
-    return 1
-}
-
-# Validate integrity and provenance for one release asset. A cryptographic
-# mismatch is always fatal; unavailable tooling/material follows the policy.
-llvm-verify-release-asset() {
-    local artifact="$1"
-    local asset_digest="$2"
-    local checksum_url="$3"
-    local signature_url="$4"
-    local attestation_url="$5"
-    local temp_dir="$6"
-    local policy
-    local expected=""
-    local actual=""
-    local checksum_file="$temp_dir/$(basename "$artifact").sha256"
-
-    policy="$(llvm-resolve-verification-policy "${7:-}")" || return 1
-    llvm-reset-verification-result
-
-    if [ "$policy" = "skip" ]; then
-        LLVMUP_VERIFICATION_CHECKSUM="skipped"
-        LLVMUP_VERIFICATION_GPG="skipped"
-        LLVMUP_VERIFICATION_ATTESTATION="skipped"
-        LLVMUP_VERIFICATION_METHODS="skipped"
-        log_warn "Release verification was explicitly skipped."
-        return 0
-    fi
-
-    if [ -n "$asset_digest" ]; then
-        expected="$(printf '%s' "$asset_digest" | sed 's/^sha256://I')"
-        actual="$(llvm-compute-sha256 "$artifact")" || {
-            LLVMUP_VERIFICATION_CHECKSUM="unavailable"
-            log_warn "No SHA256 implementation is available."
-        }
-        if [ -n "$actual" ]; then
-            if [ "$actual" != "$expected" ]; then
-                LLVMUP_VERIFICATION_CHECKSUM="invalid"
-                log_error "SHA256 digest mismatch. Expected: $expected, Actual: $actual"
-                return 1
-            fi
-            LLVMUP_VERIFICATION_CHECKSUM="valid"
-            log_info "SHA256 asset.digest matches the downloaded file."
-        fi
-    elif [ -n "$checksum_url" ]; then
-        if llvm-download-verification-material "$checksum_url" "$checksum_file"; then
-            expected="$(grep -Eio '[0-9a-f]{64}' "$checksum_file" | head -1 || true)"
-            if [ -z "$expected" ]; then
-                LLVMUP_VERIFICATION_CHECKSUM="invalid"
-                log_error "The advertised checksum file does not contain a SHA256 digest."
-                return 1
-            fi
-            expected="$(printf '%s' "$expected" | tr '[:upper:]' '[:lower:]')"
-            actual="$(llvm-compute-sha256 "$artifact")" || true
-            if [ -z "$actual" ]; then
-                LLVMUP_VERIFICATION_CHECKSUM="unavailable"
-                log_warn "No SHA256 implementation is available."
-            elif [ "$actual" != "$expected" ]; then
-                LLVMUP_VERIFICATION_CHECKSUM="invalid"
-                log_error "SHA256 checksum mismatch. Expected: $expected, Actual: $actual"
-                return 1
-            else
-                LLVMUP_VERIFICATION_CHECKSUM="valid"
-                log_info "SHA256 checksum matches the downloaded file."
-            fi
-        else
-            LLVMUP_VERIFICATION_CHECKSUM="unavailable"
-            log_warn "Could not download the advertised checksum file."
-        fi
-    fi
-
-    llvm-verify-gpg-material "$artifact" "$signature_url" "$temp_dir" || return 1
-    llvm-verify-attestation-material "$artifact" "$attestation_url" "$temp_dir" || return 1
-
-    if [ "$LLVMUP_VERIFICATION_GPG" != "valid" ] &&
-       [ "$LLVMUP_VERIFICATION_ATTESTATION" != "valid" ]; then
-        if [ "$policy" = "strict" ]; then
-            log_error "Strict verification requires a valid LLVM GPG signature or llvm/llvm-project Sigstore attestation."
-            return 1
-        fi
-        log_warn "The asset integrity may be checked, but its LLVM origin was not cryptographically authenticated."
-        if [ "$LLVMUP_VERIFICATION_CHECKSUM" = "valid" ]; then
-            LLVMUP_VERIFICATION_METHODS="checksum-only"
-        else
-            LLVMUP_VERIFICATION_METHODS="unverified"
-        fi
-    fi
-
-    log_info "Verification summary: checksum=$LLVMUP_VERIFICATION_CHECKSUM, gpg=$LLVMUP_VERIFICATION_GPG, sigstore=$LLVMUP_VERIFICATION_ATTESTATION"
-    return 0
-}
-
-llvm-write-verification-marker() {
-    local target_dir="$1"
-    local version="$2"
-    local asset_name="$3"
-    local asset_digest="$4"
-    local policy="$5"
-    local marker="$target_dir/.llvmup-verification.json"
-
-    command -v jq >/dev/null 2>&1 || return 1
-    jq -n \
-        --arg version "$version" \
-        --arg asset_name "$asset_name" \
-        --arg asset_digest "$asset_digest" \
-        --arg policy "$policy" \
-        --arg checksum "$LLVMUP_VERIFICATION_CHECKSUM" \
-        --arg gpg "$LLVMUP_VERIFICATION_GPG" \
-        --arg attestation "$LLVMUP_VERIFICATION_ATTESTATION" \
-        --arg methods "$LLVMUP_VERIFICATION_METHODS" \
-        --arg fingerprint "$LLVMUP_VERIFICATION_GPG_FINGERPRINT" \
-        '{schema: 1, version: $version, asset_name: $asset_name,
-          asset_digest: $asset_digest, policy: $policy,
-          checksum: $checksum, gpg: $gpg, attestation: $attestation,
-          methods: $methods, gpg_fingerprint: $fingerprint}' > "$marker"
-}
-
-llvm-validate-verification-marker() {
-    local target_dir="$1"
-    local version="$2"
-    local asset_digest="$3"
-    local policy="$4"
-    local marker="$target_dir/.llvmup-verification.json"
-
-    if [ ! -f "$marker" ] || ! jq -e --arg version "$version" \
-        --arg digest "$asset_digest" '
-          .schema == 1 and .version == $version and
-          ($digest == "" or .asset_digest == $digest)
-        ' "$marker" >/dev/null 2>&1; then
-        [ "$policy" = "strict" ] && {
-            log_error "Strict verification cannot trust the existing toolchain: its verification marker is missing or incompatible."
-            return 1
-        }
-        log_warn "Existing toolchain has no compatible verification marker."
-        return 0
-    fi
-
-    if [ "$policy" = "strict" ] && ! jq -e \
-        '.gpg == "valid" or .attestation == "valid"' "$marker" >/dev/null 2>&1; then
-        log_error "Strict verification cannot trust the existing toolchain: no authenticated origin is recorded."
+    engine="$(llvm-engine-path)" || {
+        log_error 'The provider engine is missing. Reinstall llvmup.'
         return 1
+    }
+    local args=("$expression" --provider official --format json)
+    [ -z "$platform" ] || args+=(--platform "$platform")
+    [ -z "$arch" ] || args+=(--arch "$arch")
+    if bash "$engine" resolve "${args[@]}"; then
+        return 0
+    else
+        status=$?
     fi
-
-    LLVMUP_VERIFICATION_METHODS="$(jq -r '.methods // "unverified"' "$marker")"
-    return 0
+    llvm-print-remote-release-candidates
+    return "$status"
 }
 
-# Get all installed LLVM versions in a structured format
 llvm-get-versions() {
     local format="${1:-list}"  # Options: list, json, simple
     local toolchains_dir="$(llvm-get-toolchains-dir)"

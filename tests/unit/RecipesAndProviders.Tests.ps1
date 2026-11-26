@@ -465,6 +465,17 @@ Describe 'LLVMUP Recipes, Multi-Provider Engine, and Ergonomic CLI' {
                 $null = llvmup run --locked -- cmd /d /c "echo LOCKED=%LLVMUP_ACTIVE_PROVIDER% && exit /b 4"
                 $LASTEXITCODE | Should -Be 4
 
+                $lockPath = Join-Path $script:projectDir '.llvmup-lock.json'
+                $originalLock = Get-Content -LiteralPath $lockPath -Raw
+                try {
+                    $lock.entries.'windows-x64'.asset.name = 'different.zip'
+                    $lock | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $lockPath -Encoding UTF8
+                    llvmup sync --locked 2>$null | Should -BeFalse
+                    llvmup run --locked -- cmd /c exit 0 2>$null | Should -BeFalse
+                } finally {
+                    [IO.File]::WriteAllText($lockPath, $originalLock)
+                }
+
                 # Project config selects llvm-mingw; a manual 'use' overrides it until 'use --auto'.
                 llvmup use winlibs@23.1.3 | Should -BeTrue
                 $env:LLVMUP_ACTIVE_PROVIDER | Should -Be 'winlibs'

@@ -32,14 +32,27 @@ fake_toolchain() {
         printf '#!/bin/sh\necho "%s $*"\n' "$t" > "$root/bin/$t"
         chmod +x "$root/bin/$t"
     done
-    jq -n --arg id "$1" --arg p "$2" --arg v "$3" --arg r "$4" --arg d "$5" --argjson tg "${6:-[\"x86_64-w64-mingw32\",\"aarch64-w64-mingw32\"]}" '
+    local asset
+    asset="$(jq -c '.entries["linux-x64"].asset // {"name":"x"}' .llvmup-lock.json 2>/dev/null || printf '{"name":"x"}')"
+    jq -n --argjson asset "$asset" --arg id "$1" --arg p "$2" --arg v "$3" --arg r "$4" --arg d "$5" --argjson tg "${6:-[\"x86_64-w64-mingw32\",\"aarch64-w64-mingw32\"]}" '
         {schema: 1, id: $id, origin: "managed", provider: $p, provider_release: $r, llvm_version: $v,
          host: {os: "linux", arch: "x64"}, supported_targets: $tg, default_target: $tg[0],
          variant: {crt: "ucrt", default_compiler: "clang", cxx_stdlib: "libc++"},
          tools: {clang: "bin/clang", "clang++": "bin/clang++",
                  target_wrappers: {"x86_64-w64-mingw32": {clang: "bin/x86_64-w64-mingw32-clang", "clang++": "bin/x86_64-w64-mingw32-clang++"},
                                    "aarch64-w64-mingw32": {clang: "bin/aarch64-w64-mingw32-clang", "clang++": "bin/aarch64-w64-mingw32-clang++"}}},
-         capabilities: {compilers: ["clang"]}, asset: {name: "x", digest: $d}, verification: {policy: "warn"}}' > "$root/.llvmup-toolchain.json"
+         capabilities: {compilers: ["clang"]}, asset: ($asset + {digest: $d}), verification: {policy: "warn"}}' > "$root/.llvmup-toolchain.json"
+}
+
+write_managed_manifest_for_request() {
+    local root="$1" metadata="$2"
+    jq -n --argjson r "$metadata" '
+        {schema: 1, id: $r.canonical_id, origin: "managed", provider: $r.provider,
+         provider_release: $r.release, llvm_version: $r.llvm_version,
+         host: {os: $r.platform, arch: $r.architecture},
+         asset: {name: $r.asset_name, digest: $r.asset_digest, id: $r.asset_id},
+         tools: {clang: "bin/clang"}, capabilities: {compilers: ["clang"]}}
+    ' > "$root/.llvmup-toolchain.json"
 }
 
 write_config() {
@@ -93,7 +106,7 @@ EOF
     fake_toolchain "$cid" llvm-mingw 23.1.6 20261117 "sha256:0000"
     run "$LLVMUP_SCRIPT" sync --locked
     [ "$status" -ne 0 ]
-    [[ "$output" == *"differs from the lockfile digest"* ]]
+    [[ "$output" == *"differs from the requested asset digest"* ]]
 }
 
 @test "sync --locked reports a missing host entry, provider conflicts and weaker policies" {
@@ -181,7 +194,9 @@ fake_winlibs() {
     local root="$LLVM_HOME/toolchains/$1"
     mkdir -p "$root/bin"
     for t in clang clang++ gcc g++ gcc-ar ar llvm-ar windres; do printf '#!/bin/sh\necho %s\n' "$t" > "$root/bin/$t"; chmod +x "$root/bin/$t"; done
-    jq -n --arg id "$1" '{schema: 1, id: $id, origin: "managed", provider: "winlibs", llvm_version: "23.1.3", gcc_version: "16.2.0",
+    local asset
+    asset="$(jq -c '.entries["linux-x64"].asset // {"name":"x"}' .llvmup-lock.json 2>/dev/null || printf '{"name":"x"}')"
+    jq -n --argjson asset "$asset" --arg id "$1" '{schema: 1, id: $id, origin: "managed", provider: "winlibs", llvm_version: "23.1.3", gcc_version: "16.2.0",
         supported_targets: ["x86_64-w64-mingw32"], default_target: "x86_64-w64-mingw32",
         variant: {crt: "ucrt", default_compiler: "clang"},
         tools: {clang: "bin/clang", "clang++": "bin/clang++", gcc: "bin/gcc", "g++": "bin/g++", "gcc-ar": "bin/gcc-ar", ar: "bin/ar", "llvm-ar": "bin/llvm-ar", windres: "bin/windres"},
@@ -258,13 +273,21 @@ fn() { bash -c "source '$BATS_TEST_DIRNAME/../../llvm-functions.sh'; $*"; }
     mkdir -p "$tc/.lm.llvmup.lock" "$tc/lm.backup-123/bin" "$tc/lm.installing-123/bin"
     echo "$g" > "$tc/.lm.llvmup.lock/pid"
     cp -r "$tc/lm.backup-123/." "$tc/lm.backup-123" 2>/dev/null || true
-    jq -n '{schema: 1, id: "lm", origin: "managed", provider: "llvm-mingw", llvm_version: "23.1.6", tools: {clang: "bin/clang"}, capabilities: {compilers: ["clang"]}}' > "$tc/lm.backup-123/.llvmup-toolchain.json"
+    write_managed_manifest_for_request "$tc/lm.backup-123" "$("$LLVMUP_SCRIPT" resolve llvm-mingw@23 --format json)"
     run "$LLVMUP_SCRIPT" install llvm-mingw@23 --name lm
     [ "$status" -eq 0 ]
     [[ "$output" == *"stale lock"* ]]
     [[ "$output" == *"Restored 'lm'"* ]]
     [[ "$output" == *"already installed"* ]]
     [ -d "$tc/lm" ] && [ ! -e "$tc/lm.backup-123" ] && [ ! -e "$tc/lm.installing-123" ] && [ ! -e "$tc/.lm.llvmup.lock" ]
+
+    local transaction="$tc/.lm.llvmup-txn.abc12345"
+    mkdir -p "$transaction/staging"
+    mv "$tc/lm" "$transaction/previous"
+    run "$LLVMUP_SCRIPT" install llvm-mingw@23 --name lm
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Restored 'lm'"* ]]
+    [ -d "$tc/lm" ] && [ ! -e "$transaction" ]
 
     mkdir "$tc/.lm.llvmup.lock" && echo "$$" > "$tc/.lm.llvmup.lock/pid"
     run "$LLVMUP_SCRIPT" install llvm-mingw@23 --name lm
@@ -286,8 +309,11 @@ fn() { bash -c "source '$BATS_TEST_DIRNAME/../../llvm-functions.sh'; $*"; }
 
 @test "config apply installs prebuilt requests through sync and keeps source builds for build options" {
     write_config 23 llvm-mingw 'kind = "prebuilt"'
-    cid="$("$LLVMUP_SCRIPT" resolve --config --format json | jq -r .canonical_id)"
+    local metadata
+    metadata="$("$LLVMUP_SCRIPT" resolve --config --format json)"
+    cid="$(jq -r .canonical_id <<<"$metadata")"
     fake_toolchain "$cid" llvm-mingw 23.1.6 20261117 "sha256:7777"
+    write_managed_manifest_for_request "$LLVM_HOME/toolchains/$cid" "$metadata"
     run bash -c "cd '$PROJ'; LLVM_TEST_MODE=1 LLVM_TEST_INSTALL_NOW=y '$LLVMUP_SCRIPT' config apply"
     [ "$status" -eq 0 ]
     [[ "$output" == *"llvmup sync"* ]]
@@ -298,4 +324,28 @@ fn() { bash -c "source '$BATS_TEST_DIRNAME/../../llvm-functions.sh'; $*"; }
     run bash -c "cd '$PROJ'; LLVM_TEST_MODE=1 '$LLVMUP_SCRIPT' config apply"
     [ "$status" -eq 0 ]
     [[ "$output" == *"llvmup install --from-source"* ]]
+}
+
+@test "locked commands reject missing digest, a different asset, and unauthenticated strict reuse" {
+    write_config 23 llvm-mingw
+    "$LLVMUP_SCRIPT" config lock --verify strict >/dev/null
+    local cid digest manifest
+    cid="$(jq -r '.entries["linux-x64"].canonical_id' .llvmup-lock.json)"
+    digest="$(jq -r '.entries["linux-x64"].asset.digest' .llvmup-lock.json)"
+    fake_toolchain "$cid" llvm-mingw 23.1.6 20261117 ""
+    run "$LLVMUP_SCRIPT" run --locked -- true
+    [[ "$output" == *"differs from the requested asset digest"* ]]
+    [ "$status" -ne 0 ]
+
+    fake_toolchain "$cid" llvm-mingw 23.1.6 20261117 "$digest"
+    run "$LLVMUP_SCRIPT" sync --locked
+    [[ "$output" == *"no authenticated origin"* ]]
+    [ "$status" -ne 0 ]
+
+    manifest="$LLVM_HOME/toolchains/$cid/.llvmup-toolchain.json"
+    jq '.asset.name = "different.tar.xz"' "$manifest" > "$manifest.tmp"
+    mv "$manifest.tmp" "$manifest"
+    run "$LLVMUP_SCRIPT" run --locked -- true
+    [[ "$output" == *"identity or asset differs"* ]]
+    [ "$status" -ne 0 ]
 }
