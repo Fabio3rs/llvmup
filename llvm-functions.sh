@@ -593,6 +593,67 @@ llvm-load-session-helpers() {
     . "$helper"
 }
 
+# True when 'env' arguments need the provider engine (see the executable's env_needs_engine).
+llvm-env-needs-engine() {
+    local prev="" a home tc
+    home="${LLVM_HOME:-$HOME/.llvm}"
+    tc="${LLVM_TOOLCHAINS_DIR:-$home/toolchains}"
+    for a in "$@"; do
+        if [ "$prev" = --format ] && { [ "$a" = json ] || [ "$a" = cmd ]; }; then return 0; fi
+        case "$a" in
+            --target|--compiler|*@*) return 0 ;;
+            -*|"") ;;
+            *)
+                if [ "$prev" != --format ]; then
+                    [ ! -f "$tc/$a/.llvmup-toolchain.json" ] || return 0
+                    if [ -f "$home/aliases.json" ] && grep -q "\"$a\"" "$home/aliases.json" 2>/dev/null; then return 0; fi
+                fi
+                ;;
+        esac
+        prev="$a"
+    done
+    return 1
+}
+
+# llvm-pick: numbered selector over local installations and aliases. It never queries remote
+# releases and fails immediately (exit 2) without a terminal instead of waiting for input.
+llvm-pick() {
+    local engine
+    engine="$(llvm-engine-path)" || { log_error "llvmup provider engine not found"; return 1; }
+    command -v jq >/dev/null 2>&1 || { log_error "llvmup pick requires jq"; return 1; }
+    local all
+    all="$(bash "$engine" list --json 2>/dev/null)" || all='[]'
+    local rows
+    rows="$(jq -r --arg active "${_ACTIVE_LLVM:-}" --arg def "$(basename "$(readlink "${LLVM_HOME:-$HOME/.llvm}/default" 2>/dev/null)" 2>/dev/null)" '
+        (if type == "array" then . else (.toolchains // .installed // []) end)
+        | map(select((.missing_on_disk // false) | not))
+        | .[] | [.install_name, (.provider // "official"), (.llvm_version // "?"),
+                 ((.variant.crt // "") | select(. != "unknown" and . != "system") // ""),
+                 (.default_target // ""),
+                 ([if .install_name == $active then "active" else empty end, if .install_name == $def then "default" else empty end] | join(","))]
+        | @tsv' <<<"$all")"
+    [ -n "$rows" ] || { log_error "No installed toolchains found."; return 1; }
+    local aliases="" af="${LLVM_HOME:-$HOME/.llvm}/aliases.json"
+    [ ! -f "$af" ] || aliases="$(jq -r '.aliases // {} | to_entries[] | "\(.value.target_name)\t\(.key)"' "$af" 2>/dev/null)"
+    local i=0 names=() name prov ver crt tgt tags al
+    while IFS=$'\t' read -r name prov ver crt tgt tags; do
+        i=$((i + 1)); names+=("$name")
+        al="$(printf '%s\n' "$aliases" | awk -F'\t' -v n="$name" '$1 == n { printf "%s%s", sep, $2; sep = "," }')"
+        printf '  %2d) %-46s %-10s LLVM %-8s %s%s%s%s\n' "$i" "$name" "$prov" "$ver" "${crt:+crt=$crt }" "${tgt:+target=$tgt }" "${al:+aliases=$al }" "${tags:+[$tags]}"
+    done <<<"$rows"
+    if [ ! -t 0 ]; then
+        log_error "llvmup pick needs an interactive terminal; use 'llvmup use <toolchain>' in scripts."
+        return 2
+    fi
+    local choice
+    read -r -p "Select toolchain (1-$i, q to cancel): " choice || return 1
+    case "$choice" in q|Q|"") return 1 ;; esac
+    if ! [[ "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt "$i" ]; then
+        log_error "Invalid selection '$choice'"; return 1
+    fi
+    llvm-use "${names[$((choice - 1))]}"
+}
+
 # llvm-use <selector|-|--auto> [--compiler C] [--target T] [--crt C] [--install]
 # Applies a toolchain to the current shell from its manifest. A manual selection overrides
 # directory auto-activation until 'llvm-use --auto' or 'llvm-deactivate'.
@@ -702,6 +763,36 @@ llvmup() {
             llvm-use "$@"
             return $?
             ;;
+        pick)
+            shift
+            llvm-pick "$@"
+            return $?
+            ;;
+        install)
+            # 'install ... --use' installs through the CLI, then selects the result in this shell.
+            case " $* " in
+                *" --use "*)
+                    shift
+                    local a prev="" sel="" name="" inst=() use_args=()
+                    for a in "$@"; do
+                        case "$prev" in
+                            --name|-n) name="$a" ;;
+                            --compiler|--target|--crt) use_args+=("$prev" "$a") ;;
+                        esac
+                        if [ "$a" != --use ]; then inst+=("$a"); fi
+                        case "$a" in
+                            -*) ;;
+                            *) case "$prev" in --name|-n|--compiler|--target|--crt|--release|--provider|--profile|-p|--component|--verify|--extractor|--threads|--cmake-flags|-c) ;; *) [ -n "$sel" ] || sel="$a" ;; esac ;;
+                        esac
+                        prev="$a"
+                    done
+                    [ -n "$runtime_script" ] || { log_error "llvmup runtime script not found"; return 1; }
+                    "$runtime_script" install "${inst[@]}" || return $?
+                    llvm-use "${name:-${sel:-latest}}" "${use_args[@]}"
+                    return $?
+                    ;;
+            esac
+            ;;
         vscode-activate)
             shift
             llvm-vscode-activate "$@"
@@ -709,11 +800,17 @@ llvmup() {
             ;;
         status)
             shift
+            case " $* " in
+                *" --explain "*|*" --json "*) [ -z "$runtime_script" ] || { "$runtime_script" status "$@"; return $?; } ;;
+            esac
             llvm-status "$@"
             return $?
             ;;
         list)
             shift
+            case " $* " in
+                *" --providers "*|*" --provider "*) [ -z "$runtime_script" ] || { "$runtime_script" list "$@"; return $?; } ;;
+            esac
             llvm-list "$@"
             return $?
             ;;
@@ -734,6 +831,11 @@ llvmup() {
             ;;
         env)
             shift
+            # Provider toolchains, aliases, JSON/cmd output and target/compiler selection use the engine.
+            if [ -n "$runtime_script" ] && llvm-env-needs-engine "$@"; then
+                "$runtime_script" env "$@"
+                return $?
+            fi
             case "${1:-}" in
                 --config)
                     llvm-print-config-env-exports shell
@@ -814,10 +916,20 @@ llvmup() {
                 unset)
                     llvm-default-unset
                     ;;
-                *)
+                -*)
                     log_error "Unknown default subcommand: $default_subcommand"
-                    log_info "Available subcommands: set, show, unset"
+                    log_info "Available subcommands: set, show, unset, or <toolchain>"
                     return 1
+                    ;;
+                *)
+                    # 'llvmup default <toolchain>' is short for 'default set'; selectors such as
+                    # winlibs@23 or an alias resolve to the exact installation name.
+                    local engine target
+                    if engine="$(llvm-engine-path)" && target="$(bash "$engine" where "$default_subcommand" 2>/dev/null)"; then
+                        llvm-default-set "$(basename "$target")"
+                    else
+                        llvm-default-set "$default_subcommand"
+                    fi
                     ;;
             esac
             return $?

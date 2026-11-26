@@ -218,3 +218,36 @@ fake_winlibs() {
     grep -q 'set(CMAKE_SYSTEM_NAME Windows)' "$PROJ/tc.cmake"
     grep -q 'aarch64-w64-mingw32-clang' "$PROJ/tc.cmake"
 }
+
+fn() { bash -c "source '$BATS_TEST_DIRNAME/../../llvm-functions.sh'; $*"; }
+
+@test "pick lists local toolchains with aliases and fails fast without a terminal" {
+    fake_toolchain lm llvm-mingw 23.1.6 20261117 "sha256:5555"
+    fake_winlibs wl
+    "$LLVMUP_SCRIPT" alias set mine wl >/dev/null
+    run fn "llvmup pick < /dev/null"
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"lm"*"llvm-mingw"*"LLVM 23.1.6"* ]]
+    [[ "$output" == *"wl"*"winlibs"*"aliases=mine"* ]]
+    [[ "$output" == *"needs an interactive terminal"* ]]
+}
+
+@test "the shell function routes provider env, status --json and list --providers to the engine" {
+    fake_winlibs wl
+    run fn "llvmup env wl --compiler gcc --format json"
+    [ "$status" -eq 0 ]
+    jq -e '.set.LLVMUP_ACTIVE_COMPILER == "gcc"' <<<"$output"
+    run fn "llvmup list --providers"
+    [[ "$output" == *"winlibs"* ]]
+    run fn "llvmup status --json"
+    [ "$status" -eq 0 ]
+    jq -e 'type == "object"' <<<"$output"
+}
+
+@test "default accepts a selector shorthand and records the exact installation" {
+    fake_winlibs wl
+    "$LLVMUP_SCRIPT" alias set win-dev wl >/dev/null
+    run fn "llvmup default win-dev && llvmup default show"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"wl"* ]]
+}
