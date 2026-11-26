@@ -1703,7 +1703,15 @@ eng_config_request() {
     IFS=$'\t' read -r prov expr <<<"$split"
     kind="$(eng_config_get "$cfg" toolchain kind)"
     case "$kind" in
-        "") case "$expr" in source-*) kind=source ;; *) kind=prebuilt ;; esac ;;
+        "")
+            # Legacy configs without [toolchain] kind: build options or a source- selector mean a
+            # source build (as Read-LlvmProjectConfigData decides in PowerShell); otherwise prebuilt.
+            if [[ "$expr" == source-* ]] || grep -Eq '^[[:space:]]*(cmake_flags|cmake_preset|disable_libc_wno_error)[[:space:]]*=' "$cfg"; then
+                kind=source
+            else
+                kind=prebuilt
+            fi
+            ;;
         prebuilt|source) ;;
         *) eng_die "Invalid [toolchain] kind '$kind' in $cfg (use prebuilt or source)." ;;
     esac

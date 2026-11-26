@@ -547,32 +547,47 @@ function Invoke-Llvm7ZipStreamTar {
         $errB = $procB.StandardError.ReadToEndAsync()
         $outB = $procB.StandardOutput.ReadToEndAsync()
         $copyFailed = $null
-        $tarExitedEarly = $false
+        $trailingBytes = [long]0
+        $trailingNonZero = $false
+        $src = $procA.StandardOutput.BaseStream
+        $dst = $procB.StandardInput.BaseStream
+        $buf = New-Object byte[] 1048576
+        $draining = $false
         try {
-            # Copy asynchronously and watch the tar side: when it exits before the stream ends, a write
-            # to its stdin may block instead of failing (observed on .NET Framework / Windows
-            # PowerShell 5.1), and the decompressor would then wait forever on a full pipe.
-            $copy = $procA.StandardOutput.BaseStream.CopyToAsync($procB.StandardInput.BaseStream, 1048576)
-            while (-not $copy.Wait(250)) {
-                if ($procB.HasExited) {
-                    $tarExitedEarly = $true
-                    try { $procA.Kill() } catch {}
-                    $null = $copy.Wait(10000)
-                    break
+            # Explicit copy loop (about 4,000 iterations for a 4 GB toolchain). Before each write the
+            # tar side is checked: 7-Zip stops reading at the tar end-of-archive marker and exits 0
+            # while the decompressor still writes the archive's zero padding, and a failed tar side
+            # stops reading too. A pipe without a reader may then fail, block or (on .NET Framework)
+            # silently swallow writes, so after the tar side exits the rest is drained and checked
+            # here instead of being written.
+            while (($n = $src.Read($buf, 0, $buf.Length)) -gt 0) {
+                if (-not $draining -and $procB.HasExited) { $draining = $true }
+                if (-not $draining) {
+                    try { $dst.Write($buf, 0, $n) } catch { $draining = $true }
+                    if (-not $draining) { continue }
                 }
+                if ($procB.HasExited -and $procB.ExitCode -ne 0) { try { $procA.Kill() } catch {}; break }
+                $trailingBytes += $n
+                if (-not $trailingNonZero) {
+                    for ($k = 0; $k -lt $n; $k++) { if ($buf[$k] -ne 0) { $trailingNonZero = $true; break } }
+                }
+                if ($trailingNonZero -or $trailingBytes -gt 64MB) { try { $procA.Kill() } catch {}; break }
             }
-            if ($copy.IsFaulted) { $copyFailed = $copy.Exception.GetBaseException().Message }
         } catch {
             $copyFailed = $_.Exception.GetBaseException().Message
         } finally {
-            try { $procB.StandardInput.Close() } catch {}
+            try { $dst.Close() } catch {}
         }
-        if (($copyFailed -or $tarExitedEarly) -and -not $procA.HasExited) {
-            try { $procA.Kill() } catch {}
+        if ($draining) {
+            $procB.WaitForExit()
+            # Data the tar side never consumed is acceptable only when it finished successfully and the
+            # remainder is padding. The chunk in flight when it stopped may hold the end marker.
+            if ($procB.ExitCode -eq 0 -and $trailingNonZero) {
+                $copyFailed = "the tar extractor stopped before the end of the stream (non-padding data follows; $trailingBytes bytes checked)"
+            }
         }
-        if ($tarExitedEarly -and -not $copyFailed) { $copyFailed = 'the tar extractor exited before the end of the stream' }
         $procB.WaitForExit()
-        $procA.WaitForExit()
+        if (-not $procA.WaitForExit(60000)) { try { $procA.Kill() } catch {}; $procA.WaitForExit() }
         $null = $outB.Result
         # The extractor's own error explains a broken pipe better than the decompressor's exit status.
         if ($procB.ExitCode -ne 0) {

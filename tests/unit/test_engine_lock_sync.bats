@@ -283,3 +283,19 @@ fn() { bash -c "source '$BATS_TEST_DIRNAME/../../llvm-functions.sh'; $*"; }
     [ "$(head -1 "$GITHUB_PATH")" = "$LLVM_HOME/toolchains/lm/bin" ]
     [ "$(tail -1 "$GITHUB_PATH")" = "$LLVM_HOME/toolchains/lm/aarch64-w64-mingw32/bin" ]
 }
+
+@test "config apply installs prebuilt requests through sync and keeps source builds for build options" {
+    write_config 23 llvm-mingw 'kind = "prebuilt"'
+    cid="$("$LLVMUP_SCRIPT" resolve --config --format json | jq -r .canonical_id)"
+    fake_toolchain "$cid" llvm-mingw 23.1.6 20261117 "sha256:7777"
+    run bash -c "cd '$PROJ'; LLVM_TEST_MODE=1 LLVM_TEST_INSTALL_NOW=y '$LLVMUP_SCRIPT' config apply"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"llvmup sync"* ]]
+    [[ "$output" == *"already installed"* ]]
+    [[ "$output" != *"--from-source"* ]]
+
+    printf '[version]\ndefault = "llvmorg-18.1.8"\n\n[build]\ncmake_flags = ["-DLLVM_ENABLE_ASSERTIONS=ON"]\n' > "$PROJ/.llvmup-config"
+    run bash -c "cd '$PROJ'; LLVM_TEST_MODE=1 '$LLVMUP_SCRIPT' config apply"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"llvmup install --from-source"* ]]
+}

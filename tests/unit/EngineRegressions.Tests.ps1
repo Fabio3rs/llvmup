@@ -359,6 +359,34 @@ Describe 'LLVMUP engine regressions' {
         }
     }
 
+    Context '7-Zip streaming end of archive' {
+        It 'accepts zero padding after the tar end marker and rejects real data the tar side ignored' -Skip:($env:OS -ne 'Windows_NT') {
+            $module = Join-Path $script:repoRoot 'libexec\pwsh\Llvm-Extractor.psm1'
+            $run = {
+                param([int]$Byte)
+                $dir = Join-Path $TestDrive "fake7z-eoa-$Byte"
+                $null = New-Item -ItemType Directory -Path $dir -Force
+                $fake = Join-Path $dir '7z.cmd'
+                # -si: finish successfully without reading (like 7-Zip at the end-of-archive marker).
+                # -so: write 3 MiB of the given byte value.
+                Set-Content -LiteralPath $fake -Encoding Ascii -Value @(
+                    '@echo off',
+                    'echo %* | findstr /c:"-si" >nul && exit /b 0',
+                    "powershell -NoProfile -Command `"`$b = New-Object byte[] 3145728; if ($Byte) { for (`$i = 0; `$i -lt `$b.Length; `$i++) { `$b[`$i] = $Byte } }; `$o = [Console]::OpenStandardOutput(); `$o.Write(`$b, 0, `$b.Length); `$o.Flush()`"")
+                $job = Start-Job -ScriptBlock {
+                    param($m, $f, $o)
+                    $mod = Import-Module $m -DisableNameChecking -PassThru
+                    & $mod { param($f, $o) try { Invoke-Llvm7ZipStreamTar -SevenZipPath $f -ArchivePath 'x.tar.zst' -OutputDir $o; 'no-error' } catch { "error: $($_.Exception.Message)" } } $f $o
+                } -ArgumentList $module, $fake, (Join-Path $dir 'out')
+                if (-not (Wait-Job -Job $job -Timeout 90)) { Stop-Job $job; Remove-Job $job -Force; throw 'stream deadlocked' }
+                $r = "$(Receive-Job $job)"; Remove-Job $job -Force
+                return $r
+            }
+            & $run 0 | Should -Be 'no-error'
+            & $run 65 | Should -Match 'non-padding data'
+        }
+    }
+
     Context 'Missing extraction backends' {
         It 'explains that a matching asset exists but cannot be unpacked instead of claiming no release matches' {
             Remove-Item Env:LLVMUP_ASSET_FORMATS -ErrorAction SilentlyContinue

@@ -2079,6 +2079,38 @@ llvm-config-apply() {
         return 1
     fi
 
+    # [toolchain] kind decides between a prebuilt install (through 'llvmup sync', which honors
+    # provider, release, CRT and target) and a source build. Legacy configs without kind are source
+    # builds only when they carry build options or a source- selector, as in PowerShell.
+    local config_root kind=""
+    config_root="$(llvm-find-config-root)" || config_root="."
+    if [ -f "$config_root/.llvmup-config" ]; then
+        kind="$(awk '/^[[:space:]]*\[/{s=$0; gsub(/[][[:space:]]/, "", s); sec=tolower(s); next}
+                     sec == "toolchain" && /^[[:space:]]*kind[[:space:]]*=/ {v=$0; sub(/^[^=]*=[[:space:]]*/, "", v); gsub(/["'"'"'[:space:]]/, "", v); print tolower(v); exit}' "$config_root/.llvmup-config")"
+    fi
+    if [ -z "$kind" ]; then
+        if [[ "$LLVM_CONFIG_VERSION" == source-* ]] || [ ${#LLVM_CONFIG_CMAKE_FLAGS[@]} -gt 0 ]; then kind=source; else kind=prebuilt; fi
+    fi
+    if [ "$kind" = prebuilt ]; then
+        log_tip "Installing with settings:"
+        log_tip "  llvmup sync    (prebuilt ${LLVM_CONFIG_VERSION} from $config_root/.llvmup-config)"
+        local apply_choice="n"
+        if [ -n "$LLVM_TEST_MODE" ]; then
+            apply_choice="${LLVM_TEST_INSTALL_NOW:-n}"
+        else
+            read -p "Install now? [y/N]: " -n 1 -r
+            echo
+            apply_choice="$REPLY"
+        fi
+        if [[ $apply_choice =~ ^[Yy]$ ]]; then
+            (cd "$config_root" && llvmup sync)
+            return $?
+        fi
+        log_tip "To install later, run: llvmup sync"
+        log_tip "To activate if already installed, run: llvm-config-activate"
+        return 0
+    fi
+
     # Build command arguments
     local cmd_args=("$LLVM_CONFIG_VERSION")
     [ -n "$LLVM_CONFIG_NAME" ] && cmd_args+=(--name "$LLVM_CONFIG_NAME")
