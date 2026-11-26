@@ -65,6 +65,7 @@ WSL1 Ubuntu 24.04. Existing commands and the official provider behaviour are pre
 | Engine parity Bash x PowerShell | WSL, Store `pwsh.exe` and PowerShell 7.7 for Linux | 19/19 each |
 | Real-toolchain matrix (`scripts/toolchain_matrix.ps1`) | Windows host, PS 7 and 5.1 | all PASS except WinLibs GCC with a space in the path (documented upstream limit) |
 | Same matrix, clean Windows Sandbox | PS 5.1, package from `packaging/build.py` installed outside the checkout | llvm-mingw x64/i686/arm64 and WinLibs Clang/GCC: every step PASS (arm64 Execute SKIP) |
+| Official Linux install + native build | WSL2 (kernel 6.18, Ubuntu 24.04) | PASS (C17, C++23) |
 | Linux -> Windows cross | WSL1 + Windows host | x86_64 and aarch64 build; x86_64 executed on Windows; CMake cross PASS |
 
 ## 8. Benchmarks
@@ -88,10 +89,10 @@ PowerShell CLI child process about 1 s (0.45 s is module import).
 
 - macOS hosts and Windows ARM64 execution: no such hardware here; the CI jobs are prepared.
 - GitHub workflows (`tests.yml`, `action-e2e.yml`, `release.yml` attestation): never run; running
-  them requires pushing, which the project rules forbid. The attestation action is pinned by SHA.
-- Official LLVM for Linux: downloaded, verified, extracted; compiled and ran C17/C++23 when `clang`
-  was started through the dynamic loader. WSL1 cannot exec the 282 MB binary directly, so llvmup's
-  own install validation fails there. An unassisted install needs a real Linux host or WSL2.
+  them requires pushing, which the project rules forbid and for which no credentials exist here
+  (the maintainer will push manually). The attestation action is pinned by SHA.
+- Official LLVM for Linux: verified on WSL2 (unassisted install in 3 min 53 s, native C17/C++23
+  build and run; Bats 354/354 and parity 19/19 repeated there). WSL1 cannot exec the 282 MB `clang`.
 - WinLibs MCF threads, WinLibs i686/MSVCRT and llvm-mingw MSVCRT/armv7 end to end.
 
 ## 11. Git

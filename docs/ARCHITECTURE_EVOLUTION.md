@@ -132,10 +132,9 @@ Sandbox (long `.installing-<guid>.raw-<guid>` prefixes; now 8-hex suffixes and e
 targets); the Bash engine hid the compiler's own message when validation failed.
 
 Not executed (prepared only): GitHub workflows (`tests.yml`, `action-e2e.yml`), macOS hosts,
-Windows ARM64 execution. Official LLVM for Linux was downloaded, verified and extracted by the Bash
-engine and its `clang` compiled and ran C17/C++23 programs when started through the dynamic loader,
-but WSL1 cannot exec the 282 MB binary directly, so llvmup's own install validation fails there; a
-real Linux host or WSL2 (not installed here) is needed for an unassisted install.
+Windows ARM64 execution. Official LLVM for Linux installs unassisted with the Bash engine on WSL2
+(3 min 53 s) and builds/runs C17 and C++23; on WSL1 the kernel cannot exec the 282 MB `clang`.
+Bats 354/354 and parity 19/19 were repeated on WSL2.
 
 Performance (idle Windows 10 host, SSD, warm cache): Bash engine `status` 0.10 s, `list` 0.14 s,
 `which` 0.44 s (WSL1); PowerShell CLI child process `status` 0.9 s, `list` 1.0 s, `which` 1.0 s
