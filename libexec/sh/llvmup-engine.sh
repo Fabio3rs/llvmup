@@ -425,6 +425,13 @@ eng_resolve_plan() {
         break
     done
     if [ -z "$chosen" ]; then
+        if [ -z "${LLVMUP_ASSET_FORMATS:-}" ] && [ "$os" = "$(eng_norm_os)" ]; then
+            # Distinguish "nothing matches" from "a matching asset exists but nothing here can unpack it".
+            local any
+            if any="$(LLVMUP_ASSET_FORMATS="tar.xz,tar.zst,tar.gz,tar,zip,7z" eng_resolve_plan "$@" 2>/dev/null)"; then
+                eng_die "Release '$(jq -r '.release_tag' <<<"$any")' of provider '$provider' has a matching asset ($(jq -r '.asset.name' <<<"$any")), but no local extractor can unpack it (formats usable here: $(jq -r 'join(", ")' <<<"$formats")). Install xz-utils/zstd for tar, 7-Zip (7zz/7z), or unzip."
+            fi
+        fi
         if [ -n "$release" ]; then
             eng_die "No compatible asset found in provider '$provider' release '$release' for $os $arch (crt=${crt:-default})."
         fi
@@ -1007,15 +1014,22 @@ eng_config_get() {
         }' "$1"
 }
 
-# eng_effective <explicit-selector> -> TSV: origin\treason\tmanifest-json
+# eng_effective <explicit-selector> -> TSV: origin\treason\tcompiler\ttarget\tmanifest-json
+# ("-" marks an empty compiler/target). Parse it with eng_split_effective.
+eng_split_effective() {
+    IFS=$'\t' read -r EFF_ORIGIN EFF_REASON EFF_COMPILER EFF_TARGET EFF_MANIFEST <<<"$1"
+    [ "$EFF_COMPILER" != - ] || EFF_COMPILER=""
+    [ "$EFF_TARGET" != - ] || EFF_TARGET=""
+}
+
 eng_effective() {
     local sel="${1:-}" m=""
     if [ -n "$sel" ]; then
         m="$(eng_resolve_installed "$sel")" || eng_die "No installed toolchain matches selector '$sel'."
-        printf 'explicit\tExplicitly selected %s\t%s\n' "$sel" "$m"; return 0
+        printf 'explicit\tExplicitly selected %s\t-\t-\t%s\n' "$sel" "$m"; return 0
     fi
     if [ -n "${LLVMUP_SESSION_OVERRIDE:-}" ] && m="$(eng_resolve_installed "$LLVMUP_SESSION_OVERRIDE" 2>/dev/null)"; then
-        printf 'session-override\tSession override (%s)\t%s\n' "$LLVMUP_SESSION_OVERRIDE" "$m"; return 0
+        printf 'session-override\tSession override (%s)\t%s\t%s\t%s\n' "$LLVMUP_SESSION_OVERRIDE" "${LLVMUP_ACTIVE_COMPILER:--}" "${LLVMUP_ACTIVE_TARGET:--}" "$m"; return 0
     fi
     local cfg
     if [ "${LLVMUP_IGNORE_CONFIG:-0}" != 1 ] && cfg="$(eng_project_config)"; then
@@ -1025,16 +1039,18 @@ eng_effective() {
         if [ -n "$v" ]; then
             local s="$v"; [ -z "$p" ] || s="$p@$v"
             if m="$(eng_resolve_installed "$s" "$(eng_config_get "$cfg" toolchain crt)" 2>/dev/null)"; then
-                printf 'project-config\tProject config %s (%s)\t%s\n' "$cfg" "$s" "$m"; return 0
+                local cc tg
+                cc="$(eng_config_get "$cfg" toolchain compiler)"; tg="$(eng_config_get "$cfg" toolchain target)"
+                printf 'project-config\tProject config %s (%s)\t%s\t%s\t%s\n' "$cfg" "$s" "${cc:--}" "${tg:--}" "$m"; return 0
             fi
         fi
     fi
     if [ -n "${_ACTIVE_LLVM:-}" ] && m="$(eng_resolve_installed "$_ACTIVE_LLVM" 2>/dev/null)"; then
-        printf 'active-session\tActive environment (%s)\t%s\n' "$_ACTIVE_LLVM" "$m"; return 0
+        printf 'active-session\tActive environment (%s)\t%s\t%s\t%s\n' "$_ACTIVE_LLVM" "${LLVMUP_ACTIVE_COMPILER:--}" "${LLVMUP_ACTIVE_TARGET:--}" "$m"; return 0
     fi
     local def
     if def="$(eng_default_name)" && m="$(eng_resolve_installed "$def" 2>/dev/null)"; then
-        printf 'default\tGlobal default (%s)\t%s\n' "$def" "$m"; return 0
+        printf 'default\tGlobal default (%s)\t-\t-\t%s\n' "$def" "$m"; return 0
     fi
     return 1
 }
@@ -1067,7 +1083,7 @@ eng_delta() {
         | def abs($rel): if $rel == null or $rel == "" then null else $root + "/" + $rel end;
           def first_of($map; $keys): [ $keys[] as $k | $map[$k] | select(. != null) ][0];
           (if $cc == "gcc" then
-             {CC: first_of($w; ["gcc"]) // $t.gcc, CXX: first_of($w; ["g++"]) // $t["g++"],
+             {CC: (first_of($w; ["gcc"]) // $t.gcc), CXX: (first_of($w; ["g++"]) // $t["g++"]),
               AR: first_of($t; ["gcc-ar", "ar"]), RANLIB: first_of($t; ["gcc-ranlib", "ranlib"]), NM: first_of($t; ["gcc-nm", "nm"]),
               STRIP: $t.strip, DLLTOOL: $t.dlltool, RC: $t.windres, LD: $t.ld}
            else
@@ -1161,7 +1177,7 @@ eng_resolve_exe() {
 
 ENG_OPT_PROVIDER="" ENG_OPT_RELEASE="" ENG_OPT_CRT="" ENG_OPT_THREADS="" ENG_OPT_TARGET="" ENG_OPT_COMPILER=""
 ENG_OPT_PLATFORM="" ENG_OPT_ARCH="" ENG_OPT_NAME="" ENG_OPT_FORMAT="" ENG_OPT_VERIFY="" ENG_OPT_EXTRACTOR=""
-ENG_OPT_FORCE=0 ENG_OPT_INSTALL=0 ENG_OPT_JSON=0 ENG_OPT_OUTPUT="" ENG_OPT_TOOLCHAIN="" ENG_OPT_PROFILE=""
+ENG_OPT_FORCE=0 ENG_OPT_INSTALL=0 ENG_OPT_LOCKED=0 ENG_OPT_CONFIG=0 ENG_OPT_JSON=0 ENG_OPT_OUTPUT="" ENG_OPT_TOOLCHAIN="" ENG_OPT_PROFILE=""
 ENG_POSITIONAL=()
 
 eng_parse_common() {
@@ -1185,6 +1201,8 @@ eng_parse_common() {
             --toolchain) ENG_OPT_TOOLCHAIN="${2:?--toolchain requires a value}"; shift 2 ;;
             --force) ENG_OPT_FORCE=1; shift ;;
             --install) ENG_OPT_INSTALL=1; shift ;;
+            --locked) ENG_OPT_LOCKED=1; shift ;;
+            --config) ENG_OPT_CONFIG=1; shift ;;
             --json) ENG_OPT_JSON=1; shift ;;
             --no-cache) ENG_NO_CACHE=1; shift ;;
             --quiet|-q) ENGINE_QUIET=1; shift ;;
@@ -1198,8 +1216,18 @@ eng_parse_common() {
 cmd_resolve() {
     eng_parse_common "$@"
     local sel="${ENG_POSITIONAL[0]:-latest}" prov expr split
-    split="$(eng_split_selector "$sel" "$ENG_OPT_PROVIDER")" || exit 1
-    IFS=$'\t' read -r prov expr <<<"$split"
+    if [ "${ENG_OPT_CONFIG:-0}" -eq 1 ]; then
+        local cfg
+        cfg="$(eng_project_config)" || eng_die "No .llvmup-config file found"
+        eng_load_config_request "$cfg"
+        [ "$CFG_KIND" = prebuilt ] || eng_die "Project requests a source build ($CFG_EXPR); there is no remote asset to resolve."
+        prov="$CFG_PROVIDER"; expr="$CFG_EXPR"
+        ENG_OPT_RELEASE="${ENG_OPT_RELEASE:-$CFG_RELEASE}"; ENG_OPT_CRT="${ENG_OPT_CRT:-$CFG_CRT}"
+        ENG_OPT_THREADS="${ENG_OPT_THREADS:-$CFG_THREADS}"; ENG_OPT_TARGET="${ENG_OPT_TARGET:-$CFG_TARGET}"
+    else
+        split="$(eng_split_selector "$sel" "$ENG_OPT_PROVIDER")" || exit 1
+        IFS=$'\t' read -r prov expr <<<"$split"
+    fi
     prov="${prov:-official}"; expr="${expr:-latest}"
     local plan
     plan="$(eng_resolve_plan "$prov" "$expr" "$ENG_OPT_RELEASE" "$ENG_OPT_CRT" "$ENG_OPT_THREADS" \
@@ -1232,6 +1260,9 @@ cmd_install() {
     [ "$os" = "$(eng_norm_os)" ] || eng_die "Cannot install a toolchain for host '$os' on $(eng_norm_os); use 'resolve --platform' to inspect it."
     policy="$(eng_policy "$ENG_OPT_VERIFY")"
     plan="$(eng_resolve_plan "$prov" "$expr" "$ENG_OPT_RELEASE" "$ENG_OPT_CRT" "$ENG_OPT_THREADS" "$os" "$arch" "$ENG_OPT_TARGET")" || exit 1
+    if [ -n "${ENG_LOCKED_ASSET:-}" ] && [ "$(jq -r '.asset.name' <<<"$plan")" != "$ENG_LOCKED_ASSET" ]; then
+        eng_die "Locked asset '$ENG_LOCKED_ASSET' differs from resolved asset '$(jq -r '.asset.name' <<<"$plan")'. Update the lockfile with 'llvmup config lock'."
+    fi
     if [ -n "${ENG_LOCKED_DIGEST:-}" ]; then
         local up
         up="$(jq -r '.asset.digest // ""' <<<"$plan")"
@@ -1304,9 +1335,9 @@ cmd_env() {
     else
         line="$(eng_effective "$sel")" || exit 1
     fi
-    IFS=$'\t' read -r origin reason m <<<"$line"
+    eng_split_effective "$line"; origin="$EFF_ORIGIN"; reason="$EFF_REASON"; m="$EFF_MANIFEST"
     local d
-    d="$(eng_delta "$m" "$ENG_OPT_TARGET" "$ENG_OPT_COMPILER")" || exit 1
+    d="$(eng_delta "$m" "${ENG_OPT_TARGET:-${EFF_TARGET:-}}" "${ENG_OPT_COMPILER:-${EFF_COMPILER:-}}")" || exit 1
     eng_print_delta "$d" "${ENG_OPT_FORMAT:-shell}"
 }
 
@@ -1325,7 +1356,10 @@ cmd_run() {
     [ ${#cmd[@]} -gt 0 ] || eng_die "Missing command after -- (e.g., llvmup run official@23 -- clang++ --version)"
     sel="${ENG_POSITIONAL[0]:-}"
     local line origin reason m
-    if [ -n "$sel" ]; then
+    if [ "${ENG_OPT_LOCKED:-0}" -eq 1 ]; then
+        [ -z "$sel" ] || eng_die "--locked uses the toolchain recorded in .llvmup-lock.json; do not pass a selector."
+        m="$(eng_locked_manifest)" || exit 1
+    elif [ -n "$sel" ]; then
         if ! m="$(eng_resolve_installed "$sel" "$ENG_OPT_CRT")"; then
             [ "$ENG_OPT_INSTALL" -eq 1 ] || eng_die "No installed toolchain matches '$sel'. Pass --install to install on demand."
             (cmd_install "$sel" ${ENG_OPT_CRT:+--crt "$ENG_OPT_CRT"} --quiet) >/dev/null || exit 1
@@ -1333,10 +1367,10 @@ cmd_run() {
         fi
     else
         line="$(eng_effective "")" || eng_die "No toolchain is selected, configured, or set as default."
-        IFS=$'\t' read -r origin reason m <<<"$line"
+        eng_split_effective "$line"; origin="$EFF_ORIGIN"; reason="$EFF_REASON"; m="$EFF_MANIFEST"
     fi
     local d exe
-    d="$(eng_delta "$m" "$ENG_OPT_TARGET" "$ENG_OPT_COMPILER")" || exit 1
+    d="$(eng_delta "$m" "${ENG_OPT_TARGET:-${EFF_TARGET:-}}" "${ENG_OPT_COMPILER:-${EFF_COMPILER:-}}")" || exit 1
     exe="$(eng_resolve_exe "${cmd[0]}" "$d" "$m")" || exit 1
     eng_apply_delta_to_process "$d"
     # exec preserves arguments verbatim, the working directory, stdio, signals and the exit code.
@@ -1349,8 +1383,8 @@ cmd_which() {
     [ -n "$tool" ] || eng_die "Usage: llvmup which <tool> [--toolchain <selector>]"
     local line origin reason m d exe root
     line="$(eng_effective "$ENG_OPT_TOOLCHAIN")" || eng_die "No toolchain selected or installed."
-    IFS=$'\t' read -r origin reason m <<<"$line"
-    d="$(eng_delta "$m" "$ENG_OPT_TARGET" "$ENG_OPT_COMPILER")" || exit 1
+    eng_split_effective "$line"; origin="$EFF_ORIGIN"; reason="$EFF_REASON"; m="$EFF_MANIFEST"
+    d="$(eng_delta "$m" "${ENG_OPT_TARGET:-${EFF_TARGET:-}}" "${ENG_OPT_COMPILER:-${EFF_COMPILER:-}}")" || exit 1
     exe="$(eng_resolve_exe "$tool" "$d" "$m" 2>/dev/null)" || exe=""
     root="$(jq -r '.root_path' <<<"$m")"
     case "$exe" in
@@ -1363,7 +1397,7 @@ cmd_where() {
     eng_parse_common "$@"
     local line origin reason m
     line="$(eng_effective "${ENG_POSITIONAL[0]:-}")" || eng_die "No matching toolchain found."
-    IFS=$'\t' read -r origin reason m <<<"$line"
+    eng_split_effective "$line"; origin="$EFF_ORIGIN"; reason="$EFF_REASON"; m="$EFF_MANIFEST"
     jq -r '.root_path' <<<"$m"
 }
 
@@ -1371,7 +1405,7 @@ cmd_info() {
     eng_parse_common "$@"
     local line origin reason m
     line="$(eng_effective "${ENG_POSITIONAL[0]:-}")" || eng_die "No matching toolchain found."
-    IFS=$'\t' read -r origin reason m <<<"$line"
+    eng_split_effective "$line"; origin="$EFF_ORIGIN"; reason="$EFF_REASON"; m="$EFF_MANIFEST"
     if [ "$ENG_OPT_JSON" -eq 1 ]; then jq . <<<"$m"; return; fi
     jq -r '"Name:            \(.install_name)",
            "Provider:        \(.provider)",
@@ -1391,7 +1425,7 @@ cmd_info() {
 cmd_status() {
     eng_parse_common "$@"
     local line origin="" reason="" m="null"
-    if line="$(eng_effective "" 2>/dev/null)"; then IFS=$'\t' read -r origin reason m <<<"$line"; fi
+    if line="$(eng_effective "" 2>/dev/null)"; then eng_split_effective "$line"; origin="$EFF_ORIGIN"; reason="$EFF_REASON"; m="$EFF_MANIFEST"; fi
     local active="${_ACTIVE_LLVM:-}"
     if [ "$ENG_OPT_JSON" -eq 1 ]; then
         jq -n --arg active "$active" --arg o "$origin" --arg r "$reason" --argjson m "$m" '
@@ -1507,8 +1541,8 @@ cmd_cmake_toolchain() {
     eng_parse_common "$@"
     local line origin reason m d
     line="$(eng_effective "${ENG_POSITIONAL[0]:-}")" || eng_die "No matching toolchain found for cmake-toolchain."
-    IFS=$'\t' read -r origin reason m <<<"$line"
-    d="$(eng_delta "$m" "$ENG_OPT_TARGET" "$ENG_OPT_COMPILER")" || exit 1
+    eng_split_effective "$line"; origin="$EFF_ORIGIN"; reason="$EFF_REASON"; m="$EFF_MANIFEST"
+    d="$(eng_delta "$m" "${ENG_OPT_TARGET:-${EFF_TARGET:-}}" "${ENG_OPT_COMPILER:-${EFF_COMPILER:-}}")" || exit 1
     local host_os host_arch
     host_os="$(eng_norm_os)"; host_arch="$(eng_norm_arch)"
     local text
@@ -1551,8 +1585,8 @@ cmd_shell() {
     eng_parse_common "$@"
     local line origin reason m d sh
     line="$(eng_effective "${ENG_POSITIONAL[0]:-}")" || eng_die "No matching toolchain found for shell."
-    IFS=$'\t' read -r origin reason m <<<"$line"
-    d="$(eng_delta "$m" "$ENG_OPT_TARGET" "$ENG_OPT_COMPILER")" || exit 1
+    eng_split_effective "$line"; origin="$EFF_ORIGIN"; reason="$EFF_REASON"; m="$EFF_MANIFEST"
+    d="$(eng_delta "$m" "${ENG_OPT_TARGET:-${EFF_TARGET:-}}" "${ENG_OPT_COMPILER:-${EFF_COMPILER:-}}")" || exit 1
     sh="${SHELL:-/bin/bash}"
     eng_apply_delta_to_process "$d"
     export LLVMUP_SESSION_OVERRIDE
@@ -1568,7 +1602,7 @@ cmd_pin() {
     if [ "$sel" = --current ] || [ -z "$sel" ]; then
         local line origin reason
         line="$(eng_effective "")" || eng_die "No active or selected toolchain to pin."
-        IFS=$'\t' read -r origin reason m <<<"$line"
+        eng_split_effective "$line"; origin="$EFF_ORIGIN"; reason="$EFF_REASON"; m="$EFF_MANIFEST"
     else
         m="$(eng_resolve_installed "$sel" "$ENG_OPT_CRT")" || eng_die "No installed toolchain matches '$sel' (pin resolves installed toolchains offline; install it first)."
     fi
@@ -1608,6 +1642,217 @@ eng_ini_set() {
         END { if (insec && !done) emit(); else if (!seen) { print ""; print "[" sec "]"; emit() } }' "$file" > "$tmp" && mv "$tmp" "$file"
 }
 
+# ---------------------------------------------------------------------------------------------
+# Project configuration requests, lockfile (.llvmup-lock.json), sync, locked run and update.
+# The lockfile schema is shared with the PowerShell engine (Llvm-ConfigEngine.psm1).
+# ---------------------------------------------------------------------------------------------
+
+# eng_config_request <config> -> TSV: kind provider expr release crt threads target compiler profile name
+eng_config_request() {
+    local cfg="$1" v p split prov expr kind
+    v="$(eng_config_get "$cfg" version default)"
+    [ -n "$v" ] || eng_die "$cfg does not declare [version] default."
+    p="$(eng_config_get "$cfg" toolchain provider)"
+    split="$(eng_split_selector "$v" "$p")" || exit 1
+    IFS=$'\t' read -r prov expr <<<"$split"
+    kind="$(eng_config_get "$cfg" toolchain kind)"
+    case "$kind" in
+        "") case "$expr" in source-*) kind=source ;; *) kind=prebuilt ;; esac ;;
+        prebuilt|source) ;;
+        *) eng_die "Invalid [toolchain] kind '$kind' in $cfg (use prebuilt or source)." ;;
+    esac
+    local f
+    printf '%s' "$kind"
+    for f in "${prov:-official}" "${expr:-latest}" \
+             "$(eng_config_get "$cfg" toolchain release)" "$(eng_config_get "$cfg" toolchain crt)" \
+             "$(eng_config_get "$cfg" toolchain threads)" "$(eng_config_get "$cfg" toolchain target)" \
+             "$(eng_config_get "$cfg" toolchain compiler)" "$(eng_config_get "$cfg" profile type)" \
+             "$(eng_config_get "$cfg" toolchain name)"; do
+        printf '\t%s' "${f:--}"
+    done
+    printf '\n'
+}
+
+# Sets CFG_KIND CFG_PROVIDER CFG_EXPR CFG_RELEASE CFG_CRT CFG_THREADS CFG_TARGET CFG_COMPILER CFG_PROFILE CFG_NAME
+eng_load_config_request() {
+    local line v
+    line="$(eng_config_request "$1")" || exit 1
+    IFS=$'\t' read -r CFG_KIND CFG_PROVIDER CFG_EXPR CFG_RELEASE CFG_CRT CFG_THREADS CFG_TARGET CFG_COMPILER CFG_PROFILE CFG_NAME <<<"$line"
+    for v in CFG_RELEASE CFG_CRT CFG_THREADS CFG_TARGET CFG_COMPILER CFG_PROFILE CFG_NAME; do
+        [ "${!v}" != - ] || printf -v "$v" '%s' ""
+    done
+    CFG_CRT="$(printf '%s' "$CFG_CRT" | tr '[:upper:]' '[:lower:]')"
+    CFG_COMPILER="$(printf '%s' "$CFG_COMPILER" | tr '[:upper:]' '[:lower:]')"
+}
+
+eng_host_key() { printf '%s-%s\n' "$(eng_norm_os "${1:-}")" "$(eng_norm_arch "${2:-}")"; }
+
+# eng_lock_entry <lockfile> [os] [arch] -> the entry JSON for that host (fails with the available hosts).
+eng_lock_entry() {
+    local lockf="$1" key
+    [ -f "$lockf" ] || eng_die "Lockfile does not exist: $lockf. Run 'llvmup config lock' first."
+    jq -e '.schema == 1' "$lockf" >/dev/null 2>&1 || eng_die "Unsupported lockfile schema in $lockf"
+    key="$(eng_host_key "${2:-}" "${3:-}")"
+    jq -ce --arg k "$key" '.entries[$k] // empty' "$lockf" 2>/dev/null && return 0
+    eng_die "Lockfile '$lockf' has no entry for host '$key' (available: $(jq -r '(.entries // {}) | keys | if length == 0 then "none" else join(", ") end' "$lockf")). Update the lockfile with 'llvmup config lock'."
+}
+
+eng_policy_rank() { case "$1" in skip) echo 0 ;; warn) echo 1 ;; strict) echo 2 ;; *) echo 1 ;; esac; }
+
+cmd_lock() {
+    # llvmup config lock [--platform OS] [--arch A] [--verify P]: resolve the project request and record it.
+    eng_parse_common "$@"
+    local cfg root os arch plan lockf policy tmp
+    cfg="$(eng_project_config)" || eng_die "No .llvmup-config file found"
+    root="$(dirname "$cfg")"
+    eng_load_config_request "$cfg"
+    [ "$CFG_KIND" = prebuilt ] || eng_die "Source builds ($CFG_EXPR) cannot be locked; only prebuilt provider assets have a reproducible identity."
+    os="$(eng_norm_os "$ENG_OPT_PLATFORM")"; arch="$(eng_norm_arch "$ENG_OPT_ARCH")"
+    plan="$(eng_resolve_plan "$CFG_PROVIDER" "$CFG_EXPR" "$CFG_RELEASE" "$CFG_CRT" "$CFG_THREADS" "$os" "$arch" "$CFG_TARGET")" || exit 1
+    policy="$(eng_policy "$ENG_OPT_VERIFY")"
+    lockf="$root/.llvmup-lock.json"
+    if [ -f "$lockf" ]; then
+        jq -e '.schema == 1' "$lockf" >/dev/null 2>&1 || eng_die "Unsupported lockfile schema in $lockf"
+    fi
+    tmp="$lockf.tmp-$$"
+    { if [ -f "$lockf" ]; then cat "$lockf"; else printf '{"schema":1,"entries":{}}'; fi; } |
+        jq --argjson plan "$plan" --arg key "$(eng_host_key "$os" "$arch")" --arg profile "${CFG_PROFILE:-full}" \
+           --arg policy "$policy" --arg now "$(eng_now)" '
+            .entries = (.entries // {})
+            | .entries[$key] = {
+                provider: $plan.provider, release: $plan.release_tag, llvm_version: $plan.llvm_version,
+                gcc_version: $plan.gcc_version, canonical_id: $plan.canonical_id,
+                host: {os: $plan.host.os, arch: $plan.host.arch}, variant: $plan.variant,
+                target: ($plan.default_target // ""),
+                asset: {name: $plan.asset.name, url: $plan.asset.url, digest: ($plan.asset.digest // ""), id: (($plan.asset.id // "") | tostring)},
+                profile: $profile, components: [], verify_policy: $policy, locked_at: $now }' > "$tmp" && mv "$tmp" "$lockf" ||
+        { rm -f "$tmp"; eng_die "Failed to write $lockf"; }
+    printf '%s\n' "$lockf"
+}
+
+# eng_check_locked_install <entry> <manifest>: the installed toolchain must be the locked asset.
+eng_check_locked_install() {
+    local want have
+    want="$(jq -r '.asset.digest // ""' <<<"$1")"
+    have="$(jq -r '.asset.digest // ""' <<<"$2")"
+    if [ -n "$want" ] && [ -n "$have" ] && [ "$want" != "$have" ]; then
+        eng_die "Installed toolchain '$(jq -r '.install_name' <<<"$2")' digest $have differs from the lockfile digest $want."
+    fi
+}
+
+cmd_sync() {
+    # llvmup sync [--locked]: make sure the toolchain the project declares is installed (non-interactive).
+    local locked=0 a rest=()
+    for a in "$@"; do if [ "$a" = --locked ]; then locked=1; else rest+=("$a"); fi; done
+    eng_parse_common "${rest[@]}"
+    local cfg root
+    cfg="$(eng_project_config)" || eng_die "No .llvmup-config file found for sync."
+    root="$(dirname "$cfg")"
+    eng_load_config_request "$cfg"
+
+    if [ "$locked" -eq 1 ]; then
+        local entry prov cid crt m policy want
+        entry="$(eng_lock_entry "$root/.llvmup-lock.json")"
+        prov="$(jq -r '.provider' <<<"$entry")"; cid="$(jq -r '.canonical_id' <<<"$entry")"
+        crt="$(jq -r '.variant.crt // "" | select(. != "system" and . != "unknown")' <<<"$entry")"
+        [ "$CFG_PROVIDER" = "$prov" ] || eng_die "Lockfile provider '$prov' conflicts with .llvmup-config provider '$CFG_PROVIDER'."
+        [ -z "$CFG_CRT" ] || [ -z "$crt" ] || [ "$CFG_CRT" = "$crt" ] || eng_die "Lockfile CRT '$crt' conflicts with .llvmup-config CRT '$CFG_CRT'."
+        want="$(jq -r '.verify_policy // "warn"' <<<"$entry")"
+        policy="$(eng_policy "${ENG_OPT_VERIFY:-$want}")"
+        [ "$(eng_policy_rank "$policy")" -ge "$(eng_policy_rank "$want")" ] || eng_die "Verification policy '$policy' is weaker than the locked policy '$want'."
+        if m="$(eng_resolve_installed "$cid" 2>/dev/null)"; then
+            eng_check_locked_install "$entry" "$m"
+            eng_info "Locked toolchain '$cid' is already installed."
+            jq -r '.root_path' <<<"$m"
+            return 0
+        fi
+        ENG_LOCKED_DIGEST="$(jq -r '.asset.digest // ""' <<<"$entry")"
+        ENG_LOCKED_ASSET="$(jq -r '.asset.name // ""' <<<"$entry")"
+        export ENG_LOCKED_DIGEST ENG_LOCKED_ASSET
+        local args=("$prov@latest" --release "$(jq -r '.release' <<<"$entry")" --name "$cid" --verify "$policy")
+        [ -z "$crt" ] || args+=(--crt "$crt")
+        local tgt; tgt="$(jq -r '.target // ""' <<<"$entry")"
+        [ -z "$tgt" ] || [ "$prov" = official ] || args+=(--target "$tgt")
+        cmd_install "${args[@]}"
+        return
+    fi
+
+    if [ "$CFG_KIND" = source ]; then
+        eng_info "Project requests a source build ($CFG_EXPR); delegating to the official source builder."
+        exec "$ENGINE_ROOT/llvmup" install --from-source "${CFG_EXPR#source-}"
+    fi
+    local args=("$CFG_PROVIDER@$CFG_EXPR")
+    [ -z "$CFG_RELEASE" ] || args+=(--release "$CFG_RELEASE")
+    [ -z "$CFG_CRT" ] || args+=(--crt "$CFG_CRT")
+    [ -z "$CFG_THREADS" ] || args+=(--threads "$CFG_THREADS")
+    [ -z "$CFG_TARGET" ] || args+=(--target "$CFG_TARGET")
+    [ -z "$CFG_PROFILE" ] || args+=(--profile "$CFG_PROFILE")
+    [ -z "$CFG_NAME" ] || args+=(--name "$CFG_NAME")
+    [ -z "$ENG_OPT_VERIFY" ] || args+=(--verify "$ENG_OPT_VERIFY")
+    cmd_install "${args[@]}"
+}
+
+# eng_locked_manifest: the installed toolchain recorded in the project lockfile for this host.
+eng_locked_manifest() {
+    local cfg entry cid m
+    cfg="$(eng_project_config)" || eng_die "--locked needs a project .llvmup-config and .llvmup-lock.json."
+    entry="$(eng_lock_entry "$(dirname "$cfg")/.llvmup-lock.json")"
+    cid="$(jq -r '.canonical_id' <<<"$entry")"
+    m="$(eng_resolve_installed "$cid" 2>/dev/null)" || eng_die "Locked toolchain '$cid' is not installed; run 'llvmup sync --locked'."
+    eng_check_locked_install "$entry" "$m"
+    printf '%s\n' "$m"
+}
+
+cmd_list_remote() {
+    # llvmup list --remote --provider P [--crt C] [--platform OS] [--arch A] [--json]
+    eng_parse_common "$@"
+    local prov="${ENG_POSITIONAL[0]:-${ENG_OPT_PROVIDER:-official}}" recipe releases formats os arch
+    recipe="$(eng_recipe_path "$prov")"
+    os="$(eng_norm_os "$ENG_OPT_PLATFORM")"; arch="$(eng_norm_arch "$ENG_OPT_ARCH")"
+    releases="$(eng_releases "$prov")" || exit 1
+    if [ "$os" != "$(eng_norm_os)" ]; then formats='["tar.xz","tar.gz","tar","zip","7z"]'; else formats="$(eng_formats)"; fi
+    local cands
+    cands="$(jq -c -n --slurpfile rs <(printf '%s' "$releases") --slurpfile rc "$recipe" \
+        --arg os "$os" --arg arch "$arch" --arg crt "$ENG_OPT_CRT" --arg threads "$ENG_OPT_THREADS" --arg release "" \
+        --argjson formats "$formats" \
+        '$rs[0] as $releases | $rc[0] as $recipe | '"$ENG_CANDIDATES_JQ")" || eng_die "Failed to evaluate releases for '$prov'"
+    if [ "$ENG_OPT_JSON" -eq 1 ]; then
+        jq '[.[] | {provider: "'"$prov"'", release: .tag, llvm_version, gcc_version, crt: .variant.crt, asset: .asset.name}]' <<<"$cands"
+    else
+        jq -r '.[] | [.tag, ("LLVM " + (.llvm_version // "?")), (if .gcc_version then "GCC " + .gcc_version else empty end), (.variant.crt // empty), .asset.name] | join("  ")' <<<"$cands"
+    fi
+}
+
+cmd_update() {
+    # llvmup update [selector]: install the newest release of the same provider, LLVM major and variant.
+    # Existing installations, aliases, defaults and project pins are left untouched.
+    eng_parse_common "$@"
+    local targets=() m sel="${ENG_POSITIONAL[0]:-}"
+    if [ -n "$sel" ]; then
+        m="$(eng_resolve_installed "$sel")" || eng_die "No installed toolchain matches '$sel'."
+        targets+=("$m")
+    else
+        while IFS= read -r m; do [ -n "$m" ] && targets+=("$m"); done < <(eng_all_toolchains | jq -c '.[] | select(.origin == "managed")')
+    fi
+    [ ${#targets[@]} -gt 0 ] || { eng_info "No managed toolchains to update."; return 0; }
+    local prov ver major crt plan cid rc=0
+    for m in "${targets[@]}"; do
+        [ "$(jq -r '.origin' <<<"$m")" = managed ] || { eng_warn "Skipping $(jq -r '.install_name' <<<"$m"): $(jq -r '.origin' <<<"$m") toolchains are not updated."; continue; }
+        prov="$(jq -r '.provider' <<<"$m")"; ver="$(jq -r '.llvm_version // ""' <<<"$m")"
+        major="${ver%%.*}"; [ -n "$major" ] || major=latest
+        crt="$(jq -r '.variant.crt // "" | select(. != "system" and . != "unknown")' <<<"$m")"
+        plan="$(eng_resolve_plan "$prov" "$( [ "$major" = latest ] && echo latest || echo "$major.*")" "" "$crt" "" "$(eng_norm_os)" "$(eng_norm_arch)" "")" || { rc=1; continue; }
+        cid="$(jq -r '.canonical_id' <<<"$plan")"
+        if eng_resolve_installed "$cid" >/dev/null 2>&1; then
+            printf '%s: up to date (%s)\n' "$(jq -r '.install_name' <<<"$m")" "$cid"
+            continue
+        fi
+        printf '%s: installing %s\n' "$(jq -r '.install_name' <<<"$m")" "$cid"
+        ( cmd_install "$prov@$major" ${crt:+--crt "$crt"} --release "$(jq -r '.release_tag' <<<"$plan")" ) || rc=1
+    done
+    return "$rc"
+}
+
 usage() {
     cat <<'EOF'
 Usage: llvmup-engine.sh <command> [options]
@@ -1622,6 +1867,8 @@ Commands:
   alias set|list|show|remove        toolchain link|unlink|list
   cmake-toolchain [S] [--target T] [--compiler C] [--output FILE]
   pin [S|--current]                 shell [S]
+  sync [--locked]                   config lock [--platform OS] [--arch A]
+  run --locked -- <command>         update [S]          resolve --config
 EOF
 }
 
@@ -1641,11 +1888,20 @@ main() {
         provides) cmd_provides "$@" ;;
         list) cmd_list_installed "$@" ;;
         list-providers) cmd_list_providers ;;
+        list-remote) cmd_list_remote "$@" ;;
         alias) cmd_alias "$@" ;;
         toolchain) cmd_toolchain "$@" ;;
         cmake-toolchain) cmd_cmake_toolchain "$@" ;;
         shell) cmd_shell "$@" ;;
         pin) cmd_pin "$@" ;;
+        sync) cmd_sync "$@" ;;
+        lock) cmd_lock "$@" ;;
+        update) cmd_update "$@" ;;
+        config)
+            case "${1:-}" in
+                lock) shift; cmd_lock "$@" ;;
+                *) eng_die "The engine handles 'config lock'; other config subcommands run in llvmup." ;;
+            esac ;;
         discover) eng_discover "${1:?root}" "${2:-official}" ;;
         delta) eng_delta "$(eng_resolve_installed "${1:?selector}")" "${2:-}" "${3:-}" ;;
         help|-h|--help) usage ;;
