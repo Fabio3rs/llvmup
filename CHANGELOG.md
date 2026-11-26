@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Providers `winlibs` (GCC + LLVM/Clang + MinGW-w64, Windows) and `llvm-mingw` (Windows, Linux and
+  macOS hosts, several Windows targets) next to `official`, described by JSON recipes in
+  `libexec/recipes` and served by a PowerShell and a Bash engine with identical schemas
+- `provider@version` selectors, `--release`, `--crt`, `--threads`, `--target`, `--compiler`,
+  `--extractor`; versioned toolchain manifest `.llvmup-toolchain.json`
+- `use` (`-`, `--auto`, `--install`), `run`, `+toolchain`, `shell`, `which`, `where`, `provides`,
+  `info`, `status --explain/--json`, `alias`, `default <toolchain>`, `pin`, `sync [--locked]`,
+  `config lock [--platform --arch]`, `run --locked`, `update`, `pick`, `toolchain link/unlink`,
+  `cmake-toolchain`, `list --providers`, `list --remote --provider`, `resolve --config`,
+  `install --use`, `env --format cmd|json`
+- Project lockfile `.llvmup-lock.json` with per-host entries; locked operations never change the
+  provider, release, asset or digest and never weaken the verification policy
+- 7-Zip discovery and streaming extraction, tar capability probing, optional Python backend,
+  `.tar.zst` support, and `scripts/benchmark_extract.ps1`
+- `llvmup.cmd` launcher for cmd.exe, scripts and CI; bootstrap `-PackageDir`/`-BaseUrl`
+- Action inputs `provider`, `release`, `crt`, `target`, `compiler`, `extractor` and outputs
+  `provider`, `release`, `llvm-version`, `toolchain-id`, `toolchain-path`
+- Completion of providers, toolchains, aliases, targets and the new commands in Bash, Zsh and
+  PowerShell
+- Documentation: providers, recipes, verification, extraction, cross-compilation
 - Selectable binary inspection, symbolization, LLVM IR, XRay and Clang analysis
   tools; clang-tidy and clang-format include their helpers, with cache invalidation
   for older selections that omitted them
@@ -28,6 +48,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   environment activation, and cache restoration
 
 ### Fixed
+- PowerShell tab completion was never registered (missing `Get-ArgumentCompleter` shim replaced
+  the real cmdlet)
+- `llvmup.cmd` with a single argument (`help`, `list`, `status`, ...) used the first character
+- Windows PowerShell 5.1 compatibility (`-AsHashtable`, UTF-8 sources, `$IsWindows`, TLS 1.2)
+- A crashed install no longer leaves a permanent lock; interrupted replacements are restored
+- The 7-Zip `.tar.*` stream no longer deadlocks when the tar side fails (PowerShell 5.1)
+- Programs for another architecture of an llvm-mingw bundle load that target's runtime DLLs
+- `LLVM_SYS_<major><minor>_PREFIX` is exported for llvm-sys (the rounded name is kept)
+- `config apply` honors `kind = "prebuilt"` instead of always building from source
+- Every new PowerShell session no longer prints the "unapproved verbs" warning
 - Executable `llvmup config apply` now loads the nearest project configuration
 - Local JSON listing now emits real nulls and active/default metadata
 - Bash, Zsh, and PowerShell completion now cover the consolidated lifecycle commands

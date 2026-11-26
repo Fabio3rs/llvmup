@@ -83,14 +83,71 @@ This document records the baseline diagnostic, architectural decisions, implemen
 
 ## 3. Milestone Tracker
 
-| Milestone | Scope | Status | Notes |
+| Milestone | Scope | Status | Evidence |
 | --- | --- | --- | --- |
-| A | Diagnostic & baseline tracking | Completed | `docs/ARCHITECTURE_EVOLUTION.md` |
-| B | Windows PS 5.1 compatibility, `llvmup.cmd` launcher & packaging | Completed | PS 5.1 & PS 7.7 both pass 176/176 Pester tests; packaged `llvmup.cmd` validated outside checkout |
-| C | Recipe contract, `.llvmup-toolchain.json` & `official` migration | In Progress | |
-| D | Shared downloader, cache, verifier, 7-Zip extractor & benchmark | Pending | |
-| E | Normalized resolver, precedence & capability-based environment | Pending | |
-| F | `winlibs` and `llvm-mingw` providers & real Windows validation | Pending | |
-| G | Ergonomic CLI (`run`, `+toolchain`, `use`, `alias`, `pin`, `sync`, `which`, `where`, `provides`, `status --explain`, `pick`, `toolchain link`, `shell`) | Pending | |
-| H | Lockfile, CMake toolchain generator, `action.yml`, completion, doctor & docs | Pending | |
-| I | Final test suites, benchmarks, security/perf audit & report | Pending | |
+| A | Diagnostic & baseline | Done | Section 1 |
+| B | PS 5.1/7 compatibility, `llvmup.cmd`, packaging | Done | Pester 5.1 + 7; package installed in Windows Sandbox (section 5) |
+| C | Recipes, `.llvmup-toolchain.json`, official migration | Done | `libexec/recipes/*.json`, both engines |
+| D | Download, cache, verification, extraction, 7-Zip, staging, rollback, benchmark | Done | `scripts/benchmark_extract.ps1`, `docs/EXTRACTION.md` |
+| E | Resolver, identities, capability-based environment, overrides | Done | Pester, Bats, parity 19/19 |
+| F | WinLibs and LLVM-MinGW, real Windows validation, cross | Done (see limits) | Section 5 |
+| G | `run`, `+tc`, `use`, aliases, `pin`, `sync`, `which/where/provides`, `status --explain`, `pick`, `toolchain link`, `shell`, `update` | Done in both shells | Pester + Bats |
+| H | Lockfile, CMake, Action, completion, packaging, docs | Done; CI jobs prepared, not executed | `action.yml`, workflows, docs |
+| I | Final review | Done | Sections 4-7 |
+
+## 4. Bugs found and fixed after the first implementation pass
+
+Pre-existing in the committed code before this pass, found by real runs:
+
+| Bug | Impact | Fix |
+| --- | --- | --- |
+| Bash `eng_delta` jq program did not compile (`{CC: a // b}` needs parentheses) | Bash `run`, `env`, `which`, `cmake-toolchain`, `shell` failed for every toolchain; untested | Parenthesized; Bats tests added |
+| PowerShell completion was never registered (no PS version has `Get-ArgumentCompleter`, so the shim always replaced `Register-ArgumentCompleter`) | No tab completion at all | Shim also registers with the real cmdlet; tested through `TabExpansion2` |
+| `llvmup.cmd` with a single argument used the first character as command (`if` unrolled the token array) | `llvmup.cmd help/list/status/doctor` failed | `@(if ...)`; regression test |
+| Same unrolling in `update <sel>` and in verification `methods` | `update` always failed; manifests stored `methods` as a string | Fixed; tests |
+| Profile block imported without `-DisableNameChecking` | "unapproved verbs" warning in every new PowerShell session | Fixed; uninstaller accepts old and new blocks |
+| Bash ignored `compiler`/`target` from `.llvmup-config` and the session | Parity gap with PowerShell | `eng_effective` carries them |
+| `which clang --target T` returned the generic `clang` | On Linux the generic clang cannot find the Windows sysroot | Known tools map to the target wrappers (both engines) |
+| `env <toolchain> --format json` from Bash went to the legacy path | JSON flag ignored | Routing by manifest/alias/flags |
+| No-extractor case reported "No stable release matches" | Misleading on a clean Windows without 7-Zip | Explains the unpackable matching asset and how to fix |
+| `LLVM_SYS_<N>_PREFIX` rounded (230 for 23.1) | llvm-sys >= 18.1 reads 231 | Both names exported |
+| WinLibs GCC under a prefix with spaces | Link fails (`C:/Users/Fulano: file not recognized`) | Upstream limitation documented in the recipe; warnings; docs |
+
+## 5. Test results (2026-11-26)
+
+| Suite | Environment | Result |
+| --- | --- | --- |
+| Pester 6.1.0 | PowerShell 7.7, Windows 10 22H2 | all passed (see final count in the report) |
+| Pester 6.1.0 | Windows PowerShell 5.1 | all passed |
+| Bats 1.10 | WSL1 Ubuntu 24.04 (`llvmup-test`, imported from a cached rootfs) | all passed |
+| Engine parity (Bash vs PowerShell, recorded metadata) | WSL + pwsh.exe | 19/19 |
+| Completion (Bash/Zsh Bats; PowerShell `TabExpansion2`) | WSL; PS 5.1 and 7 | passed |
+| Action provider path (composite bash steps executed locally) | WSL Ubuntu 24.04, real GitHub | resolve + download + install + `env --format github` in 41 s |
+| Linux -> Windows cross (llvm-mingw 20261117) | WSL + Windows host | x86_64/aarch64 compile/link/inspect PASS, x86_64 execute PASS, CMake cross PASS |
+| Windows Sandbox end to end (clean Windows, PS 5.1 only, package bootstrap) | Windows Sandbox | see `docs/PROVIDERS.md` matrix |
+
+Not executed (prepared only): GitHub workflows (`tests.yml`, `action-e2e.yml`), macOS hosts,
+Windows ARM64 execution, Linux official real install.
+
+## 6. Decisions
+
+1. Declarative JSON recipes, two native engines (PowerShell, Bash+jq); Python stays optional.
+2. No compiler shims; `llvmup.cmd` is a launcher of llvmup itself.
+3. Target selection maps known tool names to the distribution's target wrappers.
+4. Locked mode never weakens policy, never changes provider/release/asset/digest, and fails
+   with the available host keys when the current host is missing.
+5. Recorded upstream metadata (`tests/fixtures/releases`) drives offline and parity tests; real
+   downloads are used only for final validation.
+6. The Action keeps the historical official path byte-for-byte and adds a provider path through
+   the same CLI.
+
+## 7. Platform status
+
+| Host | Shell | Providers | Status |
+| --- | --- | --- | --- |
+| Windows 10 x64 | PowerShell 5.1 | official, winlibs, llvm-mingw | Tested (host and Windows Sandbox) |
+| Windows 10 x64 | PowerShell 7.7 | official, winlibs, llvm-mingw | Tested (host) |
+| Linux x64 (Ubuntu 24.04, WSL1) | Bash | llvm-mingw (real), official (fixtures/unit) | Tested; official real install not run here |
+| Linux x64 | Zsh | completion and syntax | Tested (syntax, completion tests) |
+| macOS ARM64 | Bash/Zsh | official, llvm-mingw | Not available locally; CI jobs prepared |
+| Windows ARM64 | any | llvm-mingw aarch64 | Cross binaries inspected only; no ARM64 host |
