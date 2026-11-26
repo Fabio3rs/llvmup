@@ -163,7 +163,21 @@ function Get-LlvmEnvironmentDelta {
     $setVars['LLVMUP_ACTIVE_COMPILER'] = $effCompiler
     if ($effTarget) { $setVars['LLVMUP_ACTIVE_TARGET'] = $effTarget } else { $unsetVars += 'LLVMUP_ACTIVE_TARGET' }
 
-    $prependPath = if (Test-Path -LiteralPath $binDir -PathType Container) { @($binDir) } else { @() }
+    $prependPath = @()
+    # Target runtime directories (recipe layout.target_runtime_dirs) come first so programs built
+    # for the selected target load that target's DLLs, not the host copies in bin/.
+    if ($effTarget -and (Get-Command Get-LlvmRecipe -ErrorAction SilentlyContinue)) {
+        $recipe = $null
+        try { $recipe = Get-LlvmRecipe -Provider $provider } catch {}
+        if ($recipe -and $recipe.layout -and $recipe.layout.PSObject.Properties['target_runtime_dirs']) {
+            foreach ($pattern in @($recipe.layout.target_runtime_dirs)) {
+                $rel = ([string]$pattern).Replace('{target}', $effTarget).Replace('/', [IO.Path]::DirectorySeparatorChar)
+                $dir = Join-Path $root $rel
+                if (Test-Path -LiteralPath $dir -PathType Container) { $prependPath += $dir }
+            }
+        }
+    }
+    if (Test-Path -LiteralPath $binDir -PathType Container) { $prependPath += $binDir }
 
     return [pscustomobject][ordered]@{
         manifest = $Manifest
@@ -248,7 +262,10 @@ function Format-LlvmEnvironmentDeltaExports {
         if (-not $env:GITHUB_PATH -or -not $env:GITHUB_ENV) {
             throw 'GITHUB_PATH and GITHUB_ENV are required for github format'
         }
-        foreach ($p in $Delta.prepend_path) {
+        # Each GITHUB_PATH line is prepended to PATH, so write in reverse to keep the delta's order.
+        $ordered = @($Delta.prepend_path)
+        [array]::Reverse($ordered)
+        foreach ($p in $ordered) {
             Add-Content -LiteralPath $env:GITHUB_PATH -Value $p
         }
         $lines = @()

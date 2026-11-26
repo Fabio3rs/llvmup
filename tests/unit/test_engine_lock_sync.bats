@@ -271,3 +271,15 @@ fn() { bash -c "source '$BATS_TEST_DIRNAME/../../llvm-functions.sh'; $*"; }
     [ "$status" -ne 0 ]
     [[ "$output" == *"Another llvmup operation"* ]]
 }
+
+@test "the selected target's runtime directory precedes bin/ (and GITHUB_PATH keeps that order)" {
+    fake_toolchain lm llvm-mingw 23.1.6 20261117 "sha256:6666"
+    mkdir -p "$LLVM_HOME/toolchains/lm/aarch64-w64-mingw32/bin"
+    run "$LLVMUP_SCRIPT" env lm --target aarch64-w64-mingw32 --format json
+    [ "$status" -eq 0 ]
+    jq -e --arg r "$LLVM_HOME/toolchains/lm" '.prepend_path == [$r + "/aarch64-w64-mingw32/bin", $r + "/bin"]' <<<"$output"
+    export GITHUB_PATH="$TEST_HOME/gp" GITHUB_ENV="$TEST_HOME/ge"; : > "$GITHUB_PATH"; : > "$GITHUB_ENV"
+    run "$LLVMUP_SCRIPT" env lm --target aarch64-w64-mingw32 --format github
+    [ "$(head -1 "$GITHUB_PATH")" = "$LLVM_HOME/toolchains/lm/bin" ]
+    [ "$(tail -1 "$GITHUB_PATH")" = "$LLVM_HOME/toolchains/lm/aarch64-w64-mingw32/bin" ]
+}

@@ -63,7 +63,9 @@
     "bin_dir": "bin",
     "lib_dir": "lib",
     "include_dir": "include",
-    "unwrap_single_top_dir": true
+    "unwrap_single_top_dir": true,
+    "target_runtime_dirs": ["{target}/bin"],
+    "target_runtime_dirs_note": "Per-target runtime DLLs (libc++, libunwind, libwinpthread). bin/ holds the host's copies, so a program for another architecture (i686 on an x64 host) must find these first."
   },
   "tools": {
     "clang": ["bin/clang"],

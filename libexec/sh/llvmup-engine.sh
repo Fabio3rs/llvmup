@@ -1065,7 +1065,17 @@ eng_delta() {
     local root
     root="$(jq -r '.root_path' <<<"$m")"
     [ -d "$root" ] || eng_die "Toolchain root directory does not exist: $root"
-    jq -c --arg target "$target" --arg compiler "$compiler" '
+    # Target runtime directories (recipe layout.target_runtime_dirs) that exist for this toolchain.
+    local rtd="[]" rp eff_target pat dir
+    eff_target="${target:-$(jq -r '.default_target // ""' <<<"$m")}"
+    if [ -n "$eff_target" ] && rp="$(eng_recipe_path "$(jq -r '.provider // "official"' <<<"$m")" 2>/dev/null)"; then
+        while IFS= read -r pat; do
+            [ -n "$pat" ] || continue
+            dir="$root/${pat//\{target\}/$eff_target}"
+            [ -d "$dir" ] && rtd="$(jq -c --arg d "$dir" '. + [$d]' <<<"$rtd")"
+        done < <(jq -r '(.layout.target_runtime_dirs // [])[]' "$rp")
+    fi
+    jq -c --arg target "$target" --arg compiler "$compiler" --argjson rtd "$rtd" '
         . as $m
         | $m.root_path as $root
         | ($m.provider // "official") as $prov
@@ -1099,7 +1109,7 @@ eng_delta() {
                      LLVM_CONFIG_PATH: $t["llvm-config"]}) as $rels
         | ($rels | to_entries | map({key, value: abs(.value)})) as $resolved
         | {
-            prepend_path: [$root + "/bin"],
+            prepend_path: ($rtd + [$root + "/bin"]),
             set: (($resolved | map(select(.value != null)) | from_entries)
                   + (if (($m.llvm_version // "") | test("^[0-9]+\\.[0-9]+")) then
                        ((($m.llvm_version | split(".")[0] | tonumber) * 10 + ($m.llvm_version | split(".")[1] | tonumber)) as $mm
@@ -1128,7 +1138,8 @@ eng_print_delta() {
             ;;
         github)
             [ -n "${GITHUB_PATH:-}" ] && [ -n "${GITHUB_ENV:-}" ] || eng_die "GITHUB_PATH and GITHUB_ENV are required for github format"
-            jq -r '.prepend_path[]' <<<"$d" >> "$GITHUB_PATH"
+            # Each GITHUB_PATH line is prepended to PATH: write in reverse to keep the delta's order.
+            jq -r '.prepend_path | reverse | .[]' <<<"$d" >> "$GITHUB_PATH"
             jq -r '.set | to_entries[] | select(.key | startswith("_") | not) | "\(.key)=\(.value)"' <<<"$d" >> "$GITHUB_ENV"
             ;;
         *) eng_die "Unsupported env format: $fmt (expected shell, github, or json)" ;;

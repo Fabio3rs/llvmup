@@ -384,6 +384,18 @@ Describe 'LLVMUP engine regressions' {
             }
         }
 
+        It 'puts the selected target runtime directory of llvm-mingw before bin/' {
+            $r = Join-Path $TestDrive 'lm-rt'
+            foreach ($d in @('bin', 'i686-w64-mingw32\bin', 'x86_64-w64-mingw32\bin')) { $null = New-Item -ItemType Directory -Path (Join-Path $r $d) -Force }
+            Set-Content -LiteralPath (Join-Path $r 'bin\clang.exe') -Value ''
+            $m = New-LlvmToolchainManifest -Id 'lm' -InstallName 'lm-rt' -Provider 'llvm-mingw' -LlvmVersion '23.1.6' -SupportedTargets @('x86_64-w64-mingw32', 'i686-w64-mingw32') -DefaultTarget 'x86_64-w64-mingw32' -Variant @{ crt = 'ucrt'; default_compiler = 'clang' } -Root $r
+            $m['root_path'] = $r
+            $d = Get-LlvmEnvironmentDelta -Manifest $m -Target 'i686-w64-mingw32'
+            @($d.prepend_path) | Should -Be @((Join-Path $r 'i686-w64-mingw32\bin'), (Join-Path $r 'bin'))
+            $wl = & $script:mkRoot 'wl-rt'
+            @((Get-LlvmEnvironmentDelta -Manifest $wl).prepend_path) | Should -Be @((Join-Path $wl.root_path 'bin'))
+        }
+
         It 'exports both the historical and the llvm-sys LLVM_SYS_NNN_PREFIX names' {
             $m = & $script:mkRoot 'wl-nosp'
             $d = Get-LlvmEnvironmentDelta -Manifest $m
