@@ -79,6 +79,9 @@ jobs:
         ./tests/run_tests.sh
       continue-on-error: false
 
+    - name: Check Bash and PowerShell engine parity on recorded release metadata
+      run: bash tests/integration/engine_parity.sh
+
     - name: Prepare lightweight LLVM fixture for action smoke test
       run: |
         fixture="$RUNNER_TEMP/llvmup-data/toolchains/llvmorg-20.1.8/bin"
@@ -140,6 +143,15 @@ jobs:
           exit 1
         }
         Write-Host "All tests passed successfully!"
+
+    - name: Run Pester tests on Windows PowerShell 5.1
+      shell: powershell
+      run: |
+        Install-Module -Name Pester -RequiredVersion 6.1.0 -Force -SkipPublisherCheck -Scope CurrentUser
+        $mod = Get-Module -ListAvailable Pester | Where-Object { $_.Version -eq [version]'6.1.0' } | Select-Object -First 1
+        $env:LLVMUP_PESTER_PATH = $mod.Path
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/_pester_runner.ps1
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     - name: Smoke test the distributable Windows package
       shell: pwsh
