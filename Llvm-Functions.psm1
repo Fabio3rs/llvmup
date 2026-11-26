@@ -1118,30 +1118,50 @@ function Invoke-LlvmUpConfig {
     }
 }
 
+function Test-LlvmInteractiveConsole {
+    # Separate function so tests (and hosts without a console) can decide interactivity.
+    try {
+        if ([Console]::IsInputRedirected -or -not $Host.UI -or -not $Host.UI.RawUI) { return $false }
+        return [Environment]::UserInteractive
+    } catch { return $false }
+}
+
 function Invoke-LlvmUpPick {
+    # Numbered local selector: installations and aliases only, never remote releases.
     param([string[]]$Tokens)
     $toolchainsPath = Get-LlvmSessionToolchainsPath
     $homePath = Get-LlvmHomePath
     $all = @(Get-LlvmAllToolchains -ToolchainsPath $toolchainsPath -HomePath $homePath | Where-Object { -not $_.missing_on_disk })
     if ($all.Count -eq 0) { throw 'No installed toolchains found.' }
 
-    $isInteractive = $true
-    try {
-        if ([Console]::IsInputRedirected -or -not $Host.UI -or -not $Host.UI.RawUI) { $isInteractive = $false }
-    } catch { $isInteractive = $false }
-    if (-not $isInteractive) {
-        throw 'llvmup pick requires an interactive terminal (use llvmup list / llvmup use <id> in scripts).'
-    }
-
     $active = Get-LlvmActiveVersion
     $default = Get-LlvmDefaultVersion -HomePath $homePath
+    $aliasMap = @{}
+    try {
+        $al = Get-LlvmAliases -HomePath $homePath
+        if ($al -and $al.Count) {
+            foreach ($k in @($al.Keys)) {
+                $t = [string]$al[$k].target_name
+                if (-not $aliasMap.ContainsKey($t)) { $aliasMap[$t] = @() }
+                $aliasMap[$t] += $k
+            }
+        }
+    } catch {}
     for ($i = 0; $i -lt $all.Count; $i++) {
         $t = $all[$i]
         $tags = @()
         if ($t.install_name -eq $active) { $tags += 'active' }
         if ($t.install_name -eq $default) { $tags += 'default' }
+        $extra = @()
+        if ($t.variant -and $t.variant.crt -and $t.variant.crt -notin @('unknown', 'system')) { $extra += "crt=$($t.variant.crt)" }
+        if ($t.default_target) { $extra += "target=$($t.default_target)" }
+        if ($t.capabilities -and $t.capabilities.compilers -and @($t.capabilities.compilers).Count -gt 1) { $extra += "compilers=$(@($t.capabilities.compilers) -join ',')" }
+        if ($aliasMap.ContainsKey([string]$t.install_name)) { $extra += "aliases=$($aliasMap[[string]$t.install_name] -join ',')" }
         $tagStr = if ($tags.Count) { " [$($tags -join ', ')]" } else { '' }
-        Write-Host ("  {0}) {1} ({2}, LLVM {3}){4}" -f ($i + 1), $t.install_name, $t.provider, $t.llvm_version, $tagStr)
+        Write-Host ("  {0,2}) {1,-46} {2,-10} LLVM {3,-8} {4}{5}" -f ($i + 1), $t.install_name, $t.provider, $t.llvm_version, ($extra -join ' '), $tagStr)
+    }
+    if (-not (Test-LlvmInteractiveConsole)) {
+        throw 'llvmup pick needs an interactive terminal; use llvmup use <toolchain> in scripts.'
     }
     $choice = Read-Host "Select toolchain (1-$($all.Count), or q to cancel)"
     if ($choice -eq 'q' -or -not $choice) { return $false }

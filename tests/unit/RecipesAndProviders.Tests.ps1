@@ -477,6 +477,20 @@ Describe 'LLVMUP Recipes, Multi-Provider Engine, and Ergonomic CLI' {
             # A selected target maps known tools to the distribution's target wrappers.
             (llvmup which clang --toolchain llvm-mingw@20261117 --target aarch64-w64-mingw32) | Should -Match 'aarch64-w64-mingw32-clang\.exe$'
 
+            # pick: local list with aliases; fails without a terminal, selects with a choice.
+            llvmup alias set pick-me llvm-mingw@20261117 | Should -BeTrue
+            Mock Test-LlvmInteractiveConsole -ModuleName Llvm-Functions { $false }
+            llvmup pick 2>$null | Should -BeFalse
+            Mock Test-LlvmInteractiveConsole -ModuleName Llvm-Functions { $true }
+            Mock Write-Host -ModuleName Llvm-Functions { $script:pickLines += "$Object" }
+            $script:pickLines = @()
+            $all = @(Get-LlvmAllToolchains -ToolchainsPath $script:toolchainsDir -HomePath $script:llvmHome | Where-Object { -not $_.missing_on_disk })
+            $lmIndex = 1 + [array]::IndexOf(@($all | ForEach-Object { $_.provider }), 'llvm-mingw')
+            Mock Read-Host -ModuleName Llvm-Functions { "$lmIndex" }
+            llvmup pick | Should -BeTrue
+            $env:LLVMUP_ACTIVE_PROVIDER | Should -Be 'llvm-mingw'
+            ($script:pickLines -join "`n") | Should -Match 'aliases=pick-me'
+
             llvmup default winlibs@23.1.3 | Should -BeTrue
             (llvmup default) | Should -Match 'winlibs'
             $upd = (llvmup update llvm-mingw@20261117 2>&1 | Out-String)
