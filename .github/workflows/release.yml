@@ -37,9 +37,9 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: python3 release-source/packaging/build.py "$RELEASE_TAG" --output "$GITHUB_WORKSPACE/dist"
       # Build provenance for the packages (the SHA256SUMS file is still published and verified by
-      # the bootstraps). Pin this action to a commit SHA before the first release.
+      # the bootstraps).
       - name: Attest build provenance of the release packages
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-path: |
             dist/llvmup-windows.zip
