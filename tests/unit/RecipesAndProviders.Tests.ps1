@@ -498,5 +498,44 @@ Describe 'LLVMUP Recipes, Multi-Provider Engine, and Ergonomic CLI' {
             $upd | Should -Match 'up to date'
             llvmup update no-such-toolchain 2>$null | Should -BeFalse
         }
+
+        It 'update installs a newer release beside the old one without touching aliases or the default; install --use activates; shell runs non-interactively' {
+            llvmup alias set keep-me llvm-mingw@20261117 | Should -BeTrue
+            llvmup default llvm-mingw@20261117 | Should -BeTrue
+            $beforeDirs = @(Get-ChildItem -LiteralPath $script:toolchainsDir -Directory | ForEach-Object Name)
+
+            $lmUri = ([Uri]$script:lmZip).AbsoluteUri
+            $newer = @(
+                @{
+                    tag_name = '20261201'; name = 'llvm-mingw 20261201 with LLVM 23.1.7'; body = 'Includes LLVM 23.1.7 toolchains'; prerelease = $false
+                    assets = @(@{ name = 'llvm-mingw-20261201-ucrt-x86_64.zip'; browser_download_url = $lmUri; digest = "sha256:$($script:lmSha)"; size = 1024 })
+                }
+            )
+            $all = @($newer) + @(Get-Content -LiteralPath $env:LLVMUP_LLVM_MINGW_RELEASES_FILE -Raw | ConvertFrom-Json | ForEach-Object { $_ })
+            Set-Content -LiteralPath $env:LLVMUP_LLVM_MINGW_RELEASES_FILE -Value (ConvertTo-Json -InputObject $all -Depth 8) -Encoding UTF8
+
+            $upd = (llvmup update llvm-mingw@20261117 2>&1 | Out-String)
+            $upd | Should -Match 'installing'
+            $afterDirs = @(Get-ChildItem -LiteralPath $script:toolchainsDir -Directory | ForEach-Object Name)
+            @($beforeDirs | Where-Object { $_ -notin $afterDirs }) | Should -BeNullOrEmpty
+            @($afterDirs | Where-Object { $_ -notin $beforeDirs }).Count | Should -BeGreaterThan 0
+            ((llvmup default) | Out-String) | Should -Match '20261117'
+            ((llvmup alias list) | Out-String) | Should -Match 'keep-me'
+            ((llvmup update llvm-mingw@20261117 2>&1 | Out-String)) | Should -Match 'up to date'
+
+            # install --use activates what was installed.
+            Deactivate-Llvm
+            $env:LLVMUP_ACTIVE_PROVIDER = $null
+            llvmup install winlibs@23.1.3 --crt ucrt --quiet --use | Should -BeTrue
+            $env:LLVMUP_ACTIVE_PROVIDER | Should -Be 'winlibs'
+
+            # shell with an explicit non-interactive program: environment applied, exit code surfaced, parent untouched.
+            $probe = Join-Path $script:artifactsDir 'shell-probe.cmd'
+            Set-Content -LiteralPath $probe -Value "@echo off`r`necho SHELLPROV=%LLVMUP_ACTIVE_PROVIDER%> `"$script:artifactsDir\shell-out.txt`"" -Encoding ASCII
+            $env:LLVMUP_ACTIVE_PROVIDER = 'parent-value'
+            llvmup shell llvm-mingw@20261117 --shell $probe
+            (Get-Content -LiteralPath (Join-Path $script:artifactsDir 'shell-out.txt') -Raw).Trim() | Should -Be 'SHELLPROV=llvm-mingw'
+            $env:LLVMUP_ACTIVE_PROVIDER | Should -Be 'parent-value'
+        }
     }
 }
