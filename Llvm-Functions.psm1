@@ -871,7 +871,7 @@ function Invoke-LlvmUpRun {
         $lockRoot = if ($cfgPath) { Split-Path $cfgPath -Parent } else { (Get-Location).Path }
         $lockPath = Join-Path $lockRoot '.llvmup-lock.json'
         $entry = Get-LlvmLockfileEntryForHost -LockPath $lockPath
-        $manifest = Resolve-LlvmInstalledToolchain -Selector $entry.canonical_id -ToolchainsPath $toolchainsPath -HomePath $homePath
+        $manifest = Resolve-LlvmInstalledToolchain -Selector $entry.canonical_id -ToolchainsPath $toolchainsPath -HomePath $homePath -AllowAlias:$false
         if (-not $manifest) {
             throw "Locked toolchain '$($entry.canonical_id)' is not installed. Run 'llvmup sync --locked' first."
         }
@@ -1037,7 +1037,7 @@ function Invoke-LlvmUpSync {
         if ($cfg.crt -and $entry.variant.crt -and $entry.variant.crt -ne $cfg.crt) {
             throw "Lockfile CRT '$($entry.variant.crt)' conflicts with .llvmup-config CRT '$($cfg.crt)'."
         }
-        $existing = Resolve-LlvmInstalledToolchain -Selector $entry.canonical_id -ToolchainsPath $toolchainsPath -HomePath $homePath
+        $existing = Resolve-LlvmInstalledToolchain -Selector $entry.canonical_id -ToolchainsPath $toolchainsPath -HomePath $homePath -AllowAlias:$false
         if ($existing) {
             Assert-LlvmLockedInstallation -Manifest $existing -Entry $entry -Policy $policy
             return $true

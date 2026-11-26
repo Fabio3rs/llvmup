@@ -182,6 +182,20 @@ Describe 'LLVMUP engine regressions' {
     }
 
     Context 'Verification policy' {
+        It 'reuses a strictly verified installer only when Authenticode authenticated the pinned publisher' {
+            $hostIdentity = @{ os = 'windows'; arch = 'x64' }
+            $expected = @{ canonical_id = 'llvmorg-23.1.6'; provider = 'official'; release = 'llvmorg-23.1.6'; host = $hostIdentity }
+            $manifest = @{
+                origin = 'managed'; id = $expected.canonical_id; provider = $expected.provider
+                provider_release = $expected.release; host = $hostIdentity
+                verification = @{ authenticode = 'valid'; methods = @('authenticode') }
+            }
+
+            { Assert-LlvmManagedAsset -Manifest $manifest -Expected $expected -Policy strict } | Should -Not -Throw
+            $manifest.verification.authenticode = 'valid-unpinned'
+            { Assert-LlvmManagedAsset -Manifest $manifest -Expected $expected -Policy strict } | Should -Throw '*no authenticated origin*'
+        }
+
         It 'warns under the warn policy when nothing authenticates the download' {
             $artifact = Join-Path $TestDrive 'a.zip'
             Set-Content -LiteralPath $artifact -Value 'payload' -Encoding Ascii

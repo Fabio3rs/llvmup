@@ -98,15 +98,30 @@ EOF
     cid="$(jq -r '.entries["linux-x64"].canonical_id' "$PROJ/.llvmup-lock.json")"
     digest="$(jq -r '.entries["linux-x64"].asset.digest' "$PROJ/.llvmup-lock.json")"
     fake_toolchain "$cid" llvm-mingw 23.1.6 20261117 "$digest"
+    fake_toolchain other winlibs 23.1.3 other ''
+    "$LLVMUP_SCRIPT" alias set "$cid" other >/dev/null
 
     run "$LLVMUP_SCRIPT" sync --locked
     [ "$status" -eq 0 ]
     [[ "$output" == *"$LLVM_HOME/toolchains/$cid"* ]]
+    run "$LLVMUP_SCRIPT" run --locked -- clang --version
+    [ "$status" -eq 0 ]
 
     fake_toolchain "$cid" llvm-mingw 23.1.6 20261117 "sha256:0000"
     run "$LLVMUP_SCRIPT" sync --locked
     [ "$status" -ne 0 ]
     [[ "$output" == *"differs from the requested asset digest"* ]]
+}
+
+@test "an alias rejects a different toolchain installed under its original target name" {
+    fake_toolchain reused llvm-mingw 23.1.6 20261117 ''
+    "$LLVMUP_SCRIPT" alias set mine reused >/dev/null
+    local manifest="$LLVM_HOME/toolchains/reused/.llvmup-toolchain.json"
+    jq '.id = "different"' "$manifest" > "$manifest.tmp"
+    mv "$manifest.tmp" "$manifest"
+    run "$LLVMUP_SCRIPT" where mine
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"no longer matches an installed toolchain"* ]]
 }
 
 @test "sync --locked reports a missing host entry, provider conflicts and weaker policies" {

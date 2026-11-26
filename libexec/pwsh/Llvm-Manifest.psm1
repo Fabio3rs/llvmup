@@ -573,11 +573,18 @@ function Resolve-LlvmInstalledToolchain {
     if ($AllowAlias) {
         $aliases = Get-LlvmAliases -HomePath $HomePath
         if ($aliases.ContainsKey($Selector)) {
-            $targetName = [string]$aliases[$Selector].target_name
-            $targetItem = $all | Where-Object { $_.install_name -eq $targetName } | Select-Object -First 1
-            if (-not $targetItem) {
-                throw "Alias '$Selector' points to '$targetName', which is no longer installed. Remove the alias or reinstall '$targetName'."
+            $aliasEntry = $aliases[$Selector]
+            $targetName = [string]$aliasEntry.target_name
+            $targets = @($all | Where-Object {
+                $_.install_name -eq $targetName -and -not $_.missing_on_disk -and
+                (-not $aliasEntry.target_id -or $_.id -eq $aliasEntry.target_id) -and
+                (-not $ProviderFilter -or $_.provider -eq $ProviderFilter) -and
+                (-not $CrtFilter -or $_.variant.crt -eq $CrtFilter)
+            })
+            if ($targets.Count -ne 1) {
+                throw "Alias '$Selector' no longer matches an installed toolchain at '$targetName'. Remove or update the alias."
             }
+            $targetItem = $targets[0]
             $targetItem['resolved_via'] = "alias:$Selector"
             return $targetItem
         }
@@ -675,8 +682,12 @@ function Assert-LlvmManagedAsset {
         ($Expected.asset.id -and [string]$Manifest.asset.id -cne [string]$Expected.asset.id)) {
         throw "Installed toolchain '$($Manifest.install_name)' asset differs from the requested asset."
     }
-    if ($Policy -eq 'strict' -and $Manifest.verification.gpg -ne 'valid' -and $Manifest.verification.attestation -ne 'valid') {
-        throw 'Strict verification cannot trust the existing toolchain: no authenticated origin is recorded.'
+    if ($Policy -eq 'strict') {
+        $verification = $Manifest.verification
+        if ($verification.gpg -ne 'valid' -and $verification.attestation -ne 'valid' -and
+            ($verification.authenticode -ne 'valid' -or $verification.methods -notcontains 'authenticode')) {
+            throw 'Strict verification cannot trust the existing toolchain: no authenticated origin is recorded.'
+        }
     }
 }
 

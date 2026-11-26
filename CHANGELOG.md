@@ -57,6 +57,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   available for callers of the standalone PowerShell installer.
 
 ### Fixed
+- Locked sync and execution ignore local aliases that share the recorded toolchain name.
+- Aliases reject a replacement toolchain with a different recorded identity.
+- PowerShell strict reuse accepts recorded Authenticode verification against a pinned publisher.
+- The local Bats runner discovers every unit and integration suite.
 - Locked commands and install reuse check the managed toolchain's identity and recorded asset.
 - `llvmup.cmd` works with a minimal Windows PATH and looks for PowerShell 7 only on PATH.
 - Windows PowerShell 5.1: installing WinLibs/llvm-mingw from ZIP no longer exceeds MAX_PATH on a

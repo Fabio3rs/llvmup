@@ -29,8 +29,11 @@ available result is a verified checksum.
 Select it with `--verify`, `LLVMUP_VERIFY_POLICY`, or the Action's `verify` input. Locked operations
 (`sync --locked`, `run --locked`) require the recorded provider, release, host, asset and any pinned
 digest to match the installed manifest. Locked operations under `strict` also require a recorded
-GPG or Sigstore verification. The lockfile can pin an archive digest when upstream provides one.
+GPG or Sigstore verification, or Authenticode verification against a publisher pinned by the
+Windows recipe. The lockfile can pin an archive digest when upstream provides one.
 The installed manifest records the archive verification result from installation time.
+Locked commands resolve the recorded toolchain identity directly, even when a local alias
+has the same name.
 
 ## What is recorded
 

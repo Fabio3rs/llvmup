@@ -979,12 +979,16 @@ eng_resolve_installed() {
     all="$(eng_all_toolchains)"
     local aliases
     aliases="$(eng_home)/aliases.json"
-    if [ -f "$aliases" ] && jq -e --arg s "$sel" '.aliases[$s]' "$aliases" >/dev/null 2>&1; then
-        local target
+    if [ "${ENG_NO_ALIAS:-0}" != 1 ] && [ -f "$aliases" ] && jq -e --arg s "$sel" '.aliases[$s]' "$aliases" >/dev/null 2>&1; then
+        local target target_id
         target="$(jq -r --arg s "$sel" '.aliases[$s].target_name' "$aliases")"
+        target_id="$(jq -r --arg s "$sel" '.aliases[$s].target_id // ""' "$aliases")"
         local m
-        m="$(jq -c --arg n "$target" '[.[] | select(.install_name == $n)][0] // empty' <<<"$all")"
-        [ -n "$m" ] || eng_die "Alias '$sel' points to '$target', which is no longer installed. Remove the alias or reinstall '$target'."
+        m="$(jq -c --arg n "$target" --arg id "$target_id" --arg crt "$crt" '
+            [.[] | select(.install_name == $n and (.missing_on_disk | not)
+                and ($id == "" or .id == $id) and ($crt == "" or .variant.crt == $crt))]
+            | if length == 1 then .[0] else empty end' <<<"$all")"
+        [ -n "$m" ] || eng_die "Alias '$sel' no longer matches an installed toolchain at '$target'. Remove or update the alias."
         jq -c --arg a "$sel" '. + {resolved_via: ("alias:" + $a)}' <<<"$m"
         return 0
     fi
@@ -1959,7 +1963,7 @@ cmd_sync() {
         want="$(eng_policy "$(jq -r '.verify_policy // "warn"' <<<"$entry")")" || return 1
         policy="$(eng_policy "${ENG_OPT_VERIFY:-$want}")" || return 1
         [ "$(eng_policy_rank "$policy")" -ge "$(eng_policy_rank "$want")" ] || eng_die "Verification policy '$policy' is weaker than the locked policy '$want'."
-        if m="$(eng_resolve_installed "$cid" 2>/dev/null)"; then
+        if m="$(ENG_NO_ALIAS=1 eng_resolve_installed "$cid" 2>/dev/null)"; then
             eng_check_locked_install "$entry" "$m" "$policy" || return 1
             eng_info "Locked toolchain '$cid' is already installed."
             jq -r '.root_path' <<<"$m"
@@ -2003,7 +2007,7 @@ eng_locked_manifest() {
     cfg="$(eng_project_config)" || eng_die "--locked needs a project .llvmup-config and .llvmup-lock.json."
     entry="$(eng_lock_entry "$(dirname "$cfg")/.llvmup-lock.json")" || return 1
     cid="$(jq -r '.canonical_id' <<<"$entry")"
-    m="$(eng_resolve_installed "$cid" 2>/dev/null)" || eng_die "Locked toolchain '$cid' is not installed; run 'llvmup sync --locked'."
+    m="$(ENG_NO_ALIAS=1 eng_resolve_installed "$cid" 2>/dev/null)" || eng_die "Locked toolchain '$cid' is not installed; run 'llvmup sync --locked'."
     eng_check_locked_install "$entry" "$m" "$(jq -r '.verify_policy // "warn"' <<<"$entry")" || return 1
     jq -c --argjson entry "$entry" '
         .default_target = ($entry.target // .default_target) |

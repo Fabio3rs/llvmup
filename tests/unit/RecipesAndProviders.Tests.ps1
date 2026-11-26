@@ -435,14 +435,27 @@ Describe 'LLVMUP Recipes, Multi-Provider Engine, and Ergonomic CLI' {
                 Test-Path -LiteralPath (Join-Path $script:projectDir '.llvmup-lock.json') | Should -BeTrue
 
                 # Remove installed llvm-mingw and restore purely via sync --locked
+                $lockedEntry = (Get-Content -LiteralPath '.llvmup-lock.json' -Raw | ConvertFrom-Json).entries.'windows-x64'
+                llvmup alias set $lockedEntry.canonical_id winlibs@23.1.3 | Should -BeTrue
                 $lmDir = (Get-LlvmAllToolchains -ToolchainsPath $script:toolchainsDir -HomePath $script:llvmHome | Where-Object { $_.provider -eq 'llvm-mingw' }).root_path
                 Remove-Item -LiteralPath $lmDir -Recurse -Force
+                llvmup sync --locked | Should -BeTrue
                 llvmup sync --locked | Should -BeTrue
                 $restored = Resolve-LlvmInstalledToolchain -Selector 'llvm-mingw@20261117' -ToolchainsPath $script:toolchainsDir -HomePath $script:llvmHome
                 $restored | Should -Not -BeNullOrEmpty
             } finally {
                 Pop-Location
             }
+        }
+
+        It 'rejects an alias when its install name now belongs to a different toolchain' {
+            llvmup alias set reused-name llvm-mingw@20261117 | Should -BeTrue
+            $original = Resolve-LlvmInstalledToolchain -Selector 'reused-name'
+            $manifestPath = Join-Path $original.root_path '.llvmup-toolchain.json'
+            $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+            $manifest.id = 'different'
+            $manifest | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+            { Resolve-LlvmInstalledToolchain -Selector 'reused-name' } | Should -Throw '*no longer matches an installed toolchain*'
         }
 
         It 'covers list --providers/--remote, resolve --config, config lock per host, run --locked, default shorthand, update and use --auto' {
