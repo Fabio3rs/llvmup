@@ -678,6 +678,9 @@ function Get-Llvm7ZipTarStrategy {
     if ($strategy -notin @('stream', 'temp', 'pipe')) {
         throw "Invalid LLVMUP_7Z_TAR_STRATEGY '$strategy'. Expected stream, pipe or temp."
     }
+    if ($strategy -eq 'pipe' -and -not (Test-LlvmIsWindows)) {
+        throw "LLVMUP_7Z_TAR_STRATEGY 'pipe' requires Windows cmd.exe. Use 'stream' or 'temp'."
+    }
     return $strategy
 }
 

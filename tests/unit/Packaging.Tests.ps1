@@ -63,7 +63,7 @@ Describe 'LLVMUP package installation' {
     }
     It 'removes a profile block that uses an equivalent absolute module path' {
         & $installer -InstallDir $destination -ProfilePath $profileFile
-        $text = (Get-Content -LiteralPath $profileFile -Raw).Replace('custom install', 'custom install\.')
+        $text = (Get-Content -LiteralPath $profileFile -Raw).Replace('custom install', ('custom install' + [IO.Path]::DirectorySeparatorChar + '.'))
         [IO.File]::WriteAllText($profileFile, $text)
         & (Join-Path $destination 'Uninstall-Llvmup.ps1') -ProfilePath $profileFile
         (Get-Content -LiteralPath $profileFile -Raw).Trim() | Should -Be '# existing profile'
@@ -136,27 +136,35 @@ Describe 'LLVMUP package installation' {
         { & (Join-Path $repo 'packaging/bootstrap.ps1') -Version '../bad' -InstallDir $destination -NoProfile } | Should -Throw '*supply -Version*'
         Test-Path $destination | Should -BeFalse
     }
-    It 'runs the packaged llvmup.cmd launcher outside the checkout and cleans nested libexec files on uninstall' {
+    It 'runs the packaged CLI outside the checkout and cleans nested libexec files on uninstall' {
         & $installer -InstallDir $destination -NoProfile
         $launcher = Join-Path $destination 'llvmup.cmd'
         Test-Path $launcher | Should -BeTrue
-        Test-Path (Join-Path $destination 'libexec/pwsh/llvmup-cli.ps1') | Should -BeTrue
+        $cli = Join-Path $destination 'libexec/pwsh/llvmup-cli.ps1'
+        Test-Path $cli | Should -BeTrue
+        $command = if ($env:OS -eq 'Windows_NT') { $launcher } else { (Get-Process -Id $PID).Path }
+        $prefix = @()
+        if ($env:OS -ne 'Windows_NT') { $prefix = @('-NoProfile', '-File', $cli) }
 
+        $savedHome = $env:LLVM_HOME
+        $savedToolchains = $env:LLVM_TOOLCHAINS_DIR
         $env:LLVM_HOME = Join-Path $case 'llvm-home'
         $env:LLVM_TOOLCHAINS_DIR = Join-Path $case 'toolchains'
+        Push-Location $case
         try {
-            $doctorOut = (& $launcher doctor --json | Out-String)
-            $LASTEXITCODE | Should -Be 0
+            $doctorOut = (& $command @prefix doctor --json | Out-String)
+            $LASTEXITCODE | Should -Be 0 -Because $doctorOut
             $doctorJson = $doctorOut | ConvertFrom-Json
             $doctorJson.schema_version | Should -Be 1
             $doctorJson.exit_code | Should -Be 0
 
-            $activateOut = (& $launcher activate missing-version 2>&1 | Out-String)
+            $activateOut = (& $command @prefix activate missing-version 2>&1 | Out-String)
             $LASTEXITCODE | Should -Be 2
             $activateOut | Should -Match 'cannot modify the parent shell'
         } finally {
-            Remove-Item Env:LLVM_HOME -ErrorAction SilentlyContinue
-            Remove-Item Env:LLVM_TOOLCHAINS_DIR -ErrorAction SilentlyContinue
+            Pop-Location
+            $env:LLVM_HOME = $savedHome
+            $env:LLVM_TOOLCHAINS_DIR = $savedToolchains
         }
 
         & (Join-Path $destination 'Uninstall-Llvmup.ps1') -NoProfile

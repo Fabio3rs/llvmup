@@ -2,6 +2,12 @@ $ErrorActionPreference = 'Stop'
 
 Describe 'LLVMUP Recipes, Multi-Provider Engine, and Ergonomic CLI' {
     BeforeAll {
+        $script:isWin = $env:OS -eq 'Windows_NT'
+        $script:otherSelector = if ($script:isWin) { 'winlibs@23.1.3' } else { 'official@23.1.6' }
+        $script:otherProvider = ($script:otherSelector -split '@')[0]
+        $script:hostKey = if ($script:isWin) { 'windows-x64' } else { 'linux-x64' }
+        $script:otherPlatform = if ($script:isWin) { 'linux' } else { 'windows' }
+        $script:compilerSuffix = if ($script:isWin) { '.exe' } else { '' }
         $repoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
         $pwshDir = Join-Path (Join-Path $repoRoot 'libexec') 'pwsh'
         Import-Module (Join-Path $repoRoot 'Llvm-Functions.psm1') -Force -Global -DisableNameChecking
@@ -66,18 +72,27 @@ Describe 'LLVMUP Recipes, Multi-Provider Engine, and Ergonomic CLI' {
             }
         }
 
+        function Get-TestFileUri([string]$Path) {
+            [Uri]::new([IO.Path]::GetFullPath($Path), [UriKind]::Absolute).AbsoluteUri
+        }
+
         function New-TestFixtureExecutable {
             param(
                 [Parameter(Mandatory)][string]$Path,
                 [string]$StubExePath = '',
-                [string]$Body = 'ok'
+                [string]$Body = 'echo clang version 23.1.6'
             )
+            if (-not $script:isWin) { $Path = $Path -replace '\.exe$', '' }
             $dir = Split-Path $Path -Parent
             if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
             if ($Path.EndsWith('.exe') -and $StubExePath -and (Test-Path -LiteralPath $StubExePath)) {
                 Copy-Item -LiteralPath $StubExePath -Destination $Path -Force
             } else {
-                Set-Content -LiteralPath $Path -Value "#!/bin/sh`necho $Body`n" -Encoding Ascii
+                Set-Content -LiteralPath $Path -Value "#!/bin/sh`n$Body`n" -Encoding Ascii
+                if (-not $script:isWin) {
+                    & chmod +x $Path
+                    if ($LASTEXITCODE -ne 0) { throw "chmod failed for $Path" }
+                }
             }
         }
 
@@ -86,8 +101,9 @@ Describe 'LLVMUP Recipes, Multi-Provider Engine, and Ergonomic CLI' {
             'LLVM_HOME', 'LLVM_TOOLCHAINS_DIR', 'LLVM_SOURCES_DIR', 'LLVMUP_CACHE_DIR',
             'LLVMUP_OFFICIAL_RELEASES_FILE', 'LLVMUP_WINLIBS_RELEASES_FILE', 'LLVMUP_LLVM_MINGW_RELEASES_FILE',
             'LLVMUP_ALLOW_UNVERIFIED', 'LLVMUP_ALLOW_FILE_URLS', 'LLVMUP_PREVIOUS_TOOLCHAIN', 'LLVMUP_SESSION_OVERRIDE',
-            'LLVMUP_ACTIVE_PROVIDER', 'LLVMUP_ACTIVE_TOOLCHAIN', 'LLVMUP_ACTIVE_TARGET', 'LLVMUP_ACTIVE_COMPILER',
-            '_ACTIVE_LLVM', '_LLVM_ORIGINAL_PATH', '_LLVM_ENV_BACKUP', 'CC', 'CXX', 'AR', 'RANLIB', 'RC',
+            'PATH', 'LLVMUP_ACTIVE_PROVIDER', 'LLVMUP_ACTIVE_TOOLCHAIN', 'LLVMUP_ACTIVE_TARGET', 'LLVMUP_ACTIVE_COMPILER',
+            'LLVMUP_ACTIVE_VERSION', 'LLVMUP_ACTIVE_PATH', 'LLVMUP_ACTIVE_ID', 'LLVMUP_PREVIOUS_SESSION',
+            '_ACTIVE_LLVM', '_ACTIVE_LLVM_PATH', '_LLVM_BACKUP', '_LLVM_ORIGINAL_PATH', '_LLVM_ENV_BACKUP', 'CC', 'CXX', 'AR', 'RANLIB', 'RC',
             'CMAKE_C_COMPILER', 'CMAKE_CXX_COMPILER', 'LLVM_DIR', 'CMAKE_PREFIX_PATH', 'PKG_CONFIG_PATH'
         )) {
             $script:savedEnv[$varName] = [Environment]::GetEnvironmentVariable($varName, 'Process')
@@ -109,37 +125,41 @@ Describe 'LLVMUP Recipes, Multi-Provider Engine, and Ergonomic CLI' {
         $script:llvmHome = Join-Path $script:workRoot 'home'
         $script:toolchainsDir = Join-Path $script:llvmHome 'toolchains'
         $script:cacheDir = Join-Path $script:workRoot 'cache'
-        $script:artifactsDir = Join-Path $script:workRoot 'artifacts'
+        $script:artifactsDir = Join-Path $script:workRoot ('artifacts # % ' + [char]0x00E9)
         $script:projectDir = Join-Path $script:workRoot 'project'
         foreach ($d in @($script:llvmHome, $script:toolchainsDir, $script:cacheDir, $script:artifactsDir, $script:projectDir)) {
             New-Item -ItemType Directory -Path $d -Force | Out-Null
         }
 
+        # Pin must find this project's file even if an ancestor has its own config.
+        Set-Content -LiteralPath (Join-Path $script:projectDir '.llvmup-config') -Value '# Test project' -Encoding Ascii
         $env:LLVM_HOME = $script:llvmHome
         $env:LLVM_TOOLCHAINS_DIR = $script:toolchainsDir
         $env:LLVMUP_CACHE_DIR = $script:cacheDir
         $env:LLVMUP_ALLOW_FILE_URLS = '1'
         foreach ($v in @('LLVMUP_ACTIVE_TOOLCHAIN', '_ACTIVE_LLVM', 'LLVMUP_SESSION_OVERRIDE', 'LLVMUP_PREVIOUS_TOOLCHAIN',
                          'LLVMUP_ACTIVE_PROVIDER', 'LLVMUP_ACTIVE_TARGET', 'LLVMUP_ACTIVE_COMPILER',
-                         '_LLVM_ENV_BACKUP', '_LLVM_ORIGINAL_PATH', 'CC', 'CXX', 'AR', 'RANLIB', 'RC',
+                         'LLVMUP_ACTIVE_VERSION', 'LLVMUP_ACTIVE_PATH', 'LLVMUP_ACTIVE_ID', 'LLVMUP_PREVIOUS_SESSION',
+                         '_ACTIVE_LLVM_PATH', '_LLVM_BACKUP', '_LLVM_ENV_BACKUP', '_LLVM_ORIGINAL_PATH', 'CC', 'CXX', 'AR', 'RANLIB', 'RC',
                          'CMAKE_C_COMPILER', 'CMAKE_CXX_COMPILER', 'LLVM_DIR', 'CMAKE_PREFIX_PATH', 'PKG_CONFIG_PATH')) {
             Remove-Item -LiteralPath "Env:$v" -ErrorAction SilentlyContinue
         }
 
-        # 1) Official archive (clang+llvm-23.1.6.tar.xz)
+        # 1) Official archive for the current host.
         $offParent = Join-Path $script:workRoot 'src-official'
-        $offStage = Join-Path $offParent 'clang+llvm-23.1.6-x86_64-pc-windows-msvc'
+        $offName = if ($script:isWin) { 'clang+llvm-23.1.6-x86_64-pc-windows-msvc' } else { 'LLVM-23.1.6-Linux-X64' }
+        $offStage = Join-Path $offParent $offName
         New-TestFixtureExecutable -Path (Join-Path $offStage 'bin\clang.exe') -StubExePath $script:stubExe
         New-TestFixtureExecutable -Path (Join-Path $offStage 'bin\clang++.exe') -StubExePath $script:stubExe
         New-TestFixtureExecutable -Path (Join-Path $offStage 'bin\lld-link.exe') -StubExePath $script:stubExe
         New-TestFixtureExecutable -Path (Join-Path $offStage 'bin\llvm-config.exe') -StubExePath $script:stubExe
         New-Item -ItemType Directory -Path (Join-Path $offStage 'lib\cmake\llvm') -Force | Out-Null
         Set-Content -LiteralPath (Join-Path $offStage 'lib\cmake\llvm\LLVMConfig.cmake') -Value '# cmake' -Encoding Ascii
-        $script:offArc = Join-Path $script:artifactsDir 'clang+llvm-23.1.6-x86_64-pc-windows-msvc.tar.xz'
-        New-TestTarXzFromDir -ParentDir $offParent -DirName 'clang+llvm-23.1.6-x86_64-pc-windows-msvc' -TarXzPath $script:offArc
+        $script:offArc = Join-Path $script:artifactsDir "$offName.tar.xz"
+        New-TestTarXzFromDir -ParentDir $offParent -DirName $offName -TarXzPath $script:offArc
         $script:offSha = (Get-FileHash -LiteralPath $script:offArc -Algorithm SHA256).Hash.ToLowerInvariant()
         $offShaFile = "$($script:offArc).sha256"
-        Set-Content -LiteralPath $offShaFile -Value "$($script:offSha)  clang+llvm-23.1.6-x86_64-pc-windows-msvc.tar.xz" -Encoding Ascii
+        Set-Content -LiteralPath $offShaFile -Value "$($script:offSha)  $offName.tar.xz" -Encoding Ascii
 
         # 2) WinLibs archive (mingw64 wrapper dir with clang + gcc)
         $wlStage = Join-Path $script:workRoot 'src-winlibs\mingw64'
@@ -155,8 +175,9 @@ Describe 'LLVMUP Recipes, Multi-Provider Engine, and Ergonomic CLI' {
         $wlShaFile = "$($script:wlZip).sha256"
         Set-Content -LiteralPath $wlShaFile -Value "$($script:wlSha) *winlibs-x86_64-posix-seh-gcc-16.2.0-llvm-23.1.3-mingw-w64ucrt-14.0.0-r3.zip" -Encoding Ascii
 
-        # 3) LLVM-MinGW archive (no llvm-config.exe, multi-target wrappers)
-        $lmStage = Join-Path $script:workRoot 'src-llmmw\llvm-mingw-20261117-ucrt-x86_64'
+        # 3) LLVM-MinGW archive with multi-target wrappers.
+        $lmParent = Join-Path $script:workRoot 'src-llmmw'
+        $lmStage = Join-Path $lmParent 'llvm-mingw-20261117-ucrt-x86_64'
         New-TestFixtureExecutable -Path (Join-Path $lmStage 'bin\clang.exe') -StubExePath $script:stubExe
         New-TestFixtureExecutable -Path (Join-Path $lmStage 'bin\clang++.exe') -StubExePath $script:stubExe
         New-TestFixtureExecutable -Path (Join-Path $lmStage 'bin\x86_64-w64-mingw32-clang.exe') -StubExePath $script:stubExe
@@ -165,29 +186,33 @@ Describe 'LLVMUP Recipes, Multi-Provider Engine, and Ergonomic CLI' {
         New-TestFixtureExecutable -Path (Join-Path $lmStage 'bin\aarch64-w64-mingw32-clang++.exe') -StubExePath $script:stubExe
         New-TestFixtureExecutable -Path (Join-Path $lmStage 'bin\llvm-windres.exe') -StubExePath $script:stubExe
         New-TestFixtureExecutable -Path (Join-Path $lmStage 'bin\llvm-ar.exe') -StubExePath $script:stubExe
-        $script:lmZip = Join-Path $script:artifactsDir 'llvm-mingw-20261117-ucrt-x86_64.zip'
-        New-TestZipFromTree -SourceDir $lmStage -ZipPath $script:lmZip
-        $script:lmSha = (Get-FileHash -LiteralPath $script:lmZip -Algorithm SHA256).Hash.ToLowerInvariant()
+        $script:lmName = if ($script:isWin) { 'llvm-mingw-20261117-ucrt-x86_64.zip' } else { 'llvm-mingw-20261117-ucrt-ubuntu-22.04-x86_64.tar.xz' }
+        $script:lmArchive = Join-Path $script:artifactsDir $script:lmName
+        if ($script:isWin) {
+            New-TestZipFromTree -SourceDir $lmStage -ZipPath $script:lmArchive
+        } else {
+            New-TestTarXzFromDir -ParentDir $lmParent -DirName (Split-Path $lmStage -Leaf) -TarXzPath $script:lmArchive
+        }
+        $script:lmSha = (Get-FileHash -LiteralPath $script:lmArchive -Algorithm SHA256).Hash.ToLowerInvariant()
 
         # Offline release fixture JSON files
-        $offUri = ([Uri]$script:offArc).AbsoluteUri
-        $offShaUri = ([Uri]$offShaFile).AbsoluteUri
+        $offUri = (Get-TestFileUri $script:offArc)
+        $offShaUri = (Get-TestFileUri $offShaFile)
         $officialReleases = @(
             @{
                 tag_name = 'llvmorg-23.1.6'
                 prerelease = $false
                 assets = @(
-                    @{ name = 'clang+llvm-23.1.6-x86_64-pc-windows-msvc.tar.xz'; browser_download_url = $offUri; digest = "sha256:$($script:offSha)"; size = 1024 }
-                    @{ name = 'clang+llvm-23.1.6-x86_64-pc-windows-msvc.tar.xz.sha256'; browser_download_url = $offShaUri; size = 80 }
-                    @{ name = 'LLVM-23.1.6-Linux-X64.tar.xz'; browser_download_url = 'https://example.invalid/LLVM-23.1.6-Linux-X64.tar.xz'; digest = 'sha256:0000'; size = 1024 }
+                    @{ name = "$offName.tar.xz"; browser_download_url = $offUri; digest = "sha256:$($script:offSha)"; size = 1024 }
+                    @{ name = "$offName.tar.xz.sha256"; browser_download_url = $offShaUri; size = 80 }
                 )
             }
         )
         $env:LLVMUP_OFFICIAL_RELEASES_FILE = Join-Path $script:artifactsDir 'official-releases.json'
         Set-Content -LiteralPath $env:LLVMUP_OFFICIAL_RELEASES_FILE -Value (ConvertTo-Json -InputObject $officialReleases -Depth 6) -Encoding UTF8
 
-        $wlUri = ([Uri]$script:wlZip).AbsoluteUri
-        $wlShaUri = ([Uri]$wlShaFile).AbsoluteUri
+        $wlUri = (Get-TestFileUri $script:wlZip)
+        $wlShaUri = (Get-TestFileUri $wlShaFile)
         $winlibsReleases = @(
             # Newer release WITHOUT LLVM (GCC-only) -- must NOT match default llvm-required winlibs
             @{
@@ -210,7 +235,7 @@ Describe 'LLVMUP Recipes, Multi-Provider Engine, and Ergonomic CLI' {
         $env:LLVMUP_WINLIBS_RELEASES_FILE = Join-Path $script:artifactsDir 'winlibs-releases.json'
         Set-Content -LiteralPath $env:LLVMUP_WINLIBS_RELEASES_FILE -Value (ConvertTo-Json -InputObject $winlibsReleases -Depth 6) -Encoding UTF8
 
-        $lmUri = ([Uri]$script:lmZip).AbsoluteUri
+        $lmUri = (Get-TestFileUri $script:lmArchive)
         $lmReleases = @(
             @{
                 tag_name = '20261117'
@@ -218,9 +243,12 @@ Describe 'LLVMUP Recipes, Multi-Provider Engine, and Ergonomic CLI' {
                 body = 'Includes LLVM 23.1.6 toolchains'
                 prerelease = $false
                 assets = @(
-                    @{ name = 'llvm-mingw-20261117-ucrt-x86_64.zip'; browser_download_url = $lmUri; digest = "sha256:$($script:lmSha)"; size = 1024 }
-                    @{ name = 'llvm-mingw-20261117-msvcrt-x86_64.zip'; browser_download_url = $lmUri; digest = "sha256:$($script:lmSha)"; size = 1024 }
-                    @{ name = 'llvm-mingw-20261117-ucrt-ubuntu-22.04-x86_64.tar.xz'; browser_download_url = 'https://example.invalid/lm-linux.tar.xz'; digest = 'sha256:1111'; size = 1024 }
+                    @{ name = $script:lmName; browser_download_url = $lmUri; digest = "sha256:$($script:lmSha)"; size = 1024 }
+                    if ($script:isWin) {
+                        @{ name = 'llvm-mingw-20261117-ucrt-ubuntu-22.04-x86_64.tar.xz'; browser_download_url = 'https://example.invalid/lm-linux.tar.xz'; digest = "sha256:$('0' * 64)"; size = 1024 }
+                    } else {
+                        @{ name = 'llvm-mingw-20261117-ucrt-x86_64.zip'; browser_download_url = 'https://example.invalid/lm-windows.zip'; digest = "sha256:$('0' * 64)"; size = 1024 }
+                    }
                 )
             }
         )
@@ -232,7 +260,7 @@ Describe 'LLVMUP Recipes, Multi-Provider Engine, and Ergonomic CLI' {
         foreach ($v in @('LLVMUP_OFFICIAL_RELEASES_FILE', 'LLVMUP_WINLIBS_RELEASES_FILE', 'LLVMUP_LLVM_MINGW_RELEASES_FILE', 'LLVMUP_ALLOW_FILE_URLS')) {
             Remove-Item -LiteralPath "Env:$v" -ErrorAction SilentlyContinue
         }
-        try { Deactivate-Llvm -Quiet -ErrorAction SilentlyContinue } catch {}
+        if ($env:_LLVM_BACKUP) { Deactivate-Llvm | Out-Null }
     }
 
     AfterAll {
@@ -318,20 +346,21 @@ Describe 'LLVMUP Recipes, Multi-Provider Engine, and Ergonomic CLI' {
 
             # Disallow file:// URLs unless explicitly opted in
             Remove-Item -LiteralPath 'Env:LLVMUP_ALLOW_FILE_URLS' -ErrorAction SilentlyContinue
-            { Invoke-LlvmDownloadFile -Url ([Uri]$script:wlZip).AbsoluteUri -DestinationPath (Join-Path $script:workRoot 'blocked.zip') } | Should -Throw '*unsupported download scheme*'
+            { Invoke-LlvmDownloadFile -Url (Get-TestFileUri $script:wlZip) -DestinationPath (Join-Path $script:workRoot 'blocked.zip') } | Should -Throw '*unsupported download scheme*'
         }
 
-        It 'installs official, winlibs, and llvm-mingw via llvmup, uses cache on second install, and writes rich .llvmup-toolchain.json manifests' {
+        It 'installs the host providers, caches archives, and writes toolchain manifests' {
             llvmup install official@23.1.6 --quiet | Should -BeTrue
-            llvmup install winlibs@23.1.3 --crt ucrt --quiet | Should -BeTrue
+            if ($script:isWin) { llvmup install winlibs@23.1.3 --crt ucrt --quiet | Should -BeTrue }
             llvmup install llvm-mingw@20261117 --crt ucrt --quiet | Should -BeTrue
 
-            # Cache hit check
+            # Each provider can reuse its downloaded archive.
             $cachedArchives = @(Get-ChildItem -LiteralPath $script:cacheDir -Recurse -File)
-            $cachedArchives.Count | Should -BeGreaterOrEqual 3
+            $count = if ($script:isWin) { 3 } else { 2 }
+            $cachedArchives.Count | Should -BeGreaterOrEqual $count
 
             $all = Get-LlvmAllToolchains -ToolchainsPath $script:toolchainsDir -HomePath $script:llvmHome
-            $all.Count | Should -Be 3
+            $all.Count | Should -Be $count
 
             $lmManifest = $all | Where-Object { $_.provider -eq 'llvm-mingw' }
             $lmManifest.llvm_version | Should -Be '23.1.6'
@@ -340,39 +369,41 @@ Describe 'LLVMUP Recipes, Multi-Provider Engine, and Ergonomic CLI' {
             $lmManifest.supported_targets | Should -Contain 'aarch64-w64-mingw32'
             Test-Path -LiteralPath (Join-Path $lmManifest.root_path '.llvmup-toolchain.json') | Should -BeTrue
 
-            # Strip top-level wrapper so bin\clang.exe sits directly at root\bin
-            Test-Path -LiteralPath (Join-Path $lmManifest.root_path 'bin\clang.exe') | Should -BeTrue
+            # Strip the top-level wrapper so bin sits directly under the install root.
+            Test-Path -LiteralPath (Join-Path $lmManifest.root_path "bin/clang$script:compilerSuffix") | Should -BeTrue
         }
     }
 
     Context 'Environment Switching, use/run/+toolchain, aliases, pin/sync, external link, and CMake' {
         BeforeEach {
-            llvmup install official@23.1.6 --quiet | Out-Null
-            llvmup install winlibs@23.1.3 --crt ucrt --quiet | Out-Null
-            llvmup install llvm-mingw@20261117 --crt ucrt --quiet | Out-Null
+            llvmup install official@23.1.6 --quiet | Should -BeTrue
+            if ($script:isWin) { llvmup install winlibs@23.1.3 --crt ucrt --quiet | Should -BeTrue }
+            llvmup install llvm-mingw@20261117 --crt ucrt --quiet | Should -BeTrue
         }
 
-        It 'switches cleanly across official -> winlibs(gcc) -> winlibs(clang) -> llvm-mingw(arm64) -> use - -> deactivate' {
+        It 'switches between installed providers, restores the previous toolchain, and deactivates' {
             llvmup use official@23.1.6 | Should -BeTrue
             $env:LLVMUP_ACTIVE_PROVIDER | Should -Be 'official'
-            $env:CC | Should -Match '[\\/]clang\.exe$'
+            $env:CC | Should -Match '[\\/]clang(?:\.exe)?$'
 
-            llvmup use winlibs@23.1.3 --compiler gcc | Should -BeTrue
-            $env:LLVMUP_ACTIVE_PROVIDER | Should -Be 'winlibs'
-            $env:LLVMUP_ACTIVE_COMPILER | Should -Be 'gcc'
-            $env:CC | Should -Match '[\\/]gcc\.exe$'
-            $env:CXX | Should -Match '[\\/]g\+\+\.exe$'
-            $env:RC | Should -Match '[\\/]windres\.exe$'
+            if ($script:isWin) {
+                llvmup use winlibs@23.1.3 --compiler gcc | Should -BeTrue
+                $env:LLVMUP_ACTIVE_PROVIDER | Should -Be 'winlibs'
+                $env:LLVMUP_ACTIVE_COMPILER | Should -Be 'gcc'
+                $env:CC | Should -Match '[\\/]gcc\.exe$'
+                $env:CXX | Should -Match '[\\/]g\+\+\.exe$'
+                $env:RC | Should -Match '[\\/]windres\.exe$'
+            }
 
             llvmup use llvm-mingw@20261117 --target aarch64-w64-mingw32 | Should -BeTrue
             $env:LLVMUP_ACTIVE_PROVIDER | Should -Be 'llvm-mingw'
             $env:LLVMUP_ACTIVE_TARGET | Should -Be 'aarch64-w64-mingw32'
-            $env:CC | Should -Match '[\\/]aarch64-w64-mingw32-clang\.exe$'
-            $env:LLVMUP_PREVIOUS_SESSION | Should -Match 'winlibs'
+            $env:CC | Should -Match '[\\/]aarch64-w64-mingw32-clang(?:\.exe)?$'
+            $env:LLVMUP_PREVIOUS_SESSION | Should -Match $(if ($script:isWin) { 'winlibs' } else { 'llvmorg' })
 
             # Swap back to previous toolchain
             llvmup use - | Should -BeTrue
-            $env:LLVMUP_ACTIVE_PROVIDER | Should -Be 'winlibs'
+            $env:LLVMUP_ACTIVE_PROVIDER | Should -Be $script:otherProvider
 
             llvmup deactivate | Should -BeTrue
             $env:LLVMUP_ACTIVE_TOOLCHAIN | Should -BeNullOrEmpty
@@ -383,24 +414,27 @@ Describe 'LLVMUP Recipes, Multi-Provider Engine, and Ergonomic CLI' {
         It 'executes +toolchain and run in isolated process env with exit code preservation' {
             llvmup use official@23.1.6 | Should -BeTrue
 
-            # +toolchain should run winlibs without altering parent session
-            $out = llvmup +winlibs@23.1.3 -- cmd /c "echo ACTIVE=%LLVMUP_ACTIVE_PROVIDER% CC=%CC%"
-            ($out -join "`n") | Should -Match 'ACTIVE=winlibs'
-            $env:LLVMUP_ACTIVE_PROVIDER | Should -Be 'official'
-            $env:CC | Should -Match '[\\/]clang\.exe$'
-
-            # run with --compiler gcc must set gcc.exe inside child without touching parent
-            $out2 = llvmup run winlibs@23.1.3 --compiler gcc -- cmd /c "echo CC=%CC% && exit /b 7"
+            $probe = Join-Path $script:workRoot 'child.ps1'
+            Set-Content -LiteralPath $probe -Value 'Write-Output "ACTIVE=$env:LLVMUP_ACTIVE_PROVIDER"; exit 7' -Encoding Ascii
+            $engine = (Get-Process -Id $PID).Path
+            $out = llvmup +llvm-mingw@20261117 -- $engine -NoProfile -File $probe
             $LASTEXITCODE | Should -Be 7
-            ($out2 -join "`n") | Should -Match 'gcc\.exe'
-            $env:CC | Should -Match '[\\/]clang\.exe$'
+            ($out -join "`n") | Should -Match 'ACTIVE=llvm-mingw'
+            $env:LLVMUP_ACTIVE_PROVIDER | Should -Be 'official'
+            (Split-Path $env:CC -Leaf) | Should -Be "clang$script:compilerSuffix"
+
+            $out = llvmup run llvm-mingw@20261117 -- $engine -NoProfile -File $probe
+            $LASTEXITCODE | Should -Be 7
+            ($out -join "`n") | Should -Match 'ACTIVE=llvm-mingw'
+            $env:LLVMUP_ACTIVE_PROVIDER | Should -Be 'official'
+            (Split-Path $env:CC -Leaf) | Should -Be "clang$script:compilerSuffix"
         }
 
         It 'manages aliases, pins, lockfiles, sync --locked, external toolchain link/unlink, inspection commands, and cmake-toolchain' {
-            llvmup alias set fast-gcc winlibs@23.1.3 | Should -BeTrue
-            (llvmup alias show fast-gcc) | Should -Match 'winlibs'
-            llvmup use fast-gcc --compiler gcc | Should -BeTrue
-            $env:LLVMUP_ACTIVE_PROVIDER | Should -Be 'winlibs'
+            llvmup alias set test-alias $script:otherSelector | Should -BeTrue
+            (llvmup alias show test-alias) | Should -Match $script:otherProvider
+            llvmup use test-alias | Should -BeTrue
+            $env:LLVMUP_ACTIVE_PROVIDER | Should -Be $script:otherProvider
 
             # External toolchain link / unlink
             $extDir = Join-Path $script:workRoot 'external-llvm'
@@ -411,9 +445,9 @@ Describe 'LLVMUP Recipes, Multi-Provider Engine, and Ergonomic CLI' {
             llvmup toolchain unlink custom-ext | Should -BeTrue
 
             # Inspection commands & status --explain --json
-            (llvmup which clang) | Should -Match 'clang\.exe$'
-            (llvmup where fast-gcc) | Should -Match 'winlibs'
-            (llvmup provides windres) | Should -Match 'winlibs'
+            (llvmup which clang) | Should -Match 'clang(?:\.exe)?$'
+            (llvmup where test-alias) | Should -Match $(if ($script:isWin) { 'winlibs' } else { 'llvmorg' })
+            if ($script:isWin) { (llvmup provides windres) | Should -Match 'winlibs' }
             $statusJson = llvmup status --explain --json | ConvertFrom-Json
             $statusJson.active_version | Should -Not -BeNullOrEmpty
             $statusJson.selected_for_execution.reason | Should -Not -BeNullOrEmpty
@@ -424,19 +458,23 @@ Describe 'LLVMUP Recipes, Multi-Provider Engine, and Ergonomic CLI' {
             Test-Path -LiteralPath $generated | Should -BeTrue
             $cmakeText = Get-Content -LiteralPath $generated -Raw
             $cmakeText | Should -Match 'CMAKE_SYSTEM_NAME Windows'
-            $cmakeText | Should -Match 'aarch64-w64-mingw32-clang\.exe'
+            $cmakeText | Should -Match ([regex]::Escape("aarch64-w64-mingw32-clang$script:compilerSuffix"))
 
             # Project pin, lock, and sync --locked
+            $parentConfig = Join-Path $script:workRoot '.llvmup-config'
+            $parentProfile = "[profile]`ntype = `"minimal`"`n"
+            [IO.File]::WriteAllText($parentConfig, $parentProfile)
             Push-Location $script:projectDir
             try {
                 llvmup pin llvm-mingw@20261117 --crt ucrt --target x86_64-w64-mingw32 | Should -BeTrue
-                Test-Path -LiteralPath (Join-Path $script:projectDir '.llvmup-config') | Should -BeTrue
+                (Read-LlvmProjectConfigData -ConfigPath '.llvmup-config').provider | Should -Be 'llvm-mingw'
+                [IO.File]::ReadAllText($parentConfig) | Should -Be $parentProfile
                 llvmup config lock | Should -BeTrue
                 Test-Path -LiteralPath (Join-Path $script:projectDir '.llvmup-lock.json') | Should -BeTrue
 
                 # Remove installed llvm-mingw and restore purely via sync --locked
-                $lockedEntry = (Get-Content -LiteralPath '.llvmup-lock.json' -Raw | ConvertFrom-Json).entries.'windows-x64'
-                llvmup alias set $lockedEntry.canonical_id winlibs@23.1.3 | Should -BeTrue
+                $lockedEntry = (Get-Content -LiteralPath '.llvmup-lock.json' -Raw | ConvertFrom-Json).entries.($script:hostKey)
+                llvmup alias set $lockedEntry.canonical_id $script:otherSelector | Should -BeTrue
                 $lmDir = (Get-LlvmAllToolchains -ToolchainsPath $script:toolchainsDir -HomePath $script:llvmHome | Where-Object { $_.provider -eq 'llvm-mingw' }).root_path
                 Remove-Item -LiteralPath $lmDir -Recurse -Force
                 llvmup sync --locked | Should -BeTrue
@@ -478,28 +516,32 @@ Describe 'LLVMUP Recipes, Multi-Provider Engine, and Ergonomic CLI' {
                 ((llvmup resolve --config) | Out-String) | Should -Match '20261117'
 
                 llvmup config lock | Should -BeTrue
-                llvmup config lock --platform linux --arch x64 | Should -BeTrue
+                llvmup config lock --platform $script:otherPlatform --arch x64 | Should -BeTrue
                 $lock = Get-Content -LiteralPath (Join-Path $script:projectDir '.llvmup-lock.json') -Raw | ConvertFrom-Json
                 @($lock.entries.PSObject.Properties.Name | Sort-Object) | Should -Be @('linux-x64', 'windows-x64')
                 $lock.entries.'linux-x64'.asset.name | Should -Be 'llvm-mingw-20261117-ucrt-ubuntu-22.04-x86_64.tar.xz'
 
-                $null = llvmup run --locked -- cmd /d /c "echo LOCKED=%LLVMUP_ACTIVE_PROVIDER% && exit /b 4"
+                $probe = Join-Path $script:workRoot 'locked.ps1'
+                Set-Content -LiteralPath $probe -Value 'Write-Output $env:LLVMUP_ACTIVE_PROVIDER; exit 4' -Encoding Ascii
+                $engine = (Get-Process -Id $PID).Path
+                $out = llvmup run --locked -- $engine -NoProfile -File $probe
                 $LASTEXITCODE | Should -Be 4
+                ($out -join "`n") | Should -Match 'llvm-mingw'
 
                 $lockPath = Join-Path $script:projectDir '.llvmup-lock.json'
                 $originalLock = Get-Content -LiteralPath $lockPath -Raw
                 try {
-                    $lock.entries.'windows-x64'.asset.name = 'different.zip'
+                    $lock.entries.($script:hostKey).asset.name = 'different.zip'
                     $lock | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $lockPath -Encoding UTF8
                     llvmup sync --locked 2>$null | Should -BeFalse
-                    llvmup run --locked -- cmd /c exit 0 2>$null | Should -BeFalse
+                    llvmup run --locked -- $engine -NoProfile -File $probe 2>$null | Should -BeFalse
                 } finally {
                     [IO.File]::WriteAllText($lockPath, $originalLock)
                 }
 
                 # Project config selects llvm-mingw; a manual 'use' overrides it until 'use --auto'.
-                llvmup use winlibs@23.1.3 | Should -BeTrue
-                $env:LLVMUP_ACTIVE_PROVIDER | Should -Be 'winlibs'
+                llvmup use $script:otherSelector | Should -BeTrue
+                $env:LLVMUP_ACTIVE_PROVIDER | Should -Be $script:otherProvider
                 llvmup use --auto | Should -BeTrue
                 $env:LLVMUP_SESSION_OVERRIDE | Should -BeNullOrEmpty
                 $env:LLVMUP_ACTIVE_PROVIDER | Should -Be 'llvm-mingw'
@@ -508,7 +550,7 @@ Describe 'LLVMUP Recipes, Multi-Provider Engine, and Ergonomic CLI' {
             }
 
             # A selected target maps known tools to the distribution's target wrappers.
-            (llvmup which clang --toolchain llvm-mingw@20261117 --target aarch64-w64-mingw32) | Should -Match 'aarch64-w64-mingw32-clang\.exe$'
+            (llvmup which clang --toolchain llvm-mingw@20261117 --target aarch64-w64-mingw32) | Should -Match 'aarch64-w64-mingw32-clang(?:\.exe)?$'
 
             # pick: local list with aliases; fails without a terminal, selects with a choice.
             llvmup alias set pick-me llvm-mingw@20261117 | Should -BeTrue
@@ -524,8 +566,8 @@ Describe 'LLVMUP Recipes, Multi-Provider Engine, and Ergonomic CLI' {
             $env:LLVMUP_ACTIVE_PROVIDER | Should -Be 'llvm-mingw'
             ($script:pickLines -join "`n") | Should -Match 'aliases=pick-me'
 
-            llvmup default winlibs@23.1.3 | Should -BeTrue
-            (llvmup default) | Should -Match 'winlibs'
+            llvmup default $script:otherSelector | Should -BeTrue
+            (llvmup default) | Should -Match $(if ($script:isWin) { 'winlibs' } else { 'llvmorg' })
             $upd = (llvmup update llvm-mingw@20261117 2>&1 | Out-String)
             $upd | Should -Match 'up to date'
             llvmup update no-such-toolchain 2>$null | Should -BeFalse
@@ -536,11 +578,11 @@ Describe 'LLVMUP Recipes, Multi-Provider Engine, and Ergonomic CLI' {
             llvmup default llvm-mingw@20261117 | Should -BeTrue
             $beforeDirs = @(Get-ChildItem -LiteralPath $script:toolchainsDir -Directory | ForEach-Object Name)
 
-            $lmUri = ([Uri]$script:lmZip).AbsoluteUri
+            $lmUri = (Get-TestFileUri $script:lmArchive)
             $newer = @(
                 @{
                     tag_name = '20261201'; name = 'llvm-mingw 20261201 with LLVM 23.1.7'; body = 'Includes LLVM 23.1.7 toolchains'; prerelease = $false
-                    assets = @(@{ name = 'llvm-mingw-20261201-ucrt-x86_64.zip'; browser_download_url = $lmUri; digest = "sha256:$($script:lmSha)"; size = 1024 })
+                    assets = @(@{ name = ($script:lmName.Replace('20261117', '20261201')); browser_download_url = $lmUri; digest = "sha256:$($script:lmSha)"; size = 1024 })
                 }
             )
             $all = @($newer) + @(Get-Content -LiteralPath $env:LLVMUP_LLVM_MINGW_RELEASES_FILE -Raw | ConvertFrom-Json | ForEach-Object { $_ })
@@ -558,15 +600,20 @@ Describe 'LLVMUP Recipes, Multi-Provider Engine, and Ergonomic CLI' {
             # install --use activates what was installed.
             Deactivate-Llvm
             $env:LLVMUP_ACTIVE_PROVIDER = $null
-            llvmup install winlibs@23.1.3 --crt ucrt --quiet --use | Should -BeTrue
-            $env:LLVMUP_ACTIVE_PROVIDER | Should -Be 'winlibs'
+            llvmup install $script:otherSelector --quiet --use | Should -BeTrue
+            $env:LLVMUP_ACTIVE_PROVIDER | Should -Be $script:otherProvider
 
             # shell with an explicit non-interactive program: environment applied, exit code surfaced, parent untouched.
-            $probe = Join-Path $script:artifactsDir 'shell-probe.cmd'
-            Set-Content -LiteralPath $probe -Value "@echo off`r`necho SHELLPROV=%LLVMUP_ACTIVE_PROVIDER%> `"$script:artifactsDir\shell-out.txt`"" -Encoding ASCII
+            $probe = Join-Path $script:workRoot 'shell-probe.cmd'
+            if ($script:isWin) {
+                Set-Content -LiteralPath $probe -Value "@echo off`r`necho SHELLPROV=%LLVMUP_ACTIVE_PROVIDER%> `"$script:workRoot\shell-out.txt`"" -Encoding ASCII
+            } else {
+                $probe = Join-Path $script:workRoot 'shell-probe'
+                New-TestFixtureExecutable -Path $probe -Body 'printf "SHELLPROV=%s\n" "$LLVMUP_ACTIVE_PROVIDER" > "$(dirname "$0")/shell-out.txt"'
+            }
             $env:LLVMUP_ACTIVE_PROVIDER = 'parent-value'
             llvmup shell llvm-mingw@20261117 --shell $probe
-            (Get-Content -LiteralPath (Join-Path $script:artifactsDir 'shell-out.txt') -Raw).Trim() | Should -Be 'SHELLPROV=llvm-mingw'
+            (Get-Content -LiteralPath (Join-Path $script:workRoot 'shell-out.txt') -Raw).Trim() | Should -Be 'SHELLPROV=llvm-mingw'
             $env:LLVMUP_ACTIVE_PROVIDER | Should -Be 'parent-value'
         }
     }

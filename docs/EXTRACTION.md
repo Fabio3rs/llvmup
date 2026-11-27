@@ -33,7 +33,7 @@ Rules:
 `LLVMUP_7Z_TAR_STRATEGY` selects how the two 7-Zip processes (decompressor `-so`, tar extractor
 `-si -ttar`) are connected:
 
-- `pipe` (Windows default): cmd.exe's binary pipe. Fastest in the benchmark and the only connection
+- `pipe` (Windows only, default on Windows): cmd.exe's binary pipe. Fastest in the benchmark and the only connection
   that worked in Windows Sandbox. The decompressor's errors go to a temporary file and fail the
   extraction. Paths containing `%` or `"` cannot be passed safely through cmd.exe; `auto` then uses
   `stream`.
@@ -42,8 +42,8 @@ Rules:
   7-Zip's tar side stops reading at the end-of-archive marker and exits 0 while the decompressor
   still writes zero padding: the remainder is drained and must be padding. A failing tar side stops
   the decompressor and its error is reported. If the tar side exits without extracting anything
-  (observed in Windows Sandbox: banner, exit 0, nothing read), `auto` retries the same archive with
-  `pipe`; nothing has been written at that point.
+  (observed in Windows Sandbox: banner, exit 0, nothing read), the Windows extractor retries the
+  same archive with `pipe`. This fallback also applies when `stream` was selected explicitly.
 - `temp`: decompress to a temporary `.tar`, then extract it (needs the full `.tar` size in temp).
 
 No intermediate `.tar` is written by `pipe` or `stream`.

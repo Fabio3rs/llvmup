@@ -28,7 +28,7 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y jq curl zsh python3
+        sudo apt-get install -y jq curl zsh python3 xz-utils 7zip
 
     - name: Install BATS
       run: |
@@ -64,20 +64,12 @@ jobs:
     - name: Test selective installation engine
       run: python3 tests/unit/test_selection.py
 
-    - name: Run BATS tests
-      run: |
-        # Ensure PATH is updated in this step
-        export PATH="$HOME/.local/bin:$PATH"
-        echo "Running tests with PATH: $PATH"
-        echo ""
-        echo "Available test files:"
-        ls -la tests/unit/*.bats
-        echo ""
+    - name: Run Bats tests
+      run: bats --verbose-run --timing tests/unit tests/integration
 
-        # Run the test runner script
-        chmod +x tests/run_tests.sh
-        ./tests/run_tests.sh
-      continue-on-error: false
+    - name: Run PowerShell Pester tests
+      shell: pwsh
+      run: ./tests/_pester_runner.ps1
 
     - name: Check Bash and PowerShell engine parity on recorded release metadata
       run: bash tests/integration/engine_parity.sh
@@ -124,7 +116,7 @@ jobs:
 
     - name: Upload test results
       if: always()
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
       with:
         name: bats-test-results
         path: |

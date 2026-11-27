@@ -13,7 +13,7 @@ Describe 'LLVMUP engine regressions' {
         $script:isWin = ($env:OS -eq 'Windows_NT')
         $script:savedPath = $env:PATH
         $script:saved = @{}
-        foreach ($v in @('LLVMUP_7Z_PATH', 'LLVMUP_TAR_PATH', 'LLVMUP_WINLIBS_RELEASES_FILE', 'LLVM_HOME', 'LLVM_TOOLCHAINS_DIR', 'LLVMUP_CACHE_DIR', 'LLVMUP_VERIFY_POLICY', 'LLVMUP_7Z_TAR_STRATEGY')) {
+        foreach ($v in @('LLVMUP_7Z_PATH', 'LLVMUP_TAR_PATH', 'LLVMUP_WINLIBS_RELEASES_FILE', 'LLVMUP_OFFICIAL_RELEASES_FILE', 'LLVM_HOME', 'LLVM_TOOLCHAINS_DIR', 'LLVMUP_CACHE_DIR', 'LLVMUP_VERIFY_POLICY', 'LLVMUP_7Z_TAR_STRATEGY')) {
             $script:saved[$v] = [Environment]::GetEnvironmentVariable($v, 'Process')
         }
 
@@ -106,7 +106,7 @@ Describe 'LLVMUP engine regressions' {
             Resolve-LlvmExtractorChoice -Format 'zip' -Extractor 'auto' -Caps $caps2 | Should -Be 'zip'
         }
 
-        It 'round-trips a .tar.xz through both 7-Zip strategies and rejects corruption without leaving staging' {
+        It 'round-trips a .tar.xz through each supported 7-Zip strategy and cleans up after corruption' {
             $sz = Find-Llvm7Zip
             if (-not ($sz.available -and $sz.modern -and $sz.supports_xz)) {
                 Set-ItResult -Skipped -Because 'no modern 7-Zip with xz support is available'
@@ -122,27 +122,78 @@ Describe 'LLVMUP engine regressions' {
             Push-Location $src
             try {
                 & $sz.path a -ttar $tar 'pkg' -bd *> $null
+                $LASTEXITCODE | Should -Be 0
                 & $sz.path a -txz $xz $tar -bd *> $null
+                $LASTEXITCODE | Should -Be 0
             } finally { Pop-Location }
 
-            foreach ($strategy in @('stream', 'pipe', 'temp')) {
-                $env:LLVMUP_7Z_TAR_STRATEGY = $strategy
-                $dest = Join-Path $TestDrive "out-$strategy"
-                $r = Invoke-LlvmArchiveExtract -ArchivePath $xz -DestinationPath $dest -Extractor '7z'
-                $r.strategy | Should -Be $strategy
-                (Get-ChildItem -LiteralPath (Join-Path $dest 'bin') -File).Count | Should -Be 30
-                Get-Content -LiteralPath (Join-Path $dest 'with space\note.txt') | Should -Be 'hello'
-            }
-
+            $strategies = @('stream', 'temp')
+            if ($script:isWin) { $strategies += 'pipe' }
+            $hashes = @(Get-ChildItem -LiteralPath (Join-Path $src 'pkg/bin') -File | Sort-Object Name | Get-FileHash | ForEach-Object Hash)
             $bytes = [IO.File]::ReadAllBytes($xz)
             $mid = [int]($bytes.Length / 2)
             $bytes[$mid] = $bytes[$mid] -bxor 0xFF
             $bad = Join-Path $TestDrive 'bad.tar.xz'
             [IO.File]::WriteAllBytes($bad, $bytes)
+
+            foreach ($strategy in $strategies) {
+                $env:LLVMUP_7Z_TAR_STRATEGY = $strategy
+                $dest = Join-Path $TestDrive "out-$strategy"
+                $r = Invoke-LlvmArchiveExtract -ArchivePath $xz -DestinationPath $dest -Extractor '7z'
+                if ($strategy -eq 'stream' -and $script:isWin) {
+                    $r.strategy | Should -BeIn @('stream', 'pipe')
+                } else {
+                    $r.strategy | Should -Be $strategy
+                }
+                $files = @(Get-ChildItem -LiteralPath (Join-Path $dest 'bin') -File | Sort-Object Name)
+                $files.Count | Should -Be 30
+                ($files | Get-FileHash | ForEach-Object Hash) | Should -Be $hashes
+                Get-Content -LiteralPath (Join-Path $dest 'with space\note.txt') | Should -Be 'hello'
+
+                $badDest = Join-Path $TestDrive "out-bad-$strategy"
+                { Invoke-LlvmArchiveExtract -ArchivePath $bad -DestinationPath $badDest -Extractor '7z' } | Should -Throw
+                Test-Path -LiteralPath $badDest | Should -BeFalse
+                @(Get-ChildItem -LiteralPath $TestDrive -Directory -Filter "out-bad-$strategy.*").Count | Should -Be 0
+            }
+        }
+
+        It 'rejects the cmd.exe pipe strategy outside Windows' -Skip:($env:OS -eq 'Windows_NT') {
+            $env:LLVMUP_7Z_TAR_STRATEGY = 'pipe'
+            $module = Get-Module Llvm-Extractor | Select-Object -First 1
+            { & $module { Get-Llvm7ZipTarStrategy } } | Should -Throw '*requires Windows cmd.exe*'
+        }
+
+        It 'falls back to the cmd.exe pipe only after an empty early exit' -Skip:($env:OS -ne 'Windows_NT') {
             $env:LLVMUP_7Z_TAR_STRATEGY = 'stream'
-            { Invoke-LlvmArchiveExtract -ArchivePath $bad -DestinationPath (Join-Path $TestDrive 'out-bad') -Extractor '7z' } | Should -Throw
-            Test-Path -LiteralPath (Join-Path $TestDrive 'out-bad') | Should -BeFalse
-            @(Get-ChildItem -LiteralPath $TestDrive -Directory -Filter 'out-bad.*').Count | Should -Be 0
+            Mock Get-LlvmAvailableExtractors -ModuleName Llvm-Extractor {
+                @{ sevenzip = @{ available = $true; modern = $true; supports_xz = $true; path = '7z.exe' } }
+            }
+            Mock Invoke-Llvm7ZipStreamTar -ModuleName Llvm-Extractor {
+                if ($ArchivePath -like '*partial.tar.xz') {
+                    Set-Content -LiteralPath (Join-Path $OutputDir 'partial.txt') -Value 'partial'
+                } elseif ($ArchivePath -like '*corrupt.tar.xz') {
+                    throw 'Archive integrity check failed'
+                }
+                throw 'LLVMUP_7Z_TAR_SIDE_DID_NOT_READ'
+            }
+            Mock Invoke-Llvm7ZipCmdPipe -ModuleName Llvm-Extractor {
+                Set-Content -LiteralPath (Join-Path $OutputDir 'complete.txt') -Value 'complete'
+            }
+
+            foreach ($scenario in @('empty', 'partial', 'corrupt')) {
+                $archive = Join-Path $TestDrive "$scenario.tar.xz"
+                $dest = Join-Path $TestDrive "fallback-$scenario"
+                Set-Content -LiteralPath $archive -Value 'fixture'
+                if ($scenario -eq 'empty') {
+                    (Invoke-LlvmArchiveExtract -ArchivePath $archive -DestinationPath $dest -Extractor 7z).strategy | Should -Be 'pipe'
+                    Get-Content -LiteralPath (Join-Path $dest 'complete.txt') | Should -Be 'complete'
+                } else {
+                    $errorPattern = if ($scenario -eq 'partial') { '*TAR_SIDE_DID_NOT_READ*' } else { '*integrity check failed*' }
+                    { Invoke-LlvmArchiveExtract -ArchivePath $archive -DestinationPath $dest -Extractor 7z } | Should -Throw $errorPattern
+                    Test-Path -LiteralPath $dest | Should -BeFalse
+                }
+            }
+            Should -Invoke Invoke-Llvm7ZipCmdPipe -ModuleName Llvm-Extractor -Times 1 -Exactly
         }
 
         It 'rejects ZIP entries that escape the destination before writing anything' {
@@ -259,7 +310,16 @@ Describe 'LLVMUP engine regressions' {
         }
 
         It 'fails on a digest that differs from the lockfile without downloading' {
-            { Invoke-LlvmInstallPrebuiltFromRecipe -Provider winlibs -ReleaseTag $script:entry.release -Platform windows -Arch x64 -LockedEntry $script:entry -Quiet -MaxRetries 1 } | Should -Throw '*Locked digest*'
+            if ($script:isWin) {
+                { Invoke-LlvmInstallPrebuiltFromRecipe -Provider winlibs -ReleaseTag $script:entry.release -Platform windows -Arch x64 -LockedEntry $script:entry -Quiet -MaxRetries 1 } | Should -Throw '*Locked digest*'
+            } else {
+                $asset = @{ name = 'LLVM-23.1.6-Linux-X64.tar.xz'; browser_download_url = 'https://example.invalid/llvm.tar.xz'; size = 1; digest = 'sha256:' + ('a' * 64) }
+                $releases = @(@{ tag_name = 'llvmorg-23.1.6'; prerelease = $false; draft = $false; assets = @($asset) })
+                $env:LLVMUP_OFFICIAL_RELEASES_FILE = Join-Path $TestDrive 'official-lock.json'
+                ConvertTo-Json -InputObject $releases -Depth 6 | Set-Content -LiteralPath $env:LLVMUP_OFFICIAL_RELEASES_FILE -Encoding UTF8
+                $entry = @{ provider = 'official'; release = 'llvmorg-23.1.6'; verify_policy = 'warn'; asset = @{ name = $asset.name; digest = 'sha256:' + ('b' * 64) } }
+                { Invoke-LlvmInstallPrebuiltFromRecipe -Provider official -ReleaseTag $entry.release -Platform linux -Arch x64 -LockedEntry $entry -Quiet -MaxRetries 1 } | Should -Throw '*Locked digest*'
+            }
             Test-Path -LiteralPath $env:LLVMUP_CACHE_DIR | Should -BeFalse
             @(Get-ChildItem -LiteralPath $env:LLVM_TOOLCHAINS_DIR -ErrorAction SilentlyContinue).Count | Should -Be 0
         }

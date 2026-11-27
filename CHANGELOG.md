@@ -57,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   available for callers of the standalone PowerShell installer.
 
 ### Fixed
+- PowerShell reports that the 7-Zip `pipe` strategy requires Windows when explicitly selected on Unix.
 - Linux release packages built from Windows checkouts use LF line endings.
 - Windows uninstall removes its profile block when the recorded module path uses
   an equivalent spelling, including a Windows short path.

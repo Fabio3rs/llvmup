@@ -4,24 +4,17 @@
 load '../fixtures/test_helpers.bash'
 
 setup() {
-    export LLVM_TEST_HOME="$BATS_TMPDIR/llvm_test_$$"
-    export HOME="$LLVM_TEST_HOME"
-    mkdir -p "$LLVM_TEST_HOME/.llvm/toolchains"
-    mkdir -p "$LLVM_TEST_HOME/.llvm/sources"
+    export HOME="$BATS_TEST_TMPDIR/home"
+    mkdir -p "$HOME/.llvm/toolchains" "$HOME/.llvm/sources"
 
     # Store original directory - go to project root
     cd "$BATS_TEST_DIRNAME/../.."
     export ORIGINAL_DIR="$PWD"
-    cd "$BATS_TMPDIR"
+    cd "$BATS_TEST_TMPDIR"
 
     # Enable test mode
     export LLVM_TEST_MODE=1
     export LLVM_TEST_VERSION="llvmorg-18.1.8"
-}
-
-teardown() {
-    cd "$ORIGINAL_DIR"
-    rm -rf "$LLVM_TEST_HOME" 2>/dev/null || true
 }
 
 @test "llvm-build shows enhanced help with new options" {
