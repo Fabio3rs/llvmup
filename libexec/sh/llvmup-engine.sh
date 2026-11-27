@@ -606,22 +606,27 @@ eng_download() {
         http://*|https://*) ;;
         *) eng_die "Refusing unsupported download scheme: $url" ;;
     esac
-    mkdir -p -- "$(dirname "$dest")" || return 1
+    mkdir -p -- "$(dirname "$dest")" || eng_die "Cannot create the download directory $(dirname "$dest"). Check its permissions and the free disk space."
     local part
-    part="$(mktemp "$dest.part.XXXXXXXX")" || return 1
-    local ok=1
+    part="$(mktemp "$dest.part.XXXXXXXX")" || eng_die "Cannot write to $(dirname "$dest"). Check its permissions and the free disk space."
+    local ok=1 rc=0
     if command -v curl >/dev/null 2>&1; then
         local progress=(-sS)
         [ "$ENGINE_QUIET" = 1 ] || [ ! -t 2 ] || progress=(-#)
-        curl -fL --proto-redir '=http,https' --retry 3 --retry-delay 2 --connect-timeout 30 "${progress[@]}" -H 'User-Agent: llvmup' -o "$part" "$url" && ok=0
+        curl -fL --proto-redir '=http,https' --retry 3 --retry-delay 2 --connect-timeout 30 "${progress[@]}" -H 'User-Agent: llvmup' -o "$part" "$url" && ok=0 || rc=$?
     elif command -v wget >/dev/null 2>&1; then
-        wget -q --tries=3 --timeout=60 -O "$part" "$url" && ok=0
+        wget -q --tries=3 --timeout=60 -O "$part" "$url" && ok=0 || rc=$?
     else
         eng_die "curl or wget is required"
     fi
     if [ "$ok" -ne 0 ] || [ ! -s "$part" ]; then
         rm -f "$part"
-        eng_die "Download failed: $url"
+        case "$rc" in
+            23) eng_die "Download failed: could not write $(basename "$dest") to $(dirname "$dest"). The disk may be full or the directory is not writable." ;;
+            22) eng_die "Download failed: the server rejected the request for $url (HTTP error). The asset may have been removed." ;;
+            6|7|28|35|56) eng_die "Download failed: could not reach the server for $url. Check your network connection or proxy settings, then try again." ;;
+            *) eng_die "Download failed: $url" ;;
+        esac
     fi
     if [ -n "$expected" ]; then
         local actual

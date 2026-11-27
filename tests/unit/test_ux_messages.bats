@@ -278,3 +278,17 @@ STUB
     [[ "$output" == *"Active toolchain: cross-dev"* ]]
     [[ "$output" == *"Deactivated cross-dev"* ]]
 }
+
+@test "download failures explain a write error, an HTTP error or an unreachable server" {
+    mkdir -p "$TEST_HOME/bin"
+    sed -n '/^eng_err()/,/^eng_die()/p;/^eng_download()/,/^}/p' "$BATS_TEST_DIRNAME/../../libexec/sh/llvmup-engine.sh" > "$TEST_HOME/dl.sh"
+    try_download() {
+        printf '#!/bin/sh\nexit %s\n' "$1" > "$TEST_HOME/bin/curl"
+        chmod +x "$TEST_HOME/bin/curl"
+        run env PATH="$TEST_HOME/bin:$PATH" bash -c "ENGINE_QUIET=1; source '$TEST_HOME/dl.sh'; eng_sha256() { :; }; (eng_download https://example.invalid/a.zip '$TEST_HOME/out/a.zip')"
+        [ "$status" -ne 0 ]
+    }
+    try_download 6;  [[ "$output" == *"could not reach the server"* ]]
+    try_download 23; [[ "$output" == *"disk may be full"* ]]
+    try_download 22; [[ "$output" == *"server rejected the request"* ]]
+}

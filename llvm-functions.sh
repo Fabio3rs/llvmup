@@ -973,21 +973,20 @@ llvmup() {
 # Function to activate an LLVM version
 llvm-activate() {
     if [ $# -eq 0 ]; then
-        echo "╭─ LLVM Activation Help ─────────────────────────────────────╮"
-        echo "│ Usage: llvm-activate <version>                            │"
-        echo "│                                                            │"
-        echo "│ Examples:                                                  │"
-        echo "│   llvm-activate 18.1.8     # Activate specific version    │"
-        echo "│   llvm-activate 19.1.0     # Activate another version     │"
-        echo "│                                                            │"
-        echo "│ What this does:                                            │"
-        echo "│ • Sets PATH to use LLVM tools (clang, clang++, etc.)      │"
-        echo "│ • Updates CC, CXX, and LD environment variables           │"
-        echo "│ • Modifies shell prompt to show active LLVM version       │"
-        echo "│                                                            │"
-        echo "│ To deactivate: llvm-deactivate                            │"
-        echo "│ To check status: llvm-status                              │"
-        echo "╰────────────────────────────────────────────────────────────╯"
+        cat <<'EOF'
+Usage: llvm-activate <version>
+
+Select an installed toolchain in this terminal only. 'llvmup use <toolchain>' is the
+current equivalent and also supports --compiler and --target.
+
+Examples:
+  llvm-activate 18.1.8
+  llvm-activate 19.1.0
+
+What it changes in this shell: PATH, CC, CXX, LD and the prompt.
+To restore the previous environment: llvm-deactivate
+To see the current selection: llvm-status
+EOF
         echo ""
         echo "Installed versions:"
         llvm-list
@@ -1065,20 +1064,17 @@ llvm-deactivate() {
 # Function to activate LLVM for VSCode
 llvm-vscode-activate() {
     if [ $# -eq 0 ]; then
-        echo "╭─ LLVM VSCode Integration Help ─────────────────────────────╮"
-        echo "│ Usage: llvm-vscode-activate <version>                     │"
-        echo "│                                                            │"
-        echo "│ Examples:                                                  │"
-        echo "│   llvm-vscode-activate 18.1.8  # Setup LLVM for VSCode    │"
-        echo "│                                                            │"
-        echo "│ What this does:                                            │"
-        echo "│ • Updates .vscode/settings.json with LLVM paths           │"
-        echo "│ • Configures clangd language server                       │"
-        echo "│ • Sets up CMake integration with LLVM                     │"
-        echo "│ • Configures LLDB debugger paths                          │"
-        echo "│                                                            │"
-        echo "│ Note: Must be run from your VSCode project root!          │"
-        echo "╰────────────────────────────────────────────────────────────╯"
+        cat <<'EOF'
+Usage: llvm-vscode-activate <version>
+
+Configure VS Code to use an installed toolchain. Run it from your project root.
+
+Example:
+  llvm-vscode-activate 18.1.8
+
+It updates .vscode/settings.json in the current directory (clangd, CMake and
+LLDB paths). No toolchain files are modified.
+EOF
         echo ""
         echo "Installed versions:"
         llvm-list
