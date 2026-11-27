@@ -363,3 +363,28 @@ EOF
     [[ "$output" == *"Using cached archive"* ]]
     [[ "$output" != *"Downloading"* ]]
 }
+
+@test "a full disk during extraction is named as the cause without a flood of tar lines" {
+    create_download_fixture
+    export LLVMUP_SKIP_VERIFY=1
+    mkdir -p "$BATS_TMPDIR/fulldisk_$$/bin"
+    real_tar="$(command -v tar)"
+    cat > "$BATS_TMPDIR/fulldisk_$$/bin/tar" <<STUB
+#!/bin/sh
+case " \$* " in
+    *" -xf "*)
+        i=0; while [ \$i -lt 40 ]; do echo "tar: some/file\$i.h: Cannot write: No space left on device" >&2; i=\$((i + 1)); done
+        exit 2 ;;
+esac
+exec "$real_tar" "\$@"
+STUB
+    chmod +x "$BATS_TMPDIR/fulldisk_$$/bin/tar"
+
+    run env PATH="$BATS_TMPDIR/fulldisk_$$/bin:$PATH" "$BATS_TEST_DIRNAME/../../llvm-prebuilt" --name nospace "20.1.8"
+    rm -rf "$BATS_TMPDIR/fulldisk_$$"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"no space left on the device"* ]]
+    [[ "$output" == *"Free some disk space"* ]]
+    [ "$(grep -c '^tar:' <<<"$output")" -eq 0 ]
+    [ ! -d "$LLVM_TOOLCHAINS_DIR/nospace" ]
+}

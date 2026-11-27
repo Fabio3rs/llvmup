@@ -412,3 +412,13 @@ STUB
     run bash -c "'$BATS_TEST_DIRNAME/../../llvmup-doctor.sh' --json 2>/dev/null"
     [ "$(jq '[.checks[] | select(.id == "installation.file")] | length' <<<"$output")" -gt 3 ]
 }
+
+@test "status --explain says when the project configuration requests no toolchain" {
+    fake_toolchain official-dev official 23.1.6
+    ln -s "$LLVM_HOME/toolchains/official-dev" "$LLVM_HOME/default"
+    printf '[project]\nauto_activate = false\n' > "$TEST_HOME/.llvmup-config"
+    run "$LLVMUP_SCRIPT" status --explain
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"does not request a toolchain"* ]]
+    [[ "$output" == *"Project config"*"not set"* ]]
+}

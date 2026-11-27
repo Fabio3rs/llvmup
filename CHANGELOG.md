@@ -65,6 +65,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - PowerShell `use` confirms with "Using <toolchain> (<provider>, compiler <C>[, target <T>])." like the
   Bash function, without changing its boolean result. Verified with real WinLibs, LLVM-MinGW and
   `update` runs.
+- A full disk during extraction is named as the cause (instead of one `tar:` line per file followed by
+  a bare exit code); other extractor failures show their first lines once. `status --explain` says when
+  the project configuration exists but requests no toolchain. Verified with a real official LLVM
+  install on Linux and Windows.
 - Directory auto-activation (Bash/Zsh) announces a change with one line naming the toolchain and its
   source ("Using X (from .llvmup-config: ...)") and stays silent when nothing changes; a failed
   auto-activation now includes the reason instead of a bare failure.

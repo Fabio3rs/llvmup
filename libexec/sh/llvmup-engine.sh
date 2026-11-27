@@ -890,7 +890,10 @@ eng_extract() {
         esac
         [ "$ext" != none ] || { rm -rf "$raw"; eng_die "No extractor available for .$fmt archives on this host."; }
     fi
-    local rc=0
+    local rc=0 errlog
+    # Extractors can print one line per file when something goes wrong; keep that out of the way and
+    # report the cause once.
+    errlog="$(mktemp "${TMPDIR:-/tmp}/llvmup-extract.XXXXXX" 2>/dev/null)" || errlog=/dev/null
     case "$ext" in
         tar)
             case "$fmt" in
@@ -900,27 +903,39 @@ eng_extract() {
             esac
             if [ "$fmt" = tar.zst ] && [ "$(eng_tar_flavor)" = gnu ]; then
                 # LLVM .tar.zst assets use a 1 GiB window (windowLog 30): zstd refuses it without --long.
-                tar -I 'zstd -d --long=31' -xf "$arc" -C "$raw" --no-same-owner || rc=$?
+                tar -I 'zstd -d --long=31' -xf "$arc" -C "$raw" --no-same-owner 2>>"$errlog" || rc=$?
             else
-                tar -xf "$arc" -C "$raw" --no-same-owner || rc=$?
+                tar -xf "$arc" -C "$raw" --no-same-owner 2>>"$errlog" || rc=$?
             fi ;;
         zip)
             [ "$fmt" = zip ] || { rm -rf "$raw"; eng_die "Extractor 'zip' only supports .zip archives"; }
             command -v unzip >/dev/null 2>&1 || { rm -rf "$raw"; eng_die "Requested extractor 'zip' (unzip) is not available."; }
-            unzip -q "$arc" -d "$raw" || rc=$? ;;
+            unzip -q "$arc" -d "$raw" 2>>"$errlog" || rc=$? ;;
         7z)
             [ -n "$sz" ] || { rm -rf "$raw"; eng_die "Requested extractor '7z' is not available."; }
             if [ "$fmt" = tar.xz ] || [ "$fmt" = tar.gz ]; then
-                "$sz" x -so -bd "$arc" | "$sz" x -si -ttar -bd -bso0 -y "-o$raw" || rc=$?
+                "$sz" x -so -bd "$arc" 2>>"$errlog" | "$sz" x -si -ttar -bd -bso0 -y "-o$raw" 2>>"$errlog" || rc=$?
             else
-                "$sz" x -bd -bso0 -y "-o$raw" "$arc" || rc=$?
+                "$sz" x -bd -bso0 -y "-o$raw" "$arc" 2>>"$errlog" || rc=$?
             fi ;;
         python)
             eng_require python3 'archive extraction'
-            python3 "$ENGINE_ROOT/libexec/llvmup-extract.py" extract "$arc" "$raw" || rc=$? ;;
+            python3 "$ENGINE_ROOT/libexec/llvmup-extract.py" extract "$arc" "$raw" 2>>"$errlog" || rc=$? ;;
         *) rm -rf "$raw"; eng_die "Invalid extractor '$ext'. Expected auto, 7z, tar, zip, or python." ;;
     esac
-    if [ "$rc" -ne 0 ]; then rm -rf "$raw"; eng_die "Extraction failed ($ext, exit $rc): $arc"; fi
+    if [ "$rc" -ne 0 ]; then
+        rm -rf "$raw"
+        if grep -qi 'no space left on device' "$errlog" 2>/dev/null; then
+            [ "$errlog" = /dev/null ] || rm -f "$errlog"
+            eng_die "Extraction failed: there is no space left on the device holding $(dirname "$dest"). Free some disk space and try again (a full LLVM toolchain needs several GB)."
+        fi
+        local detail=""
+        [ "$errlog" = /dev/null ] || detail="$(head -n 3 "$errlog" 2>/dev/null)"
+        [ "$errlog" = /dev/null ] || rm -f "$errlog"
+        eng_die "Extraction failed ($ext, exit $rc): $arc${detail:+
+$detail}"
+    fi
+    [ "$errlog" = /dev/null ] || rm -f "$errlog"
     if [ -z "$(ls -A "$raw")" ]; then rm -rf "$raw"; eng_die "Extraction produced no files: $arc"; fi
     eng_check_tree "$raw" || { rm -rf "$raw"; exit 1; }
 
@@ -1752,7 +1767,13 @@ eng_explain_selection() {
         if [ "$tier_origin" = active-session ] && [ "$state" = "not set" ]; then continue; fi
         printf '  %-19s %-24s %s\n' "${labels[$i]}" "${value:--}" "$state"
     done
-    [ -z "$cfg" ] || printf '\nProject configuration: %s\n' "$cfg"
+    if [ -n "$cfg" ]; then
+        if [ -n "${values[1]}" ]; then
+            printf '\nProject configuration: %s\n' "$cfg"
+        else
+            printf '\nProject configuration: %s (it does not request a toolchain)\n' "$cfg"
+        fi
+    fi
     if [ -n "${LLVMUP_SESSION_OVERRIDE:-}" ]; then
         printf "\nRun 'llvmup use --auto' to restore automatic selection.\n"
     fi
