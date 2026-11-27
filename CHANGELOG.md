@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with the previous value (Zsh registers `chpwd` only), looks for `.llvmup-config` with shell built-ins
   and loads the core only inside a project or to undo an auto-activation. A `.llvmup-config` edited in
   the current directory is picked up on the next directory change or with `llvmup use --auto`.
+- `LLVMUP_WATCH_CONFIG=1` (opt-in, Bash and Zsh) makes the hook also re-evaluate when the project's
+  `.llvmup-config` is newer than the last evaluation, using a built-in file-time test: no watcher
+  process, no `inotify`/`fswatch`, any platform. It costs nothing when the file did not change.
 - Profiles keep sourcing `llvm-functions.sh`; installers and the uninstaller handle `llvmup-core.sh`.
 
 ### Changed (user experience)

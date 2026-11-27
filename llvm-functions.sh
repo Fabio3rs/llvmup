@@ -85,24 +85,39 @@ unset _llvmup_fn _llvmup_names
 # it looks for .llvmup-config with shell built-ins only (no subshell, no dirname) and loads the
 # core only inside a project, or to undo an earlier auto-activation. Editing .llvmup-config in
 # the current directory is therefore picked up on the next directory change, or explicitly with
-# 'llvmup use --auto'.
+# 'llvmup use --auto'. With LLVMUP_WATCH_CONFIG=1 the hook also re-evaluates when the project's
+# .llvmup-config is newer than the last evaluation (a built-in file-time test; no watcher process).
 # -----------------------------------------------------------------------------
 __llvmup_autoactivate_hook() {
     if [ -n "${LLVMUP_DISABLE_AUTOACTIVATE:-}" ] || [ -n "${LLVM_TEST_MODE:-}" ]; then
         return 0
     fi
     if [ "${_LLVMUP_HOOK_PWD:-}" = "$PWD" ]; then
-        return 0
+        if [ "${LLVMUP_WATCH_CONFIG:-0}" = 1 ] && [ -n "${_LLVMUP_HOOK_CFG:-}" ] \
+            && [ "$_LLVMUP_HOOK_CFG" -nt "${_LLVMUP_HOOK_STAMP:-}" ]; then
+            :
+        else
+            return 0
+        fi
     fi
     _LLVMUP_HOOK_PWD="$PWD"
-    if [ "${_LLVMUP_AUTOACTIVATE_ACTIVE:-0}" != 1 ]; then
-        local dir="$PWD"
-        while :; do
-            [ -f "$dir/.llvmup-config" ] && break
-            if [ "$dir" = / ]; then return 0; fi
-            dir="${dir%/*}"
-            [ -n "$dir" ] || dir=/
-        done
+    _LLVMUP_HOOK_CFG=""
+    local dir="$PWD"
+    while :; do
+        if [ -f "$dir/.llvmup-config" ]; then _LLVMUP_HOOK_CFG="$dir/.llvmup-config"; break; fi
+        if [ "$dir" = / ]; then break; fi
+        dir="${dir%/*}"
+        [ -n "$dir" ] || dir=/
+    done
+    if [ -z "$_LLVMUP_HOOK_CFG" ] && [ "${_LLVMUP_AUTOACTIVATE_ACTIVE:-0}" != 1 ]; then
+        return 0
+    fi
+    if [ "${LLVMUP_WATCH_CONFIG:-0}" = 1 ] && [ -n "$_LLVMUP_HOOK_CFG" ]; then
+        # The reference time for "changed since the last evaluation".
+        if [ -z "${_LLVMUP_HOOK_STAMP:-}" ] || [ ! -f "$_LLVMUP_HOOK_STAMP" ]; then
+            _LLVMUP_HOOK_STAMP="$(mktemp "${TMPDIR:-/tmp}/llvmup-watch.XXXXXX" 2>/dev/null)" || _LLVMUP_HOOK_STAMP=""
+        fi
+        [ -z "$_LLVMUP_HOOK_STAMP" ] || : > "$_LLVMUP_HOOK_STAMP"
     fi
     llvm-autoactivate 2>/dev/null || true
 }

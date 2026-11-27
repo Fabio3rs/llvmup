@@ -152,3 +152,37 @@ teardown() {
     [[ "$output" == *"hook=__llvmup_autoactivate_hook"* ]]
     [[ "$output" == *"pre=none"* ]]
 }
+
+@test "LLVMUP_WATCH_CONFIG=1 re-evaluates when the project config changed; off by default" {
+    unset LLVMUP_DISABLE_AUTOACTIVATE
+    printf '[project]\nauto_activate = false\n' > "$TEST_HOME/proj/.llvmup-config"
+    # Make the last evaluation "30 seconds ago", then edit the file now.
+    script="cd '$TEST_HOME/proj'; source '$LOADER'
+        llvm-autoactivate() { echo CALLED; }
+        __llvmup_autoactivate_hook; __llvmup_autoactivate_hook
+        [ -z \"\${_LLVMUP_HOOK_STAMP:-}\" ] || touch -d 'now - 30 seconds' \"\$_LLVMUP_HOOK_STAMP\"
+        touch '$TEST_HOME/proj/.llvmup-config'
+        __llvmup_autoactivate_hook; __llvmup_autoactivate_hook"
+
+    # Default: the same directory is never re-evaluated, even if the file changed.
+    run bash -c "$script"
+    [ "$status" -eq 0 ]
+    [ "$(grep -c CALLED <<<"$output")" -eq 0 ]
+
+    # Opt in: quiet while nothing changed, one re-evaluation after the edit, quiet again after it.
+    run env LLVMUP_WATCH_CONFIG=1 bash -c "$script"
+    [ "$status" -eq 0 ]
+    [ "$(grep -c CALLED <<<"$output")" -eq 1 ]
+}
+
+@test "the watch option does not slow the prompt when nothing changed" {
+    unset LLVMUP_DISABLE_AUTOACTIVATE
+    printf '[project]\nauto_activate = false\n' > "$TEST_HOME/proj/.llvmup-config"
+    run env LLVMUP_WATCH_CONFIG=1 bash -c "cd '$TEST_HOME/proj'; source '$LOADER'
+        llvm-autoactivate() { :; }
+        __llvmup_autoactivate_hook
+        s=\$(date +%s%N); for i in \$(seq 100); do __llvmup_autoactivate_hook; done
+        echo \$(( (\$(date +%s%N) - s) / 100000 ))"
+    [ "$status" -eq 0 ]
+    [ "${lines[-1]}" -lt 5000 ]
+}

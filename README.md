@@ -117,6 +117,9 @@ llvmup remove <toolchain> | disk-usage | doctor
 llvmup help [command] | llvmup <command> --help   Overview, or usage and examples for one command
 ```
 
+Directory auto-activation reacts to directory changes. Set `LLVMUP_WATCH_CONFIG=1` to also pick up edits to
+the current project's `.llvmup-config` at the next prompt.
+
 Help never touches the network or your installations. Errors name the real cause (for example an
 ambiguous selector, a compiler the toolchain does not ship, or a missing installation) and, when it
 helps, the command that fixes it. `--quiet` hides progress, never errors or warnings.
