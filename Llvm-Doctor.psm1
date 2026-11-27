@@ -14,7 +14,7 @@ function Test-DoctorCompiler {
 }
 function Get-DoctorInstallation {
     param($Checks, $Root, $Toolchains, $LlvmHome)
-    $files = @('Llvm-Functions.psm1','Llvm-Functions-Core.psm1','Get-UserHome.psm1','Llvm-Completion.psm1','Activate-Llvm.ps1','Deactivate-Llvm.ps1','Install-Llvm.ps1','Download-Llvm.ps1','Llvm-Config.ps1','Llvm-Default.ps1','Llvm-Doctor.psm1','Llvm-Doctor.ps1','Llvm-Doctor-Deep.ps1')
+    $files = @('Llvm-Functions.psm1','Llvm-Functions.Format.ps1xml','Llvm-Functions-Core.psm1','Get-UserHome.psm1','Llvm-Completion.psm1','Activate-Llvm.ps1','Deactivate-Llvm.ps1','Install-Llvm.ps1','Download-Llvm.ps1','Llvm-Config.ps1','Llvm-Default.ps1','Llvm-Doctor.psm1','Llvm-Doctor.ps1','Llvm-Doctor-Deep.ps1')
     $manifest = Join-Path $Root 'llvmup-files.tsv'
     if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) { $manifest = Join-Path $Root 'packaging/runtime-files.tsv' }
     if (Test-Path -LiteralPath $manifest -PathType Leaf) {

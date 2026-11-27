@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Console presentation of 'llvmup list' for PowerShell. The command still returns the same objects
+  (use Select-Object, ConvertTo-Json or -Json for data); this only chooses how they are shown by default.
+  Marker: * active, + default.
+-->
+<Configuration>
+  <ViewDefinitions>
+    <View>
+      <Name>Llvmup.Toolchain.Table</Name>
+      <ViewSelectedBy>
+        <TypeName>Llvmup.Toolchain</TypeName>
+      </ViewSelectedBy>
+      <TableControl>
+        <AutoSize />
+        <TableHeaders>
+          <TableColumnHeader><Label> </Label><Width>1</Width></TableColumnHeader>
+          <TableColumnHeader><Label>NAME</Label></TableColumnHeader>
+          <TableColumnHeader><Label>PROVIDER</Label></TableColumnHeader>
+          <TableColumnHeader><Label>LLVM</Label></TableColumnHeader>
+          <TableColumnHeader><Label>GCC</Label></TableColumnHeader>
+          <TableColumnHeader><Label>CRT</Label></TableColumnHeader>
+          <TableColumnHeader><Label>TYPE</Label></TableColumnHeader>
+        </TableHeaders>
+        <TableRowEntries>
+          <TableRowEntry>
+            <TableColumnItems>
+              <TableColumnItem>
+                <ScriptBlock>if ($_.active) { '*' } elseif ($_.default) { '+' } else { ' ' }</ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <PropertyName>name</PropertyName>
+              </TableColumnItem>
+              <TableColumnItem>
+                <PropertyName>provider</PropertyName>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>if ($_.llvm_version) { $_.llvm_version } else { $_.version }</ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>if ($_.gcc_version) { $_.gcc_version } else { '-' }</ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <ScriptBlock>if ($_.crt -and $_.crt -notin @('system', 'unknown')) { $_.crt } else { '-' }</ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <PropertyName>type</PropertyName>
+              </TableColumnItem>
+            </TableColumnItems>
+          </TableRowEntry>
+        </TableRowEntries>
+      </TableControl>
+    </View>
+  </ViewDefinitions>
+</Configuration>

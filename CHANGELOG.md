@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `LLVMUP_WATCH_CONFIG=1` (opt-in, Bash and Zsh) makes the hook also re-evaluate when the project's
   `.llvmup-config` is newer than the last evaluation, using a built-in file-time test: no watcher
   process, no `inotify`/`fswatch`, any platform. It costs nothing when the file did not change.
+- PowerShell `llvmup list` is shown as a table (marker `*` active / `+` default, name, provider, LLVM,
+  GCC, CRT, type) through a format view, `Llvm-Functions.Format.ps1xml`. The command returns exactly the
+  same objects and `--json` is unchanged, so scripts are not affected; only the default console
+  presentation changes (it was a long vertical list per toolchain).
 - Profiles keep sourcing `llvm-functions.sh`; installers and the uninstaller handle `llvmup-core.sh`.
 
 ### Changed (user experience)

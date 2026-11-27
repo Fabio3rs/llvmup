@@ -75,6 +75,30 @@ Describe 'PowerShell llvmup lifecycle facade' {
         $result | Should -Contain $true
         ($all | Where-Object { $_ -isnot [bool] } | Out-String) | Should -Match 'Using ux-tc \(llvm-mingw, compiler clang'
         Deactivate-Llvm *>&1 | Out-Null
+        Remove-Item -LiteralPath $root -Recurse -Force
+    }
+
+    It 'presents list as a table while returning the same objects' {
+        $root = Join-Path $env:LLVM_TOOLCHAINS_DIR 'fmt-tc'
+        $null = New-Item -ItemType Directory -Path (Join-Path $root 'bin') -Force
+        @{ schema = 1; id = 'fmt-tc'; install_name = 'fmt-tc'; origin = 'managed'; provider = 'winlibs'; provider_release = '1'
+           llvm_version = '23.1.6'; gcc_version = '16.2.0'; host = @{ os = 'windows'; arch = 'x64' }
+           variant = @{ crt = 'ucrt' }; capabilities = @{ compilers = @('gcc') }; root_path = $root } |
+            ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $root '.llvmup-toolchain.json')
+        $items = @(llvmup list)
+        $items.Count | Should -BeGreaterThan 0
+        $items[0].PSObject.TypeNames[0] | Should -Be 'Llvmup.Toolchain'
+        foreach ($prop in 'name', 'provider', 'llvm_version', 'gcc_version', 'crt', 'path', 'active', 'default') {
+            $items[0].PSObject.Properties.Name | Should -Contain $prop
+        }
+        Get-FormatData -TypeName 'Llvmup.Toolchain' | Should -Not -BeNullOrEmpty
+        $text = ($items | Out-String -Width 200)
+        $text | Should -Match 'NAME\s+PROVIDER\s+LLVM\s+GCC\s+CRT'
+        $text | Should -Match 'fmt-tc\s+winlibs\s+23\.1\.6\s+16\.2\.0\s+ucrt'
+        ((llvmup list --json) | ConvertFrom-Json).installed_versions[0].name | Should -Be 'fmt-tc'
+        { Import-Module (Join-Path $script:repoRoot 'Llvm-Functions.psm1') -Force -DisableNameChecking } | Should -Not -Throw
+        # The TestDrive is shared by the tests of this block; leave nothing behind.
+        Remove-Item -LiteralPath $root -Recurse -Force
     }
 
     It 'reports a single-line error whole, not as its first character' {

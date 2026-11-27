@@ -13,6 +13,12 @@ $modulePath = Join-Path $PSScriptRoot 'Get-UserHome.psm1'
 if (Test-Path $modulePath) { Import-Module $modulePath -Force } else { . "$PSScriptRoot\Get-UserHome.ps1" }
 $coreModulePath = Join-Path $PSScriptRoot 'Llvm-Functions-Core.psm1'
 if (Test-Path $coreModulePath) { Import-Module $coreModulePath -Force -DisableNameChecking }
+# Default console presentation of 'llvmup list' (the returned objects are unchanged). Optional: a missing
+# or rejected format file only means the default PowerShell formatting is used.
+$script:LlvmFormatFile = Join-Path $PSScriptRoot 'Llvm-Functions.Format.ps1xml'
+if ((Test-Path -LiteralPath $script:LlvmFormatFile) -and -not (Get-FormatData -TypeName 'Llvmup.Toolchain' -ErrorAction SilentlyContinue)) {
+    try { Update-FormatData -AppendPath $script:LlvmFormatFile -ErrorAction Stop } catch { }
+}
 $homeDir = Get-UserHome
 $script:LLVM_HOME = if ($env:LLVM_HOME) { $env:LLVM_HOME } elseif ($env:LLVM_CUSTOM_HOME) { $env:LLVM_CUSTOM_HOME } else { Join-Path $homeDir ".llvm" }
 $script:TOOLCHAINS_DIR = if ($env:LLVM_TOOLCHAINS_DIR) { $env:LLVM_TOOLCHAINS_DIR } elseif ($env:LLVM_CUSTOM_TOOLCHAINS_DIR) { $env:LLVM_CUSTOM_TOOLCHAINS_DIR } else { Join-Path $script:LLVM_HOME "toolchains" }
@@ -362,7 +368,7 @@ function Get-LlvmList {
     $versions = @($all | ForEach-Object {
         $verDisplay = if ($_.llvm_version) { $_.llvm_version } else { $_.install_name -replace '^(source-)?llvmorg-', '' }
         $typeVal = if ($_.origin -eq 'source' -or $_.install_name -like 'source-*') { 'source' } elseif ($_.origin -like 'external*') { 'external' } else { 'prebuilt' }
-        [pscustomobject][ordered]@{
+        $entry = [pscustomobject][ordered]@{
             name = $_.install_name
             id = $_.id
             provider = $_.provider
@@ -378,6 +384,8 @@ function Get-LlvmList {
             default = ($_.install_name -eq $default)
             path = $_.root_path
         }
+        $entry.PSObject.TypeNames.Insert(0, 'Llvmup.Toolchain')
+        $entry
     })
 
     if ($Json) {
