@@ -39,6 +39,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Destructive operations say what was kept: `alias remove` ("Toolchain preserved"), `toolchain unlink`
   ("External files preserved") and `remove`, which explains how to proceed when the toolchain is
   active or the user default.
+- Directory auto-activation (Bash/Zsh) announces a change with one line naming the toolchain and its
+  source ("Using X (from .llvmup-config: ...)") and stays silent when nothing changes; a failed
+  auto-activation now includes the reason instead of a bare failure.
 - Download failures distinguish an unwritable or full destination, an HTTP error and an unreachable
   server; `llvm-activate` and `llvm-vscode-activate` print plain-text usage.
 - Colors are disabled for `NO_COLOR`, `TERM=dumb` and redirected output.

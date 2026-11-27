@@ -367,3 +367,20 @@ STUB
     run bash -c "'$LLVMUP_SCRIPT' provides gcc 2>&1 >/dev/null"
     [[ "$output" == *"No installed toolchain provides 'gcc'"* ]]
 }
+
+@test "auto-activation announces a change once and stays silent when nothing changes" {
+    # The legacy activation resolves toolchains below $HOME/.llvm.
+    local tc="$HOME/.llvm/toolchains/llvmorg-18.1.8"
+    mkdir -p "$tc/bin" "$TEST_HOME/proj"
+    for t in clang clang++ clangd lld llvm-config; do printf '#!/bin/sh\n' > "$tc/bin/$t"; chmod +x "$tc/bin/$t"; done
+    printf '[version]\ndefault = "llvmorg-18.1.8"\n[project]\nauto_activate = true\n' > "$TEST_HOME/proj/.llvmup-config"
+    unset LLVMUP_DISABLE_AUTOACTIVATE LLVM_HOME
+    # Sourcing the functions runs the hook once; repeating it must not announce anything again.
+    run bash -c "cd '$TEST_HOME/proj'; source '$FUNCTIONS'; echo ---; llvm-autoactivate; llvm-autoactivate"
+    [ "$status" -eq 0 ]
+    first="${output%%---*}"; second="${output##*---}"
+    [[ "$first" == *"Using llvmorg-18.1.8"* ]]
+    [ "$(grep -c "Using llvmorg" <<<"$output")" -eq 1 ]
+    [[ "$first" == *".llvmup-config"* ]]
+    [ -z "$(tr -d '[:space:]' <<<"$second")" ]
+}

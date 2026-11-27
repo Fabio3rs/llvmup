@@ -3336,8 +3336,16 @@ llvm-autoactivate-enhanced() {
     export LLVMUP_AUTOACTIVATE_MODE=1
     export LLVMUP_AUTOACTIVATE_ROOT="${LLVMUP_AUTOACTIVATE_ROOT:-$PWD}"
 
-    if llvm-activate "$selected_version" >/dev/null 2>&1; then
-        log_success "Auto-activated LLVM $selected_version (expression: $version_expr)"
+    # Activation must run in this shell (it exports the environment); capture its output in a file.
+    local activate_log previous_active="${_ACTIVE_LLVM:-}"
+    activate_log="$(mktemp "${TMPDIR:-/tmp}/llvmup-auto.XXXXXX" 2>/dev/null)" || activate_log=/dev/null
+    if llvm-activate "$selected_version" >"$activate_log" 2>&1; then
+        [ "$activate_log" = /dev/null ] || rm -f "$activate_log"
+        # One short line, only when the automatic selection actually changed something (an unchanged
+        # selection returns earlier), so the prompt hook stays quiet otherwise.
+        if [ "$previous_active" != "$selected_version" ]; then
+            QUIET_SUCCESS=${BACKUP_QUIET_SUCCESS:-0} log_success "Using $selected_version (from .llvmup-config: $version_expr)."
+        fi
     else
         if [ -n "$previous_mode" ]; then
             export LLVMUP_AUTOACTIVATE_MODE="$previous_mode"
@@ -3349,7 +3357,9 @@ llvm-autoactivate-enhanced() {
         else
             unset LLVMUP_AUTOACTIVATE_ROOT
         fi
-        log_error "Failed to auto-activate LLVM $selected_version"
+        log_error "Failed to auto-activate $selected_version (from .llvmup-config: $version_expr)."
+        # Keep the cause: the activation reports exactly what is wrong with the installation.
+        [ "$activate_log" = /dev/null ] || { grep -i error "$activate_log" | head -2 >&2; rm -f "$activate_log"; }
         QUIET_SUCCESS=$backup_quiet_success
         return 1
     fi
