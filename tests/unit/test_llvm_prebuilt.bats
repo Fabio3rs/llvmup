@@ -349,3 +349,17 @@ EOF
     [[ "$output" == *"official LLVM requires clang and clang++"* ]]
     [ ! -e "$LLVM_TOOLCHAINS_DIR/llvmorg-20.1.8" ]
 }
+
+@test "llvm-prebuilt says when it downloads and when it reuses the cached archive" {
+    create_download_fixture
+    export LLVMUP_SKIP_VERIFY=1
+
+    run "$BATS_TEST_DIRNAME/../../llvm-prebuilt" --name first "20.1.8"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Downloading"* ]]
+
+    run "$BATS_TEST_DIRNAME/../../llvm-prebuilt" --name second "20.1.8"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Using cached archive"* ]]
+    [[ "$output" != *"Downloading"* ]]
+}

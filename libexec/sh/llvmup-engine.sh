@@ -660,6 +660,7 @@ eng_fetch_asset() {
         dest="$cache_dir/$name"
         if [ -f "$dest" ]; then
             if [ -z "$want" ] || [ "$(eng_sha256 "$dest")" = "$want" ]; then
+                eng_info "Using cached archive $name"
                 jq -cn --arg path "$dest" '{path:$path, cache_hit:1}'
                 return
             fi
@@ -668,7 +669,7 @@ eng_fetch_asset() {
     else
         dest="$work/$name"
     fi
-    eng_info "Downloading $name"
+    eng_info "Downloading $name (transient network errors are retried automatically)"
     eng_download "$url" "$dest" "$want" || return 1
     jq -cn --arg path "$dest" '{path:$path, cache_hit:0}'
 }
