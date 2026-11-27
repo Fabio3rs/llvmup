@@ -2768,49 +2768,30 @@ llvm-get-versions-simple() {
 # Get versions in detailed list format
 llvm-get-versions-list() {
     local toolchains_dir="$(llvm-get-toolchains-dir)"
-    local sources_dir="$(llvm-get-sources-dir)"
+    local dir version_name parsed_version type_info marker found=false
 
-    echo "╭─ Available LLVM Versions ──────────────────────────────────╮"
-
-    local found_versions=false
-
-    # Process toolchain versions
     for dir in "$toolchains_dir"/*; do
-        if [ -d "$dir" ]; then
-            found_versions=true
-            local version_name=$(basename "$dir")
-            local parsed_version=$(llvm-parse-version "$version_name" 2>/dev/null)
-            local is_active=""
-            local type_info=""
-
-            # Check if this version is active
-            if [ -n "$_ACTIVE_LLVM" ] && [ "$version_name" = "$_ACTIVE_LLVM" ]; then
-                is_active=" (ACTIVE)"
-            fi
-
-            # Determine version type
-            if echo "$version_name" | grep -q "^source-"; then
-                type_info=" [Source Build]"
-            else
-                type_info=" [Prebuilt]"
-            fi
-
-            # Format output
-            if [ -n "$parsed_version" ] && [ "$parsed_version" != "$version_name" ]; then
-                printf "│ %-20s (v%s)%s%s\n" "$version_name" "$parsed_version" "$type_info" "$is_active"
-            else
-                printf "│ %-35s%s%s\n" "$version_name" "$type_info" "$is_active"
-            fi
+        [ -d "$dir" ] || continue
+        found=true
+        version_name="$(basename "$dir")"
+        parsed_version="$(llvm-parse-version "$version_name" 2>/dev/null)"
+        marker=" "
+        [ -z "${_ACTIVE_LLVM:-}" ] || [ "$version_name" != "$_ACTIVE_LLVM" ] || marker="*"
+        if echo "$version_name" | grep -q "^source-"; then type_info="source build"; else type_info="prebuilt"; fi
+        if [ -n "$parsed_version" ] && [ "$parsed_version" != "$version_name" ]; then
+            printf '%s %-32s %-8s %s\n' "$marker" "$version_name" "v$parsed_version" "$type_info"
+        else
+            printf '%s %-32s %-8s %s\n' "$marker" "$version_name" "" "$type_info"
         fi
     done
 
-    if [ "$found_versions" = false ]; then
-        echo -e "│ ${RED}No LLVM versions found${NC}                                   │"
-        echo "│                                                            │"
-        echo -e "│ ${BLUE}Use 'llvmup' to install LLVM versions${NC}                   │"
+    if [ "$found" = false ]; then
+        echo "No toolchains installed."
+        echo "Try 'llvmup install latest'."
+        return 0
     fi
-
-    echo "╰────────────────────────────────────────────────────────────╯"
+    echo
+    echo "* active"
 }
 
 # Get versions in JSON format
