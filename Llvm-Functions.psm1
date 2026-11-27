@@ -807,7 +807,7 @@ function Invoke-LlvmUpUse {
     $manifest = Resolve-LlvmInstalledToolchain -Selector $selector -ToolchainsPath $toolchainsPath -HomePath $homePath -CrtFilter $crt
     if (-not $manifest) {
         if (-not $installMissing) {
-            throw "No installed toolchain matches '$selector'. Pass --install to download and install it."
+            throw (Format-LlvmNoMatchMessage -Selector $selector -OfferUseInstall)
         }
         $res = Invoke-LlvmInstallPrebuiltFromRecipe -Selector $selector -Crt $crt -Target $target -Compiler $compiler -ArchiveOnly -ToolchainsPath $toolchainsPath -HomePath $homePath
         $manifest = $res.manifest
@@ -879,7 +879,7 @@ function Invoke-LlvmUpRun {
         $manifest = Resolve-LlvmInstalledToolchain -Selector $selector -ToolchainsPath $toolchainsPath -HomePath $homePath -CrtFilter $crt
         if (-not $manifest) {
             if (-not $installMissing) {
-                throw "No installed toolchain matches '$selector'. Pass --install to install on demand."
+                throw (Format-LlvmNoMatchMessage -Selector $selector)
             }
             $res = Invoke-LlvmInstallPrebuiltFromRecipe -Selector $selector -Crt $crt -Target $target -Compiler $compiler -ArchiveOnly -ToolchainsPath $toolchainsPath -HomePath $homePath
             $manifest = $res.manifest
@@ -1395,7 +1395,7 @@ function llvmup {
                 } else {
                     Get-LlvmAllToolchains -ToolchainsPath $toolchainsPath -HomePath $homePath | Where-Object { $_.origin -eq 'managed' }
                 })
-                if ($sel -and -not $targets[0]) { throw "No installed toolchain matches '$sel'." }
+                if ($sel -and -not $targets[0]) { throw (Format-LlvmNoMatchMessage -Selector $sel) }
                 $ok = $true
                 foreach ($t in $targets) {
                     if (-not $t) { continue }

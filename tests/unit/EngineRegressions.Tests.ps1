@@ -273,7 +273,38 @@ Describe 'LLVMUP engine regressions' {
             ($warns2 -join ' ') | Should -Match 'origin is not authenticated'
 
             $r3 = Invoke-LlvmAssetVerify -ArtifactPath $artifact -Plan $plan -TempPath $TestDrive -Policy 'warn' -Quiet -WarningVariable warns3 -WarningAction SilentlyContinue
-            @($warns3).Count | Should -Be 0
+            # -Quiet silences progress, never a security-relevant verification warning.
+            @($warns3).Count | Should -BeGreaterThan 0
+            ($warns3 -join ' ') | Should -Match 'origin is not authenticated'
+        }
+
+        It 'explains an unavailable compiler or target with the real alternatives' {
+            $root = Join-Path $TestDrive 'ux-root'
+            $null = New-Item -ItemType Directory -Path (Join-Path $root 'bin') -Force
+            $m = [pscustomobject]@{
+                install_name = 'cross-dev'; provider = 'llvm-mingw'; root_path = $root
+                capabilities = [pscustomobject]@{ compilers = @('clang') }
+                supported_targets = @('x86_64-w64-mingw32'); default_target = 'x86_64-w64-mingw32'
+                tools = [pscustomobject]@{ clang = 'bin/clang' }; variant = [pscustomobject]@{ default_compiler = 'clang' }
+            }
+            $err = $null
+            try { Get-LlvmEnvironmentDelta -Manifest $m -Compiler gcc | Out-Null } catch { $err = $_.Exception.Message }
+            $err | Should -Match 'cross-dev does not provide GCC'
+            $err | Should -Match 'Available compilers'
+            $err | Should -Match 'llvmup provides gcc'
+            $err | Should -Not -Match 'llvmup install'
+            $err = $null
+            try { Get-LlvmEnvironmentDelta -Manifest $m -Target 'riscv64-none' | Out-Null } catch { $err = $_.Exception.Message }
+            $err | Should -Match 'does not support target riscv64-none'
+            $err | Should -Match 'x86_64-w64-mingw32'
+        }
+
+        It 'offers installation only for a missing toolchain and quotes selectors' {
+            $msg = Format-LlvmNoMatchMessage -Selector '>=23.1' -OfferUseInstall
+            $msg | Should -Match "No installed toolchain matches '>=23.1'"
+            $msg | Should -Match "llvmup install '>=23.1'"
+            $msg | Should -Match "llvmup use '>=23.1' --install"
+            $msg | Should -Match 'llvmup list'
         }
 
         It 'does not leave GH_TOKEN behind in the session' {

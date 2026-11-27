@@ -335,7 +335,8 @@ function Invoke-LlvmAssetVerify {
         if ($result.methods.Count -eq 0) {
             $result.methods = @(if ($result.checksum -eq 'valid') { 'checksum-only' } else { 'unverified' })
         }
-        if ($Policy -eq 'warn' -and -not $Quiet) {
+        # Verification warnings are security-relevant: -Quiet silences progress, never these.
+        if ($Policy -eq 'warn') {
             if ($result.checksum -eq 'valid') {
                 Write-Warning "Integrity of $assetName verified ($($result.checksum_algorithm)), but its origin is not authenticated (gpg=$($result.gpg), attestation=$($result.attestation))."
             } else {

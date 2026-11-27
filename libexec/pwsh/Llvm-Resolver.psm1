@@ -203,7 +203,7 @@ function Resolve-LlvmEffectiveSelection {
         $lookup = if ($split.has_provider_prefix) { $ExplicitSelector } elseif ($split.provider) { "$($split.provider)@$($split.expression)" } else { $split.expression }
         $resolvedManifest = Resolve-LlvmInstalledToolchain -Selector $lookup -ToolchainsPath $ToolchainsPath -HomePath $HomePath -ProviderFilter $split.provider -CrtFilter $effCrt
         if (-not $resolvedManifest) {
-            throw "No installed toolchain matches selector '$ExplicitSelector'."
+            throw (Format-LlvmNoMatchMessage -Selector $ExplicitSelector)
         }
         $origin = 'explicit'
         $reason = "Explicitly selected '$ExplicitSelector'"
