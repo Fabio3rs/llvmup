@@ -384,3 +384,20 @@ STUB
     [[ "$first" == *".llvmup-config"* ]]
     [ -z "$(tr -d '[:space:]' <<<"$second")" ]
 }
+
+@test "list fits long names, shows only the legend entries that apply, and works in zsh" {
+    fake_toolchain llvm-mingw-20261117-ucrt-linux-x64 llvm-mingw 23.1.6
+    fake_toolchain short official 23.1.1
+    run bash -c "source '$FUNCTIONS'; llvm-list"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"llvm-mingw-20261117-ucrt-linux-x64"* ]]
+    [[ "$output" == *"2 toolchains installed."* ]]
+    [[ "$output" != *"* active"* ]]
+    # every row has the provider column at the same offset
+    # (marker is blank here, so field 1 is the name and field 2 the provider)
+    awk 'NR > 1 && NF == 3 && $0 !~ /installed/ { n = index($0, $1) + length($1); print n + index(substr($0, n), $2) }' <<<"$output" | sort -u | wc -l | grep -qx 1
+    command -v zsh >/dev/null 2>&1 || skip "zsh is not installed"
+    run zsh -c "source '$FUNCTIONS'; llvm-list"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"short"* && "$output" == *"2 toolchains installed."* ]]
+}

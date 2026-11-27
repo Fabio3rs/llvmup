@@ -815,7 +815,9 @@ eng_verify() {
         if [ ${#methods[@]} -eq 0 ]; then
             if [ "$checksum" = valid ]; then methods=(checksum-only); else methods=(unverified); fi
         fi
-        if [ "$checksum" = valid ]; then
+        if [ "$checksum" = valid ] && [ "$ENGINE_QUIET" != 1 ]; then
+            : # The "Authenticity:" line of the installation summary says this once.
+        elif [ "$checksum" = valid ]; then
             if [ "$gpg" = unavailable ] || [ "$att" = unavailable ]; then
                 eng_warn "Integrity of $name verified ($algo), but its origin is not authenticated: a signature or attestation exists, but the verification tool or key data was unavailable (gpg=$gpg, attestation=$att)."
             else
@@ -1709,7 +1711,7 @@ cmd_info() {
     if [ "$ENG_OPT_JSON" -eq 1 ]; then jq . <<<"$m"; return; fi
     jq -r '"Name:            \(.install_name)",
            "Provider:        \(.provider)",
-           "Provider release:\(" " + (.provider_release // ""))",
+           "Release:         \(.provider_release // "")",
            "LLVM version:    \(.llvm_version // "")",
            "GCC version:     \(.gcc_version // "-")",
            "Host:            \(.host.os // "?")/\(.host.arch // "?")",

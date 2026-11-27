@@ -281,7 +281,8 @@ function Invoke-LlvmInstallPrebuiltFromRecipe {
             -ReleaseKeysPath $ReleaseKeysPath `
             -TimeoutSec $TimeoutSec `
             -MaxRetries $MaxRetries `
-            -Quiet:$Quiet
+            -Quiet:$Quiet `
+            -DeferOriginNotice:(-not $Quiet)
 
         $extractInfo = $null
         if ($effProvider -eq 'official' -and $selection -and $selection.selective) {

@@ -1192,7 +1192,9 @@ EOF
     default_link="$(llvm-get-default-link)"
     [ -L "$default_link" ] && default_name="$(basename "$(readlink "$default_link" 2>/dev/null)" 2>/dev/null)"
 
-    local dir name provider ver marker count=0 manifest
+    # Collect first so the NAME column can fit the longest installation name.
+    local dir name provider ver marker count=0 manifest width=4 legend_active=0 legend_default=0
+    local names=() providers=() versions=() markers=()
     for dir in "$toolchains_dir"/*; do
         [ -d "$dir" ] || continue
         name="$(basename "$dir")"
@@ -1203,10 +1205,10 @@ EOF
             ver="$(jq -r '.llvm_version // empty' "$manifest" 2>/dev/null)"
         fi
         marker=" "
-        [ "$name" != "$default_name" ] || marker="+"
-        [ -z "${_ACTIVE_LLVM:-}" ] || [ "$name" != "$_ACTIVE_LLVM" ] || marker="*"
-        if [ "$count" -eq 0 ]; then printf '   %-28s %-11s %s\n' NAME PROVIDER LLVM; fi
-        printf '%s  %-28s %-11s %s\n' "$marker" "$name" "$provider" "${ver:--}"
+        if [ "$name" = "$default_name" ]; then marker="+"; legend_default=1; fi
+        if [ -n "${_ACTIVE_LLVM:-}" ] && [ "$name" = "$_ACTIVE_LLVM" ]; then marker="*"; legend_active=1; fi
+        names+=("$name"); providers+=("$provider"); versions+=("${ver:--}"); markers+=("$marker")
+        [ "${#name}" -le "$width" ] || width=${#name}
         count=$((count + 1))
     done
 
@@ -1215,8 +1217,20 @@ EOF
         echo "Try 'llvmup install latest'."
         return 0
     fi
+
+    local i first=0
+    [ -n "${ZSH_VERSION:-}" ] && first=1
+    printf '   %-*s  %-11s %s\n' "$width" NAME PROVIDER LLVM
+    for ((i = first; i < count + first; i++)); do
+        printf '%s  %-*s  %-11s %s\n' "${markers[$i]}" "$width" "${names[$i]}" "${providers[$i]}" "${versions[$i]}"
+    done
+
     echo
-    echo "* active   + default"
+    # The legend only explains markers that actually appear.
+    if [ "$legend_active" -eq 1 ] && [ "$legend_default" -eq 1 ]; then echo "* active   + default"
+    elif [ "$legend_active" -eq 1 ]; then echo "* active"
+    elif [ "$legend_default" -eq 1 ]; then echo "+ default"
+    fi
     if [ "$count" -eq 1 ]; then echo "1 toolchain installed."; else echo "$count toolchains installed."; fi
 }
 

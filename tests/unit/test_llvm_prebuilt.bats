@@ -223,7 +223,7 @@ teardown() {
     run "$BATS_TEST_DIRNAME/../../llvm-prebuilt" --verify warn "20.1.8"
 
     [ "$status" -eq 0 ]
-    [[ "$output" == *"origin is not authenticated"* ]]
+    [[ "$output" == *"Authenticity: Not provided by upstream"* ]]
 }
 
 @test "llvm-prebuilt strict rejects checksum-only verification" {
