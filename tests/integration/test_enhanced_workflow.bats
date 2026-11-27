@@ -224,7 +224,7 @@ EOF
 }
 
 @test "Help system shows all new options" {
-    run bash "$ORIGINAL_DIR/llvmup" --help
+    run bash "$ORIGINAL_DIR/llvmup" install --help
     # Help exits successfully and shows the help correctly
     assert_success
 
@@ -237,6 +237,10 @@ EOF
 
     # Check for examples
     assert_output --partial "Examples:"
+
+    # Default management is documented in its own help
+    run bash "$ORIGINAL_DIR/llvmup" default --help
+    assert_success
     assert_output --partial "default set"
     assert_output --partial "default show"
 }

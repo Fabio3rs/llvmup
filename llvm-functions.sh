@@ -764,9 +764,10 @@ llvmup() {
             shift
             unset LLVMUP_SESSION_OVERRIDE LLVMUP_PREVIOUS_SESSION
             if [ "${_LLVMUP_ENV_SAVED:-0}" = 1 ] && llvm-load-session-helpers; then
+                local _deactivated_name="${_ACTIVE_LLVM:-}"
                 _llvmup_session_restore
                 unset _LLVMUP_AUTOACTIVATE_ACTIVE _LLVMUP_AUTOACTIVATE_ROOT
-                log_success "LLVM environment successfully deactivated"
+                log_success "Deactivated ${_deactivated_name:-the active toolchain}. Previous shell environment restored."
                 return 0
             fi
             llvm-deactivate "$@"
@@ -1023,10 +1024,11 @@ llvm-activate() {
 
 # Function to deactivate the current LLVM version
 llvm-deactivate() {
+    local _deactivated_name="${_ACTIVE_LLVM:-}"
     if [ "${_LLVMUP_ENV_SAVED:-0}" = 1 ] && llvm-load-session-helpers; then
         _llvmup_session_restore
         unset LLVMUP_SESSION_OVERRIDE _LLVMUP_AUTOACTIVATE_ACTIVE _LLVMUP_AUTOACTIVATE_ROOT
-        log_success "LLVM environment successfully deactivated"
+        log_success "Deactivated ${_deactivated_name:-the active toolchain}. Previous shell environment restored."
         return 0
     fi
     local script_path
@@ -1039,8 +1041,7 @@ llvm-deactivate() {
         if [ $exit_code -eq 0 ]; then
             unset _LLVMUP_AUTOACTIVATE_ACTIVE
             unset _LLVMUP_AUTOACTIVATE_ROOT
-            log_success "LLVM environment successfully deactivated"
-            log_tip "Your shell prompt and environment variables have been restored"
+            log_success "Deactivated ${_deactivated_name:-the active toolchain}. Previous shell environment restored."
         fi
         return $exit_code
     else
@@ -1102,40 +1103,33 @@ llvm-vscode-activate() {
 
 # Function to show current LLVM status
 llvm-status() {
-    echo "╭─ LLVM Environment Status ──────────────────────────────────╮"
-    if [ -n "$_ACTIVE_LLVM" ]; then
-        echo -e "│ ${GREEN}Status: ACTIVE${NC}                                          │"
-        echo "│ Version: $_ACTIVE_LLVM                                    │"
-        if [ -n "$_ACTIVE_LLVM_PATH" ]; then
-            echo "│ Path: $_ACTIVE_LLVM_PATH"
+    local default_name=""
+    local default_link
+    default_link="$(llvm-get-default-link)"
+    [ -L "$default_link" ] && default_name="$(basename "$(readlink "$default_link" 2>/dev/null)" 2>/dev/null)"
+    if [ -n "${_ACTIVE_LLVM:-}" ]; then
+        echo "Active toolchain: $_ACTIVE_LLVM"
+        [ -z "${LLVMUP_ACTIVE_PROVIDER:-}" ] || echo "  Provider: $LLVMUP_ACTIVE_PROVIDER"
+        [ -z "${LLVMUP_ACTIVE_COMPILER:-}" ] || echo "  Compiler: $LLVMUP_ACTIVE_COMPILER"
+        [ -z "${LLVMUP_ACTIVE_TARGET:-}" ] || echo "  Target:   $LLVMUP_ACTIVE_TARGET"
+        [ -z "${_ACTIVE_LLVM_PATH:-}" ] || echo "  Path:     $_ACTIVE_LLVM_PATH"
+        echo
+        if [ -n "${LLVMUP_SESSION_OVERRIDE:-}" ]; then
+            echo "Selection: Manual session override"
+        elif [ -n "${_LLVMUP_AUTOACTIVATE_ACTIVE:-}" ]; then
+            echo "Selection: Project configuration${_LLVMUP_AUTOACTIVATE_ROOT:+ ($_LLVMUP_AUTOACTIVATE_ROOT)}"
+        else
+            echo "Selection: Activated in this terminal"
         fi
-        echo "│                                                            │"
-        echo "│ Available tools:                                           │"
-        local llvm_path="$_ACTIVE_LLVM_PATH/bin"
-        if [ -d "$llvm_path" ]; then
-            if [ -x "$llvm_path/clang" ]; then
-                echo "│   • clang (C compiler)                                 │"
-            fi
-            if [ -x "$llvm_path/clang++" ]; then
-                echo "│   • clang++ (C++ compiler)                             │"
-            fi
-            if [ -x "$llvm_path/clangd" ]; then
-                echo "│   • clangd (Language Server)                           │"
-            fi
-            if [ -x "$llvm_path/lldb" ]; then
-                echo "│   • lldb (Debugger)                                    │"
-            fi
-        fi
-        echo "│                                                            │"
-        echo -e "│ ${BLUE}To deactivate: llvm-deactivate${NC}                         │"
+        [ -z "$default_name" ] || echo "Default:   $default_name"
+        echo "Run 'llvmup deactivate' to restore this terminal's previous environment."
     else
-        echo -e "│ ${RED}Status: INACTIVE${NC}                                        │"
-        echo "│                                                            │"
-        echo -e "│ ${BLUE}To activate a version: llvm-activate <version>${NC}         │"
-        echo "│ To see available versions: llvm-list                      │"
-        echo "│ To install new versions: llvmup                           │"
+        echo "No toolchain is active in this terminal."
+        [ -z "$default_name" ] || echo "Default: $default_name"
+        echo
+        echo "To select one:  llvmup use <toolchain>"
+        echo "To see choices: llvmup list"
     fi
-    echo "╰────────────────────────────────────────────────────────────╯"
 }
 
 # Function to list installed LLVM versions
@@ -1185,43 +1179,39 @@ EOF
         return $?
     fi
 
-    local toolchains_dir="$(llvm-get-toolchains-dir)"
+    local toolchains_dir
+    toolchains_dir="$(llvm-get-toolchains-dir)"
 
-    echo "╭─ Installed LLVM Versions ──────────────────────────────────╮"
-    if [ ! -d "$toolchains_dir" ]; then
-        echo -e "│ ${RED}No LLVM toolchains found${NC}                                │"
-        echo "│                                                            │"
-        echo -e "│ ${BLUE}To install LLVM versions:${NC}                               │"
-        echo "│   • llvmup                    # Install prebuilt version   │"
-        echo "│   • llvmup --from-source      # Build from source          │"
-        echo "│   • llvmup 18.1.8            # Install specific version    │"
-        echo "╰────────────────────────────────────────────────────────────╯"
-        return 0
-    fi
+    local default_name="" default_link
+    default_link="$(llvm-get-default-link)"
+    [ -L "$default_link" ] && default_name="$(basename "$(readlink "$default_link" 2>/dev/null)" 2>/dev/null)"
 
-    local has_versions=false
+    local dir name provider ver marker count=0 manifest
     for dir in "$toolchains_dir"/*; do
-        if [ -d "$dir" ]; then
-            has_versions=true
-            local version=$(basename "$dir")
-            if [ -n "$_ACTIVE_LLVM" ] && [ "$version" = "$_ACTIVE_LLVM" ]; then
-                echo -e "│ ${GREEN}$version (ACTIVE)${NC}"
-            else
-                echo "│ $version"
-            fi
+        [ -d "$dir" ] || continue
+        name="$(basename "$dir")"
+        provider="official"; ver="${name#llvmorg-}"; ver="${ver#source-llvmorg-}"
+        manifest="$dir/.llvmup-toolchain.json"
+        if [ -f "$manifest" ] && command -v jq >/dev/null 2>&1; then
+            provider="$(jq -r '.provider // "official"' "$manifest" 2>/dev/null)"
+            ver="$(jq -r '.llvm_version // empty' "$manifest" 2>/dev/null)"
         fi
+        marker=" "
+        [ "$name" != "$default_name" ] || marker="+"
+        [ -z "${_ACTIVE_LLVM:-}" ] || [ "$name" != "$_ACTIVE_LLVM" ] || marker="*"
+        if [ "$count" -eq 0 ]; then printf '   %-28s %-11s %s\n' NAME PROVIDER LLVM; fi
+        printf '%s  %-28s %-11s %s\n' "$marker" "$name" "$provider" "${ver:--}"
+        count=$((count + 1))
     done
 
-    if [ "$has_versions" = false ]; then
-        echo -e "│ ${RED}No valid LLVM installations found${NC}                       │"
+    if [ "$count" -eq 0 ]; then
+        echo "No toolchains installed."
+        echo "Try 'llvmup install latest'."
+        return 0
     fi
-
-    echo "│                                                            │"
-    echo -e "│ ${BLUE}Usage:${NC}                                                   │"
-    echo "│   • llvm-activate <version>   # Activate a version         │"
-    echo "│   • llvm-status              # Check current status        │"
-    echo "│   • llvmup                   # Install more versions       │"
-    echo "╰────────────────────────────────────────────────────────────╯"
+    echo
+    echo "* active   + default"
+    if [ "$count" -eq 1 ]; then echo "1 toolchain installed."; else echo "$count toolchains installed."; fi
 }
 
 # Enhanced completion function for llvm-activate and llvm-vscode-activate
@@ -1402,6 +1392,7 @@ Selective installs (official LLVM):
 Source builds (official LLVM only):
   --from-source          Build LLVM from source instead of installing a prebuilt release
   -c, --cmake-flags "<FLAGS>"  Extra CMake flags (can be repeated)
+  --disable-libc-wno-error   Disable LIBC_WNO_ERROR=ON flag
   --reconfigure          Force CMake to reconfigure (removes CMakeCache.txt)
   --list-only            List available source releases and exit
 

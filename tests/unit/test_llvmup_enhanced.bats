@@ -67,7 +67,7 @@ teardown() {
 @test "llvmup status routes to shell function" {
     run bash -lc "export HOME='$TEST_HOME'; export LLVMUP_DISABLE_AUTOACTIVATE=1; source '$ORIGINAL_DIR/llvm-functions.sh'; llvmup status"
     assert_success
-    assert_output --partial "LLVM Environment Status"
+    assert_output --partial "No toolchain is active"
 }
 
 @test "llvmup list routes to shell function" {
@@ -75,7 +75,7 @@ teardown() {
 
     run bash -lc "export HOME='$TEST_HOME'; export LLVMUP_DISABLE_AUTOACTIVATE=1; source '$ORIGINAL_DIR/llvm-functions.sh'; llvmup list"
     assert_success
-    assert_output --partial "Installed LLVM Versions"
+    assert_output --partial "toolchain installed"
     assert_output --partial "test-version"
 }
 

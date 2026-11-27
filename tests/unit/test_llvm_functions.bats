@@ -237,14 +237,14 @@ teardown() {
 @test "llvm-deactivate function works without active version" {
     run llvm-deactivate
     [ "$status" -eq 0 ]
-    [[ "$output" == *"LLVM environment successfully deactivated"* ]]
+    [[ "$output" == *"Previous shell environment restored"* ]]
 }
 
 @test "llvm-status function shows no active version initially" {
     echo "Checking initial status..."
     run llvm-status
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Status: INACTIVE"* ]]
+    [[ "$output" == *"No toolchain is active"* ]]
 }
 
 @test "llvm-status function shows active version after activation" {
@@ -255,14 +255,14 @@ teardown() {
     # Check status shows active version
     run bash -c "source '$BATS_TEST_DIRNAME/../../llvm-functions.sh'; export LLVM_CUSTOM_TOOLCHAINS_DIR='$TEST_DIR/.llvm/toolchains'; export LLVM_CUSTOM_SOURCES_DIR='$TEST_DIR/.llvm/sources'; llvm-activate '$TEST_VERSION'; llvm-status"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Status: ACTIVE"* ]]
+    [[ "$output" == *"Active toolchain"* ]]
     [[ "$output" == *"$TEST_VERSION"* ]]
 }
 
 @test "llvm-list function lists installed versions" {
     run llvm-list
     [ "$status" -eq 0 ]
-    [[ "$output" == *"╭─ Installed LLVM Versions"* ]]
+    [[ "$output" == *"NAME"* ]]
     [[ "$output" == *"$TEST_VERSION"* ]]
     [[ "$output" == *"$TEST_VERSION2"* ]]
 }
@@ -275,7 +275,7 @@ teardown() {
     # Test list shows active indicator
     run bash -c "source '$BATS_TEST_DIRNAME/../../llvm-functions.sh'; export LLVM_CUSTOM_TOOLCHAINS_DIR='$TEST_DIR/.llvm/toolchains'; export LLVM_CUSTOM_SOURCES_DIR='$TEST_DIR/.llvm/sources'; llvm-activate '$TEST_VERSION'; llvm-list"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"$TEST_VERSION (ACTIVE)"* ]]
+    [[ "$output" == *"*  $TEST_VERSION"* ]]
     [[ "$output" == *"$TEST_VERSION2"* ]]
 }
 
@@ -417,8 +417,8 @@ EOF
 
     run llvm-list
     [ "$status" -eq 0 ]
-    [[ "$output" == *"No LLVM toolchains found"* ]]
-    [[ "$output" == *"llvmup"* ]]
+    [[ "$output" == *"No toolchains installed."* ]]
+    [[ "$output" == *"llvmup install latest"* ]]
 }
 
 @test "llvm-normalize-version-id accepts short and canonical release versions" {

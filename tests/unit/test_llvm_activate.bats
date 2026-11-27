@@ -63,13 +63,13 @@ teardown() {
     llvm-activate "$TEST_VERSION"
     run llvm-deactivate
     [ "$status" -eq 0 ]
-    [[ "$output" == *"LLVM environment successfully deactivated"* ]]
+    [[ "$output" == *"Previous shell environment restored"* ]]
 }
 
 @test "llvm-status shows no active version initially" {
     run llvm-status
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Status: INACTIVE"* ]]
+    [[ "$output" == *"No toolchain is active"* ]]
 }
 
 @test "llvm-list shows installed versions" {
