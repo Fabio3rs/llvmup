@@ -147,7 +147,7 @@ PY
     [ ! -e "$LLVMUP_PREFIX" ]
 }
 @test "profiles preserve literal shell metacharacters in installation paths" {
-    export LLVMUP_PREFIX="$BATS_TEST_TMPDIR/literal-\$HOME-\`echo bad\`"
+    export LLVMUP_PREFIX="$BATS_TEST_TMPDIR/literal-'-\$HOME-\`echo bad\`"
     touch "$HOME/.bashrc"
     run bash "$PACKAGE/install.sh"
     [ "$status" -eq 0 ]
@@ -156,4 +156,53 @@ PY
     run bash -c 'source "$HOME/.bashrc"'
     [ "$status" -eq 0 ]
     [ "$output" = literal-path-loaded ]
+}
+
+@test "an incomplete profile block cannot overwrite the rest of the profile" {
+    local original="$BATS_TEST_TMPDIR/original"
+    printf '%s\n' '# personal settings' '# LLVM Manager Functions - Start' 'export KEEP=value' > "$original"
+    cp "$original" "$HOME/.bashrc"
+    run bash "$PACKAGE/install.sh"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *'Could not update LLVMUP profile block'* ]]
+    cmp "$original" "$HOME/.bashrc"
+}
+
+@test "package update changes the version, keeps toolchains, and updates only managed profiles" {
+    export ZDOTDIR="$HOME/zsh"
+    mkdir -p "$ZDOTDIR" "$HOME/.llvm/toolchains/keep"
+    printf '# personal mention of llvm-functions.sh\n' > "$HOME/.bashrc"
+    printf '# personal profile\n' > "$HOME/.profile"
+    printf '# personal zsh\n' > "$ZDOTDIR/.zshrc"
+    run bash "$PACKAGE/install.sh"
+    [ "$status" -eq 0 ]
+    [ "$("$LLVMUP_PREFIX/bin/llvmup" --version)" = 'llvmup 0.0.0-test' ]
+    # Simulate a file from an earlier inventory. Updates preserve files absent
+    # from the incoming inventory, even when previously managed.
+    printf 'bash 644 previous-file\n' >> "$LLVMUP_PREFIX/bin/llvmup-files.tsv"
+    printf 'keep\n' > "$LLVMUP_PREFIX/bin/previous-file"
+    printf 'v0.0.1-test\n' > "$PACKAGE/VERSION"
+    run bash "$PACKAGE/install.sh"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'Update from v0.0.0-test'* ]]
+    [ "$(cat "$LLVMUP_PREFIX/bin/previous-file")" = keep ]
+    [ -d "$HOME/.llvm/toolchains/keep" ]
+    run bash "$PACKAGE/install.sh" --quiet
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    [ "$(grep -c '^# LLVM Manager Functions - Start$' "$HOME/.bashrc")" -eq 1 ]
+    [ "$(grep -c '^# LLVMUP Zsh Completion - Start$' "$ZDOTDIR/.zshrc")" -eq 1 ]
+    grep -Fxq '# personal mention of llvm-functions.sh' "$HOME/.bashrc"
+    [ "$(cat "$HOME/.profile")" = '# personal profile' ]
+    run bash -c 'export LLVMUP_DISABLE_AUTOACTIVATE=1; source "$HOME/.bashrc"; source "$HOME/.bashrc"; llvmup --version'
+    [ "$status" -eq 0 ]
+    [ "$output" = 'llvmup 0.0.1-test' ]
+    rm "$PACKAGE/VERSION"
+    run bash "$PACKAGE/install.sh" --no-profile --quiet
+    [ "$status" -eq 0 ]
+    [ "$("$LLVMUP_PREFIX/bin/llvmup" --version)" = 'llvmup development' ]
+    run bash "$LLVMUP_PREFIX/bin/uninstall.sh"
+    [ "$status" -eq 0 ]
+    ! grep -q 'LLVMUP Zsh Completion - Start' "$ZDOTDIR/.zshrc"
+    grep -Fxq '# personal zsh' "$ZDOTDIR/.zshrc"
 }

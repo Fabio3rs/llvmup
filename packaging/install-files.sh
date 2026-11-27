@@ -2,6 +2,7 @@
 install_files() (
     set -e
     local manifest="$INSTALL_SOURCE_DIR/packaging/runtime-files.tsv"
+    local runtime_name_pattern='^(libexec/([a-zA-Z0-9_-]+/)*)?[a-zA-Z0-9_][a-zA-Z0-9_.-]*$'
     local platform mode name extra target previous i work committed=0 locked=0 recovery_failed=0 temporary
     local -a sources=() targets=() modes=() touched=() pending=() seen=()
     [[ -r $manifest ]] || { print_error "Missing runtime manifest: $manifest"; exit 1; }
@@ -9,16 +10,15 @@ install_files() (
         [[ -z $platform || $platform == \#* ]] && continue
         [[ $platform == common || $platform == bash ]] || continue
         name=${name%$'\r'}
-        [[ $name =~ ^(libexec/([a-zA-Z0-9_-]+/)*)?[a-zA-Z0-9_][a-zA-Z0-9_.-]*$ && $mode =~ ^(644|755)$ && -z $extra ]] || { print_error 'Invalid runtime manifest'; exit 1; }
+        [[ $name =~ $runtime_name_pattern && ( $mode == 644 || $mode == 755 ) && -z $extra ]] || { print_error 'Invalid runtime manifest'; exit 1; }
         [[ -f $INSTALL_SOURCE_DIR/$name && ! -L $INSTALL_SOURCE_DIR/$name ]] || { print_error "Script '$name' not found in $INSTALL_SOURCE_DIR."; exit 1; }
         sources+=("$INSTALL_SOURCE_DIR/$name"); targets+=("$INSTALL_DIR/$name"); modes+=("$mode")
     done < "$manifest"
     sources+=("$manifest" "$INSTALL_SOURCE_DIR/llvmup-completion.sh" "$INSTALL_SOURCE_DIR/_llvmup")
     targets+=("$INSTALL_DIR/llvmup-files.tsv" "$COMPLETION_DIR/llvmup" "$ZSH_COMPLETION_DIR/_llvmup")
     modes+=(644 644 644)
-    if [[ -f $INSTALL_SOURCE_DIR/VERSION ]]; then
-        sources+=("$INSTALL_SOURCE_DIR/VERSION"); targets+=("$INSTALL_DIR/llvmup-version"); modes+=(644)
-    fi
+    if [[ -f $INSTALL_SOURCE_DIR/VERSION ]]; then sources+=("$INSTALL_SOURCE_DIR/VERSION"); else sources+=(""); fi
+    targets+=("$INSTALL_DIR/llvmup-version"); modes+=(644)
     for target in "$INSTALL_DIR" "$COMPLETION_DIR" "$ZSH_COMPLETION_DIR"; do
         [[ $target != *$'\n'* && $target != *$'\r'* ]] || { print_error 'Installation paths cannot contain line breaks'; exit 1; }
     done
@@ -58,7 +58,11 @@ install_files() (
     trap 'exit 143' TERM HUP
     # Stage all files first; no existing installation has been changed yet.
     for i in "${!sources[@]}"; do
-        cp -- "${sources[i]}" "$work/new-$i"
+        if [[ -n ${sources[i]} ]]; then
+            cp -- "${sources[i]}" "$work/new-$i"
+        else
+            printf '%s\n' development > "$work/new-$i"
+        fi
         chmod "${modes[i]}" "$work/new-$i"
     done
     # Record effective locations so uninstall works after the checkout is gone.

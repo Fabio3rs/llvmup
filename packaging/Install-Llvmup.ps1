@@ -6,12 +6,28 @@ param(
     [string]$ProfilePath = $PROFILE.CurrentUserAllHosts,
     [switch]$AddToPath,
     [switch]$NoPath,
-    [switch]$Import
+    [switch]$Import,
+    [switch]$Quiet
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $manifest = Join-Path $PSScriptRoot 'runtime-files.tsv'
 $InstallDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($InstallDir)
+function Write-InstallStatus([string]$Message) {
+    if (-not $Quiet) { Write-Host $Message }
+}
+$versionFile = Join-Path $root 'VERSION'
+$installedVersionFile = Join-Path $InstallDir 'llvmup-version'
+$version = if (Test-Path -LiteralPath $versionFile -PathType Leaf) { [IO.File]::ReadAllText($versionFile).Trim() } else { 'development' }
+$operation = 'Installation'
+if (Test-Path -LiteralPath $installedVersionFile -PathType Leaf) {
+    $previous = [IO.File]::ReadAllText($installedVersionFile).Trim()
+    $operation = if ($previous -eq $version) { 'Reinstallation' } else { "Update from $previous" }
+} elseif (Test-Path -LiteralPath (Join-Path $InstallDir 'llvmup-files.tsv') -PathType Leaf) {
+    $operation = 'Replacement of existing installation'
+}
+Write-InstallStatus "LLVMUP $version Installer"
+Write-InstallStatus "Operation: $operation"
 $explicitProfile = $PSBoundParameters.ContainsKey('ProfilePath')
 if ($ProfilePath) { $ProfilePath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ProfilePath) }
 
@@ -26,7 +42,7 @@ foreach ($line in Get-Content -LiteralPath $manifest) {
     $files += @{ Source = $source; Name = $parts[2] }
 }
 $files += @{ Source = $manifest; Name = 'llvmup-files.tsv' }
-if (Test-Path -LiteralPath (Join-Path $root 'VERSION')) { $files += @{ Source = (Join-Path $root 'VERSION'); Name = 'llvmup-version' } }
+$files += @{ Source = $(if ($version -ne 'development') { $versionFile }); Name = 'llvmup-version' }
 
 # Refuse directory links, including ancestor junctions, rather than follow them
 # during replacement or rollback.
@@ -62,6 +78,7 @@ foreach ($file in $files) {
     }
 }
 
+Write-InstallStatus 'Installing runtime files'
 $work = Join-Path ([IO.Path]::GetTempPath()) ('llvmup-install-' + [guid]::NewGuid().ToString('N'))
 $null = New-Item -ItemType Directory -Path $work
 $touched = @()
@@ -74,7 +91,11 @@ try {
         if (-not (Test-Path -LiteralPath $workParent)) {
             $null = New-Item -ItemType Directory -Path $workParent -Force
         }
-        Copy-Item -LiteralPath $file.Source -Destination $workTarget
+        if ($file.Source) {
+            Copy-Item -LiteralPath $file.Source -Destination $workTarget
+        } else {
+            [IO.File]::WriteAllText($workTarget, "development`n")
+        }
     }
     $null = New-Item -ItemType Directory -Path $InstallDir -Force
     foreach ($subDir in ($subDirs.Keys | Sort-Object)) {
@@ -130,6 +151,7 @@ if ($shouldAddToPath) {
         if (-not ($procEntries | Where-Object { $_.TrimEnd('\') -ieq $InstallDir.TrimEnd('\') })) {
             $env:PATH = "$InstallDir;$env:PATH"
         }
+        Write-InstallStatus 'Launcher available on user and current session PATH.'
     }
 }
 
@@ -159,13 +181,36 @@ if (-not $NoProfile) {
             [IO.File]::WriteAllText($targetProfile, $updated, [Text.UTF8Encoding]::new($true))
         }
     }
+    Write-InstallStatus ('PowerShell profiles: ' + ($profileTargets -join ', '))
+} else {
+    Write-InstallStatus 'PowerShell profiles skipped.'
 }
 
+$launcherPath = Join-Path $InstallDir 'llvmup.cmd'
+$loaded = $false
 if ($Import) {
-    Import-Module $modulePath -Force -Global -DisableNameChecking
+    try {
+        Import-Module $modulePath -Force -Global -DisableNameChecking -ErrorAction Stop
+        $loaded = $true
+        Write-InstallStatus 'LLVMUP loaded in the current PowerShell session.'
+    } catch {
+        if ($_.Exception -is [System.Management.Automation.PSSecurityException] -or $_.CategoryInfo.Category -eq 'SecurityError') {
+            Write-Warning "Runtime files installed. PowerShell blocked the module import under execution policy '$(Get-ExecutionPolicy)'. $($_.Exception.Message)"
+        } else {
+            Write-Warning "Runtime files installed. Could not import the LLVMUP module: $($_.Exception.Message)"
+        }
+        Write-Warning ("Standalone launcher: & '" + $launcherPath.Replace("'", "''") + "' list")
+    }
 }
 
-Write-Host "LLVMUP installed in $InstallDir. To load it in this session:"
-Write-Host $importCmd
-Write-Host "CLI launcher: $(Join-Path $InstallDir 'llvmup.cmd')"
-Write-Host "Uninstall with: & '$(Join-Path $InstallDir 'Uninstall-Llvmup.ps1')'"
+$toolchainHome = if ($env:LLVM_HOME) { $env:LLVM_HOME } elseif ($env:LLVM_CUSTOM_HOME) { $env:LLVM_CUSTOM_HOME } else { Join-Path $HOME '.llvm' }
+$toolchains = if ($env:LLVM_TOOLCHAINS_DIR) { $env:LLVM_TOOLCHAINS_DIR } elseif ($env:LLVM_CUSTOM_TOOLCHAINS_DIR) { $env:LLVM_CUSTOM_TOOLCHAINS_DIR } else { Join-Path $toolchainHome 'toolchains' }
+Write-InstallStatus "$operation complete."
+Write-InstallStatus "Install Directory: $InstallDir"
+Write-InstallStatus "Toolchain Directory: $toolchains"
+if (-not $loaded -and -not $Import) { Write-InstallStatus "Load in this session: $importCmd" }
+if ($loaded) {
+    Write-InstallStatus 'Get started: llvmup --version, llvmup list --providers, llvmup doctor'
+    Write-InstallStatus 'Install and activate LLVM-MinGW: llvmup install llvm-mingw@latest --use'
+}
+Write-InstallStatus "Standalone launcher: $launcherPath"

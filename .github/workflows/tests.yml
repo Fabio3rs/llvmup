@@ -203,7 +203,26 @@ jobs:
       run: command -v jq >/dev/null || brew install jq
 
     - name: Check macOS entry point syntax
-      run: bash -n llvmup llvm-prebuilt llvm-functions.sh install.sh
+      run: |
+        for script in llvmup llvm-prebuilt llvm-functions.sh install.sh packaging/install-files.sh; do
+          /bin/bash -n "$script"
+        done
+
+    - name: Install and load LLVMUP with macOS Bash
+      run: |
+        sandbox=$(mktemp -d "$RUNNER_TEMP/llvmup-install.XXXXXX")
+        export HOME="$sandbox/home" ZDOTDIR="$sandbox/zsh"
+        export LLVMUP_PREFIX="$sandbox/prefix with space"
+        export LLVMUP_DISABLE_AUTOACTIVATE=1
+        mkdir -p "$HOME"
+        /bin/bash ./install.sh --ci
+        /bin/bash ./install.sh --configure-shell
+        cp "$HOME/.bashrc" "$sandbox/bashrc"
+        cp "$ZDOTDIR/.zshrc" "$sandbox/zshrc"
+        /bin/bash ./install.sh --configure-shell
+        cmp "$HOME/.bashrc" "$sandbox/bashrc"
+        cmp "$ZDOTDIR/.zshrc" "$sandbox/zshrc"
+        /bin/bash -c 'source "$HOME/.bashrc"; test "$(llvmup --version)" = "llvmup development"'
 
     - name: Check empty component selection with macOS Bash
       run: |

@@ -1,234 +1,65 @@
-# LLVMUP Installation Guide
+# Install and update LLVMUP
 
-This guide covers the different ways to install LLVMUP using environment variables for customization.
+Start with the [Windows and Linux quick starts](../README.md#install-from-a-release).
+Use a release package, an extracted source archive, or a checkout. Toolchains are
+installed separately.
 
-## Quick Start
+## Custom directories
 
-Default installation (recommended for most users):
-```bash
-./install.sh
+The manager and your toolchains have separate locations.
+
+| Setting | Purpose | Default |
+| --- | --- | --- |
+| `LLVMUP_PREFIX` | Unix manager and completion prefix | `$HOME/.local` |
+| `LLVMUP_INSTALL_DIR` | Manager commands on Unix, manager directory on Windows | `$LLVMUP_PREFIX/bin` or `%LOCALAPPDATA%/llvmup` |
+| `LLVMUP_COMPLETION_DIR` | Bash completion directory | `$LLVMUP_PREFIX/share/bash-completion/completions` |
+| `LLVMUP_ZSH_COMPLETION_DIR` | Zsh completion directory | `$LLVMUP_PREFIX/share/zsh/site-functions` |
+| `LLVM_HOME` | Toolchain data and configuration | `$HOME/.llvm` |
+| `LLVM_TOOLCHAINS_DIR` | Installed toolchains | `$LLVM_HOME/toolchains` |
+| `LLVM_SOURCES_DIR` | Source checkouts and build data | `$LLVM_HOME/sources` |
+
+Set the data paths before starting LLVMUP. The dedicated directory variables
+override directories derived from `LLVM_HOME`. Some project and source build
+commands also use `[paths]` in `.llvmup-config`.
+
+```toml
+[paths]
+llvm_home = "./llvm-data"
+toolchains_dir = "./llvm-data/toolchains"
+sources_dir = "./llvm-data/sources"
 ```
 
-This installs LLVMUP to `~/.local/bin` and configures your shell profile automatically.
-
-## Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `LLVMUP_PREFIX` | Base installation prefix | `$HOME/.local` |
-| `LLVMUP_INSTALL_DIR` | Directory for executable scripts | `$LLVMUP_PREFIX/bin` |
-| `LLVMUP_COMPLETION_DIR` | Directory for bash completion | `$LLVMUP_PREFIX/share/bash-completion/completions` |
-| `LLVMUP_ZSH_COMPLETION_DIR` | Directory for zsh completion | `$LLVMUP_PREFIX/share/zsh/site-functions` |
-| `LLVMUP_SYSTEM_INSTALL` | Set to 1 for system-wide installation | `0` (user install) |
-
-## Installation Examples
-
-### 1. Default User Installation
-```bash
-./install.sh
-```
-- Installs to `~/.local/bin`
-- Automatically configures shell profile
-- Most common choice for individual users
-
-### 2. Custom User Directory
-```bash
-LLVMUP_INSTALL_DIR=~/bin ./install.sh
-```
-- Install scripts to `~/bin` instead of `~/.local/bin`
-- Useful if you prefer a different directory structure
-
-### 3. Custom Prefix
-```bash
-LLVMUP_PREFIX=~/.llvmup ./install.sh
-```
-- Install to `~/.llvmup/bin`, `~/.llvmup/share/bash-completion/completions` and `~/.llvmup/share/zsh/site-functions`
-- Keeps all LLVMUP files in a dedicated directory
-
-### 4. System-Wide Installation
-```bash
-LLVMUP_SYSTEM_INSTALL=1 ./install.sh
-```
-- Install to `/usr/local/bin` (requires sudo)
-- Available to all users on the system
-- Does not modify individual user shell profiles
-- Users need to manually source the functions
-
-### 5. Custom System Directory
-```bash
-LLVMUP_PREFIX=/opt/llvmup ./install.sh
-```
-- Install to `/opt/llvmup/bin`
-- Useful for package managers or custom system layouts
-
-### 6. Development/Testing Setup
-```bash
-LLVMUP_PREFIX=$PWD/test-install ./install.sh
-```
-- Install to current directory for testing
-- Useful for development and CI/CD pipelines
-
-## Uninstallation
-
-Use the same environment variables for uninstallation:
-
-```bash
-# Uninstall from default location
-./uninstall.sh
-
-# Uninstall from custom prefix
-LLVMUP_PREFIX=/custom/path ./uninstall.sh
-
-# Uninstall system-wide installation
-LLVMUP_SYSTEM_INSTALL=1 ./uninstall.sh
-```
-
-## Interactive Installation
-
-For guided installation, use:
-```bash
-./examples/install-examples.sh
-```
-
-This script provides an interactive menu to choose installation options.
-
-## Post-Installation
-
-### For User Installations
-- Shell profile is automatically configured
-- Restart terminal or run `source ~/.bashrc`
-- Functions are available immediately
-- If `~/.zshrc` exists, LLVMUP also sources `llvm-functions.sh` and configures `fpath` and `compinit` for native zsh completion
-
-### For System-Wide Installations
-- Add to system-wide profile: `/etc/profile.d/llvmup.sh`
-- Or users add to their profile: `source /usr/local/bin/llvm-functions.sh`
-- For zsh, add the installation's `share/zsh/site-functions` directory to `fpath` and run `compinit`
-
-### Verify Installation
-```bash
-llvmup --help
-llvm-status
-```
-
-## PATH Configuration
-
-Ensure the installation directory is in your PATH:
-
-```bash
-# Temporary (current session)
-export PATH="/path/to/llvmup/bin:$PATH"
-
-# Permanent (add to ~/.bashrc or ~/.profile)
-echo 'export PATH="/path/to/llvmup/bin:$PATH"' >> ~/.bashrc
-```
-
-## Troubleshooting
-
-### Permission Issues
-- For system installs, ensure you have sudo access
-- For user installs, check directory permissions
-
-### PATH Issues
-- Verify installation directory is in PATH
-- Use full paths if needed: `/path/to/bin/llvmup`
-
-### Profile Configuration
-- Check if shell profile was modified correctly
-- Manually add source line if needed
-- Verify with `which llvm-activate` (should show function, not file)
-
-## Advanced Usage
-
-### CI/CD Integration
-```bash
-# Non-interactive installation for CI
-LLVMUP_PREFIX=/opt/llvmup ./install.sh --ci
-
-# Add to PATH in CI scripts
-export PATH="/opt/llvmup/bin:$PATH"
-
-# Export LLVM environment into the current job shell
-eval "$(llvmup env llvmorg-18.1.8)"
-```
-
-### Container/Docker Usage
-```bash
-# Install in container
-LLVMUP_PREFIX=/usr/local ./install.sh
-
-# Or in dedicated directory
-LLVMUP_PREFIX=/opt/llvmup ./install.sh
-```
-
-### Package Manager Integration
-```bash
-# For creating packages
-LLVMUP_PREFIX="$DESTDIR/usr" ./install.sh
-```
-
-## 🔒 Safe Installation & Uninstallation
-
-### Profile Modification Safety
-
-The LLVM manager uses **safety markers** to ensure your personal shell configuration is never accidentally damaged during installation or removal:
-
-#### Installation Safety
-- **Marker-based configuration**: New installations use clear start/end markers:
-  ```bash
-  # LLVM Manager Functions - Start
-  # Auto-generated by LLVMUP installer - safe to remove
-  if [ -f "$HOME/.local/bin/llvm-functions.sh" ]; then
-      source "$HOME/.local/bin/llvm-functions.sh"
-  fi
-  # LLVM Manager Functions - End
-  ```
-- **Duplicate detection**: Won't add configuration if already present
-- **Safe profile selection**: Automatically chooses `.bashrc` or `.profile`
-
-#### Uninstallation Safety
-- **Backup creation**: Always creates `.llvmup-backup` before modifications
-- **Precise removal**: Uses safety markers to remove only LLVM configuration
-- **Conservative fallback**: For older installations, uses careful pattern matching
-- **User content preservation**: Never touches your personal configuration
-
-#### Migration from Old Format
-If you have an older installation without safety markers, the uninstaller will:
-1. Detect the old format
-2. Use conservative removal methods
-3. Preserve all your personal configuration
-4. Create a backup for safety
-
-### Testing Coverage
-All safety mechanisms are thoroughly tested with:
-- New format marker removal
-- Old format conservative removal
-- Complex user configuration preservation
-- Edge cases and error conditions
+For a Unix CI or manual install, use `--no-profile` or `--ci`. To configure
+profiles later, run `install.sh --configure-shell` with the same settings.
+`LLVMUP_SYSTEM_INSTALL=1` explicitly opts into a Unix system installation
+under `/usr/local` and may require sudo.
 
 ## Release bootstrap (no Git checkout)
 
-The commands below use the packaged `v0.8.0` prerelease. The `latest` URL only
-works once a stable release with packaged assets is available. The bootstrap
-installs LLVMUP only; install an LLVM version afterwards with
-`llvmup install <version>`.
+The examples use the packaged `v0.9.0` prerelease. For a different release, select
+an explicit tag with a published bootstrap, package, and `SHA256SUMS`. Use the
+`latest` URL once a stable release ships all three assets. The bootstrap installs
+the manager. Choose a toolchain afterwards.
 
 Linux (Bash installer, Bash/Zsh integration):
 
 ```bash
-( t=$(mktemp) && trap 'rm -f "$t"' EXIT && curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --connect-timeout 10 --max-time 120 https://github.com/Fabio3rs/llvmup/releases/download/v0.8.0/bootstrap.sh -o "$t" && bash "$t" )
+( t=$(mktemp) && trap 'rm -f "$t"' EXIT && curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --connect-timeout 10 --max-time 120 https://github.com/Fabio3rs/llvmup/releases/download/v0.9.0/bootstrap.sh -o "$t" && bash "$t" )
 ```
 
-PowerShell 7:
+Windows PowerShell 5.1 or PowerShell 7, with inspection before execution:
 
 ```powershell
-$p = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString() + '.ps1'); try { Invoke-WebRequest https://github.com/Fabio3rs/llvmup/releases/download/v0.8.0/bootstrap.ps1 -OutFile $p -TimeoutSec 120 -ErrorAction Stop; & $p } finally { Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue }
+$p = Join-Path ([IO.Path]::GetTempPath()) ('llvmup-bootstrap-' + [guid]::NewGuid() + '.ps1')
+Invoke-WebRequest https://github.com/Fabio3rs/llvmup/releases/download/v0.9.0/bootstrap.ps1 -UseBasicParsing -OutFile $p -TimeoutSec 120 -ErrorAction Stop
+Get-Content -LiteralPath $p
+# Run after reviewing the script.
+& $p -Import
 ```
 
-Both commands download the complete bootstrap before executing it. To inspect
-it first, save the bootstrap to a named file, read it, then run it. The bootstrap
-is pinned to the release that supplied it. To install a different release,
-replace `v0.8.0` in the URL with its tag.
+On Linux, save the bootstrap to a named file if you want to inspect it before
+running it. The bootstrap is pinned to the release that supplied it. Replace
+`v0.9.0` in the URL to select a different published release.
 
 The bootstrap verifies the package against the release's `SHA256SUMS` before
 extraction and rejects unsafe archive entries. Checksums detect corruption;
@@ -239,7 +70,12 @@ needed by the bootstrap. Linux requires Bash 4+, curl, tar, gzip, sha256sum and
 standard core utilities. Prebuilt LLVM downloads separately require jq and the
 dependencies listed above.
 
-After saving the bootstrap locally, customization works as follows:
+With `-Import`, a successful install makes `llvmup` available as a PowerShell
+function in the same session. From an extracted package, run
+`& ./packaging/Install-Llvmup.ps1 -Import`.
+
+When you save the bootstrap as `bootstrap.sh` or `bootstrap.ps1`, you can
+customize the install:
 
 ```bash
 LLVMUP_PREFIX="$HOME/tools/llvmup" bash bootstrap.sh --no-profile
@@ -247,21 +83,31 @@ bash bootstrap.sh --version vX.Y.Z --ci
 ```
 
 ```powershell
-.\bootstrap.ps1 -InstallDir 'D:\Tools\llvmup' -NoProfile
+.\bootstrap.ps1 -InstallDir 'D:\Tools\llvmup' -NoProfile -NoPath -Import
 .\bootstrap.ps1 -Version vX.Y.Z
 ```
 
 The Windows installer defaults to `$env:LOCALAPPDATA\llvmup` (or
 `$HOME/.local/share/llvmup` when LOCALAPPDATA is absent), respects
 `LLVMUP_INSTALL_DIR`, and adds a marked import to the current user's all-hosts
-PowerShell profile. `-NoProfile` leaves profiles unchanged. It prints the import
-command for the current session. A PowerShell execution policy may require you
-to unblock a downloaded script according to your machine's policy; the installer
-does not change execution policy. The extracted installer also supports Windows
-PowerShell 5.1; its HTTPS bootstrap requires TLS 1.2.
+PowerShell profile. `-NoProfile` leaves profiles unchanged and `-NoPath` suppresses
+the automatic PATH update. If PowerShell blocks an import, the installer reports
+the error and prints the full path to `llvmup.cmd` for commands such as `list`
+and `run`. Execution policy is controlled by the user or administrator. The
+Windows PowerShell 5.1 HTTPS bootstrap requires TLS 1.2.
 
-Linux prints the shell reload instructions. A child Bash process cannot activate
-functions in its parent shell. Both installers preserve custom toolchain paths.
+Linux prints the commands to load LLVMUP in the current Bash or Zsh session.
+The installer updates its marked profile blocks and uses the exported `ZDOTDIR`
+for `.zshrc`, defaulting to the home directory. An interactive Zsh session can reuse
+an already initialized completion system.
+
+On builds that include this development update, run `llvmup --version` to check the manager. It reports `development` when
+installed from a checkout without release metadata. To update the manager, run
+the newer release's bootstrap with the same destination. To reinstall, run the
+same version again. Both installers preserve toolchains and leave files outside
+the incoming runtime inventory in place. `llvmup update` updates toolchains.
+The updated bootstraps accept `--quiet` on Linux or `-Quiet` on PowerShell to
+suppress progress while keeping warnings and errors visible.
 
 For offline installation, transfer and verify the package and `SHA256SUMS`,
 extract it, then run `bash llvmup/install.sh --no-profile` or
@@ -272,8 +118,8 @@ The PowerShell bootstrap also installs from a directory holding `SHA256SUMS` and
 both cases (a checksum detects corruption, not a malicious mirror):
 
 ```powershell
-.\bootstrap.ps1 -PackageDir '\\fileserver\tools\llvmup\v0.8.0'
-.\bootstrap.ps1 -BaseUrl 'https://mirror.example.com/llvmup/v0.8.0'   # or LLVMUP_BOOTSTRAP_BASE_URL
+.\bootstrap.ps1 -PackageDir '\\fileserver\tools\llvmup\vX.Y.Z' -Import
+.\bootstrap.ps1 -BaseUrl 'https://mirror.example.com/llvmup/vX.Y.Z'   # or LLVMUP_BOOTSTRAP_BASE_URL
 ```
 
 ### Windows: function versus launcher
@@ -291,10 +137,10 @@ The installer adds two entry points:
   `llvmup run <toolchain> -- <command>` or `for /f "delims=" %i in ('llvmup env <toolchain> --format cmd') do %i`
   there instead.
 
-Windows clients default to the `Restricted` execution policy, which prevents profiles and
-modules from loading. llvmup never changes it; if the function is missing in new sessions,
-choose a policy for your account (for example
-`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`) or keep using `llvmup.cmd`.
+If a Windows execution policy prevents the profile or the module from loading,
+run `Get-ExecutionPolicy -List` to see the applicable policies. Use your
+organization's approved script policy or try the standalone launcher at the
+path printed by the installer.
 
 ### Windows: where toolchains live
 

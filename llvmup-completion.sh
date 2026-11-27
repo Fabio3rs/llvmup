@@ -97,7 +97,7 @@ _llvmup_completions() {
 
     if [ "$cword" -eq 1 ]; then
         if [[ "$cur" == -* ]]; then
-            COMPREPLY=( $(compgen -W "--from-source --verify --verbose --quiet --help" -- "$cur") )
+            COMPREPLY=( $(compgen -W "--from-source --verify --verbose --quiet --version --help" -- "$cur") )
         else
             _llvmup_collect_combined_values "$cur" \
                 _llvmup_get_main_command_items \

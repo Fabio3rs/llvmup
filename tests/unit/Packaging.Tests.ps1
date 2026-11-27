@@ -37,6 +37,32 @@ Describe 'LLVMUP package installation' {
         Test-Path (Join-Path $case 'relative install/Llvm-Functions.psm1') | Should -BeTrue
         (Get-Content (Join-Path $case 'relative-profile.ps1') -Raw) | Should -Match 'relative install'
     }
+    It 'updates a packaged version quietly and keeps previously installed data' {
+        & $installer -InstallDir $destination -ProfilePath $profileFile -NoPath -Quiet
+        $keep = Join-Path $destination 'toolchains/keep'
+        $null = New-Item -ItemType Directory -Path $keep -Force
+        Add-Content -LiteralPath (Join-Path $destination 'llvmup-files.tsv') -Value 'powershell 644 previous-file'
+        Set-Content -LiteralPath (Join-Path $destination 'previous-file') -Value 'keep'
+        Set-Content -LiteralPath (Join-Path $package 'VERSION') -Value 'v0.0.1-test'
+        $messages = @(& $installer -InstallDir $destination -ProfilePath $profileFile -NoPath -Quiet 3>&1 6>&1)
+        $messages.Count | Should -Be 0
+        (Get-Content -LiteralPath (Join-Path $destination 'llvmup-version')).Trim() | Should -Be 'v0.0.1-test'
+        Test-Path -LiteralPath $keep | Should -BeTrue
+        (Get-Content -LiteralPath (Join-Path $destination 'previous-file')).Trim() | Should -Be 'keep'
+        @(Select-String -LiteralPath $profileFile -Pattern '^# LLVMUP module - Start$').Count | Should -Be 1
+        Remove-Item -LiteralPath (Join-Path $package 'VERSION')
+        & $installer -InstallDir $destination -NoProfile -NoPath -Quiet
+        (Get-Content -LiteralPath (Join-Path $destination 'llvmup-version')).Trim() | Should -Be 'development'
+    }
+    It 'reports a blocked module import and leaves the installed launcher usable' {
+        Mock Import-Module { throw [System.Management.Automation.PSSecurityException]::new('blocked in test') } -ParameterFilter {
+            $Name -like '*custom install*Llvm-Functions.psm1'
+        }
+        $messages = @(& $installer -InstallDir $destination -NoProfile -NoPath -Import -Quiet 3>&1)
+        ($messages | Out-String) | Should -Match 'blocked the module import under execution policy'
+        ($messages.Message -join "`n") | Should -Match ([regex]::Escape((Join-Path $destination 'llvmup.cmd')))
+        Test-Path -LiteralPath (Join-Path $destination 'llvmup.cmd') | Should -BeTrue
+    }
     It 'configures a single profile block and uninstalls without the source package' {
         & $installer -InstallDir $destination -ProfilePath $profileFile
         & $installer -InstallDir $destination -ProfilePath $profileFile
@@ -152,6 +178,8 @@ Describe 'LLVMUP package installation' {
         $env:LLVM_TOOLCHAINS_DIR = Join-Path $case 'toolchains'
         Push-Location $case
         try {
+            (& $command @prefix --version | Out-String).Trim() | Should -Be 'llvmup 0.0.0-test'
+            $LASTEXITCODE | Should -Be 0
             $doctorOut = (& $command @prefix doctor --json | Out-String)
             $LASTEXITCODE | Should -Be 0 -Because $doctorOut
             $doctorJson = $doctorOut | ConvertFrom-Json
