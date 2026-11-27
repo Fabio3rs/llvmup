@@ -247,7 +247,8 @@ fake_winlibs() {
     jq -e '(.set.CC | endswith("/bin/clang")) and (.set.AR | endswith("/bin/llvm-ar"))' <<<"$output"
     run "$LLVMUP_SCRIPT" env wl --compiler msvc --format json
     [ "$status" -ne 0 ]
-    [[ "$output" == *"does not provide compiler msvc"* ]]
+    [[ "$output" == *"does not provide MSVC"* ]]
+    [[ "$output" == *"Available compilers"* ]]
 }
 
 @test "which resolves tools inside the selected toolchain only and cmake-toolchain writes cross settings" {

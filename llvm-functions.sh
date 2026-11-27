@@ -31,17 +31,11 @@ NC='\033[0m' # No Color
 
 # Log error messages (always shown)
 log_error() {
-    if [ "$QUIET_MODE" -eq 1 ]; then
-        return
-    fi
     echo -e "${RED}Error: $*${NC}" >&2
 }
 
-# Log warning messages (always shown)
+# Log warning messages (always shown, including in quiet mode)
 log_warn() {
-    if [ "$QUIET_MODE" -eq 1 ]; then
-        return
-    fi
     echo -e "${YELLOW}Warning: $*${NC}" >&2
 }
 
@@ -691,18 +685,34 @@ llvm-use() {
     fi
     [ -n "$selector" ] || { log_error "Missing toolchain selector for 'use'"; return 1; }
 
-    local exports
-    if ! exports="$(bash "$engine" env "$selector" "${args[@]}" --format shell 2>/dev/null)"; then
-        if [ "$install" -eq 1 ]; then
-            local crt_arg=() i
-            for ((i = 0; i < ${#args[@]}; i++)); do [ "${args[$i]}" = --crt ] && crt_arg=(--crt "${args[$((i + 1))]}"); done
-            bash "$engine" install "$selector" "${crt_arg[@]}" >/dev/null || return 1
-            exports="$(bash "$engine" env "$selector" "${args[@]}" --format shell)" || return 1
-        else
-            bash "$engine" env "$selector" "${args[@]}" --format shell >/dev/null || true
-            log_error "No installed toolchain matches '$selector'. Pass --install to download and install it."
-            return 1
-        fi
+    # Keep the engine's diagnostics: only a genuinely missing installation may trigger --install.
+    local exports errfile err
+    errfile="$(mktemp "${TMPDIR:-/tmp}/llvmup-use.XXXXXX")" || errfile=/dev/null
+    if ! exports="$(bash "$engine" env "$selector" "${args[@]}" --format shell 2>"$errfile")"; then
+        err="$(cat "$errfile" 2>/dev/null)"
+        [ "$errfile" = /dev/null ] || rm -f "$errfile"
+        case "$err" in
+            *"No installed toolchain matches"*)
+                if [ "$install" -eq 1 ]; then
+                    local crt_arg=() i
+                    for ((i = 0; i < ${#args[@]}; i++)); do [ "${args[$i]}" = --crt ] && crt_arg=(--crt "${args[$((i + 1))]}"); done
+                    echo "No installed toolchain matches '$selector'; installing it first." >&2
+                    bash "$engine" install "$selector" "${crt_arg[@]}" >/dev/null || return 1
+                    exports="$(bash "$engine" env "$selector" "${args[@]}" --format shell)" || return 1
+                else
+                    printf '%s\n' "$err" >&2
+                    printf '\nTo install and activate it in one step:\n  llvmup use %s --install\n' "$selector" >&2
+                    return 1
+                fi
+                ;;
+            *)
+                [ -n "$err" ] || err="Error: Could not prepare the environment for '$selector'."
+                printf '%s\n' "$err" >&2
+                return 1
+                ;;
+        esac
+    else
+        [ "$errfile" = /dev/null ] || rm -f "$errfile"
     fi
 
     local previous=""

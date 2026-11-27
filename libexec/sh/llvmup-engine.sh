@@ -26,6 +26,36 @@ eng_warn() { printf 'Warning: %s\n' "$*" >&2; }
 eng_info() { [ "$ENGINE_QUIET" = 1 ] || printf '%s\n' "$*" >&2; }
 eng_die() { eng_err "$*"; exit 1; }
 
+# eng_quote_sel <selector>: single-quotes selectors containing shell metacharacters (e.g. '>=23.1').
+eng_quote_sel() {
+    case "$1" in
+        *[!A-Za-z0-9@._+:/=-]*) printf "'%s'" "$1" ;;
+        *) printf '%s' "$1" ;;
+    esac
+}
+
+# eng_no_match_die <selector>: the installation is missing (not broken or ambiguous).
+eng_no_match_die() {
+    local q
+    q="$(eng_quote_sel "$1")"
+    eng_err "No installed toolchain matches '$1'."
+    printf '\nTo install it:\n  llvmup install %s\n\nTo see installed toolchains:\n  llvmup list\n' "$q" >&2
+    exit 1
+}
+
+# eng_resolve_or_die <selector> [crt]: like eng_resolve_installed, but prints the "missing" guidance
+# for exit 3; any other failure already explained itself (broken alias, ambiguity, ...).
+eng_resolve_or_die() {
+    local m rc=0
+    m="$(eng_resolve_installed "$@")" || rc=$?
+    case "$rc" in
+        0) printf '%s
+' "$m" ;;
+        3) eng_no_match_die "$1" ;;
+        *) exit 1 ;;
+    esac
+}
+
 eng_require() {
     command -v "$1" >/dev/null 2>&1 || eng_die "'$1' is required for this operation${2:+ ($2)}"
 }
@@ -974,7 +1004,7 @@ eng_all_toolchains() {
 }
 
 eng_resolve_installed() {
-    # eng_resolve_installed <selector> [crt] -> manifest JSON (exit 1 when nothing matches)
+    # eng_resolve_installed <selector> [crt] -> manifest JSON (exit 3 when nothing matches; other failures print their own error and exit 1)
     local sel="$1" crt="${2:-}" all
     all="$(eng_all_toolchains)"
     local aliases
@@ -1011,11 +1041,21 @@ eng_resolve_installed() {
         if [ "$iname" = "$expr" ] || [ "$rel" = "$expr" ]; then matched+=("$m"); continue; fi
         if [ -n "$ver" ] && eng_version_satisfies "$ver" "$expr" 2>/dev/null; then matched+=("$m"); fi
     done
-    [ ${#matched[@]} -gt 0 ] || return 1
+    [ ${#matched[@]} -gt 0 ] || return 3
     local arr
     arr="$(printf '%s\n' "${matched[@]}" | jq -cs '.')"
     if [ -z "$prov" ] && [ "$(jq '[.[].provider] | unique | length' <<<"$arr")" -gt 1 ]; then
-        eng_die "Selector '$sel' is ambiguous across providers: $(jq -r 'map("\(.install_name) (\(.provider), LLVM \(.llvm_version))") | join(", ")' <<<"$arr"). Specify provider@version or an exact name."
+        {
+            eng_err "'$sel' matches multiple providers."
+            printf '\nMatching installations:\n' >&2
+            jq -r '.[] | "  \(.install_name)  (\(.provider), LLVM \(.llvm_version // "?"))"' <<<"$arr" >&2
+            printf '\nSpecify a provider or an installation name:\n' >&2
+            local first_name
+            first_name="$(jq -r '.[0].install_name' <<<"$arr")"
+            jq -r --arg e "$expr" '[.[].provider] | unique | .[:2][] | "  llvmup use \(.)@\($e)"' <<<"$arr" >&2
+            printf '  llvmup use %s\n' "$(eng_quote_sel "$first_name")" >&2
+        }
+        exit 1
     fi
     jq -c 'def num($s): ($s // "0" | tostring | split(".") | map(tonumber? // 0)); sort_by(num(.llvm_version)) | last' <<<"$arr"
 }
@@ -1063,7 +1103,7 @@ eng_split_effective() {
 eng_effective() {
     local sel="${1:-}" m=""
     if [ -n "$sel" ]; then
-        m="$(eng_resolve_installed "$sel")" || eng_die "No installed toolchain matches selector '$sel'."
+        m="$(eng_resolve_or_die "$sel")" || exit 1
         printf 'explicit\tExplicitly selected %s\t-\t-\t%s\n' "$sel" "$m"; return 0
     fi
     if [ -n "${LLVMUP_SESSION_OVERRIDE:-}" ] && m="$(eng_resolve_installed "$LLVMUP_SESSION_OVERRIDE" 2>/dev/null)"; then
@@ -1123,11 +1163,11 @@ eng_delta() {
         | (if $compiler != "" then ($compiler | ascii_downcase) elif ($m.variant.default_compiler // "") != "" then $m.variant.default_compiler else "clang" end) as $cc
         | (($m.capabilities.compilers // [])) as $avail
         | if ($avail | length) > 0 and ($avail | index($cc) | not) then
-            error("Toolchain \($m.install_name) (\($prov)) does not provide compiler \($cc). Available: \($avail | join(", "))")
+            error("Toolchain \($m.install_name) does not provide \($cc | ascii_upcase).\n\nAvailable compilers:\n  \($avail | join("\n  "))\n\nTo find installed toolchains with \($cc | ascii_upcase):\n  llvmup provides \($cc)")
           else . end
         | (if $target != "" then $target else ($m.default_target // "") end) as $tgt
         | if $target != "" and (($m.supported_targets // []) | length) > 0 and (($m.supported_targets | index($target)) | not) then
-            error("Toolchain \($m.install_name) (\($prov)) does not support target \($target). Supported: \($m.supported_targets | join(", "))")
+            error("Toolchain \($m.install_name) does not support target \($target).\n\nSupported targets:\n  \($m.supported_targets | join("\n  "))")
           else . end
         | ($m.tools // {}) as $t
         | (if $prov == "llvm-mingw" and $tgt != "" then ($t.target_wrappers[$tgt] // {}) else {} end) as $w
@@ -1525,8 +1565,11 @@ cmd_run() {
         [ -z "$sel" ] || eng_die "--locked uses the toolchain recorded in .llvmup-lock.json; do not pass a selector."
         m="$(eng_locked_manifest)" || exit 1
     elif [ -n "$sel" ]; then
-        if ! m="$(eng_resolve_installed "$sel" "$ENG_OPT_CRT")"; then
-            [ "$ENG_OPT_INSTALL" -eq 1 ] || eng_die "No installed toolchain matches '$sel'. Pass --install to install on demand."
+        local rrc=0
+        m="$(eng_resolve_installed "$sel" "$ENG_OPT_CRT")" || rrc=$?
+        if [ "$rrc" -ne 0 ]; then
+            [ "$rrc" -eq 3 ] || exit 1
+            [ "$ENG_OPT_INSTALL" -eq 1 ] || eng_no_match_die "$sel"
             (cmd_install "$sel" ${ENG_OPT_CRT:+--crt "$ENG_OPT_CRT"} --quiet) >/dev/null || exit 1
             m="$(eng_resolve_installed "$sel" "$ENG_OPT_CRT")" || eng_die "Installed toolchain for '$sel' could not be resolved."
         fi
@@ -2052,7 +2095,7 @@ cmd_update() {
     eng_parse_common "$@"
     local targets=() m sel="${ENG_POSITIONAL[0]:-}"
     if [ -n "$sel" ]; then
-        m="$(eng_resolve_installed "$sel")" || eng_die "No installed toolchain matches '$sel'."
+        m="$(eng_resolve_or_die "$sel")" || exit 1
         targets+=("$m")
     else
         while IFS= read -r m; do [ -n "$m" ] && targets+=("$m"); done < <(eng_all_toolchains | jq -c '.[] | select(.origin == "managed")')
