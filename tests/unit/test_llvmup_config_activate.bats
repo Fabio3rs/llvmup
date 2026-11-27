@@ -61,7 +61,11 @@ teardown() {
     run "$LLVMUP_SCRIPT" help
 
     [ "$status" -eq 0 ]
-    [[ "$output" == *"LLVM Manager - Complete Usage Guide"* ]]
+    [[ "$output" == *"LLVMUP - C/C++ Toolchain Manager"* ]]
+    [[ "$output" == *"config"* ]]
+
+    run "$LLVMUP_SCRIPT" help config
+    [ "$status" -eq 0 ]
     [[ "$output" == *"llvmup config init"* ]]
     [[ "$output" == *"llvmup config activate"* ]]
 }

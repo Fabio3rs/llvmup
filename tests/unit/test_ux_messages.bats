@@ -135,3 +135,36 @@ fake_toolchain() {
     [[ "$output" == *"Warning: careful"* ]]
     [[ "$output" != *"hidden"* ]]
 }
+
+@test "command help works for the main commands, in the executable and the shell function" {
+    for c in install use run list status config sync pin; do
+        run "$LLVMUP_SCRIPT" $c --help
+        [ "$status" -eq 0 ]
+        [[ "$output" == *"llvmup $c"* || "$output" == *"Usage:"* ]]
+        run bash -c "source '$FUNCTIONS'; llvmup $c --help"
+        [ "$status" -eq 0 ]
+        [[ "$output" == *"Usage:"* ]]
+    done
+}
+
+@test "help has no side effects and rejects unknown topics" {
+    run "$LLVMUP_SCRIPT" install --help
+    [ "$status" -eq 0 ]
+    [ -z "$(ls -A "$LLVM_HOME/toolchains")" ]
+    run "$LLVMUP_SCRIPT" help nope
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"No help available for 'nope'"* ]]
+}
+
+@test "help does not intercept arguments of the command run after --" {
+    fake_toolchain cross-dev llvm-mingw 23.1.6
+    run "$LLVMUP_SCRIPT" run cross-dev -- sh -c 'echo "$1"' sh --help
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"--help"* ]]
+}
+
+@test "disk-usage keeps -h as human-readable units" {
+    run "$LLVMUP_SCRIPT" disk-usage -h
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"Usage:"* ]]
+}

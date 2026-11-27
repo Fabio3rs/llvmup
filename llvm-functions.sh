@@ -736,6 +736,10 @@ llvmup() {
     local runtime_script
     runtime_script="$(llvm-find-runtime-script llvmup)" || runtime_script=""
 
+    local help_rc=0
+    llvm-try-command-help "$@" || help_rc=$?
+    [ "$help_rc" -eq 1 ] || return "$help_rc"
+
     case "${1:-}" in
         doctor)
             shift
@@ -1276,88 +1280,393 @@ if command -v complete &> /dev/null && declare -F _llvm_complete_versions &> /de
 fi
 
 # Function to show comprehensive help for LLVM manager
+# llvm-try-command-help <args...>: handles 'llvmup <command> --help' and 'llvmup help [command]'.
+# Returns 0 when help was shown, 2 for an unknown help topic, 1 when the arguments are not a help request.
+llvm-try-command-help() {
+    local cmd="${1:-}" a
+    case "$cmd" in
+        help) shift; llvm-help "$@" || return 2; return 0 ;;
+        --help|-h) llvm-help; return 0 ;;
+        install|use|activate|run|list|status|config|sync|pin|default|alias|remove|update|env|deactivate|which|where|provides|resolve|doctor|toolchain|shell|pick|info|disk-usage|cmake-toolchain|vscode-activate) ;;
+        *) return 1 ;;
+    esac
+    shift
+    for a in "$@"; do
+        case "$a" in
+            --) return 1 ;;
+            --help) llvm-help-command "$cmd"; return 0 ;;
+            -h) [ "$cmd" = disk-usage ] || { llvm-help-command "$cmd"; return 0; } ;;
+        esac
+    done
+    return 1
+}
+
 llvm-help() {
-    echo "  llvmup doctor [--verbose] [--deep] [--network] [--json] : Read-only diagnostics"
-    echo "╭─ LLVM Manager - Complete Usage Guide ──────────────────────╮"
-    echo "│                                                            │"
-    echo -e "│ ${GREEN}INSTALLATION COMMANDS:${NC}                                  │"
-    echo "│   llvmup install                  # Install latest prebuilt│"
-    echo "│   llvmup install 18.1.8          # Install specific version│"
-    echo "│   llvmup resolve latest          # Resolve latest stable tag│"
-    echo "│   llvmup install --from-source    # Build from source      │"
-    echo "│   llvmup install --name my-llvm   # Custom installation name│"
-    echo "│   llvmup install --default        # Set as default version │"
-    echo "│   llvmup install --profile minimal # Use minimal profile   │"
-    echo "│   llvmup install --cmake-flags '-DCMAKE_BUILD_TYPE=Debug'  │"
-    echo "│                                                            │"
-    echo -e "│ ${CYAN}VERSION MANAGEMENT:${NC}                                      │"
-    echo "│   llvmup activate <version>   # Activate LLVM version      │"
-    echo "│   llvmup deactivate           # Deactivate current version │"
-    echo "│   llvmup status               # Show current status        │"
-    echo "│   llvmup list [--json]        # List installed versions    │"
-    echo "│   llvmup list --remote        # List stable remote releases│"
-    echo "│   llvmup remove <version>     # Remove installed toolchain │"
-    echo "│   llvmup disk-usage           # Show disk usage by install │"
-    echo "│   llvmup default set <ver>    # Set default version        │"
-    echo "│   llvmup default show         # Show current default       │"
-    echo "│   llvmup default unset        # Clear current default      │"
-    echo "│                                                            │"
-    echo -e "│ ${BLUE}VERSION PARSING & UTILITIES:${NC}                             │"
-    echo "│   llvm-parse-version <ver>    # Parse version string       │"
-    echo "│   llvm-get-versions [format]  # List versions (list/simple/json)│"
-    echo "│   llvm-version-exists <ver>   # Check if version exists    │"
-    echo "│   llvm-get-active-version     # Get currently active version│"
-    echo "│   llvm-version-compare <v1> <v2> # Compare two versions    │"
-    echo "│   llvm-get-latest-version     # Find latest installed version│"
-    echo "│   llvm-match-versions <expr>  # Match versions by expression│"
-    echo "│   llvmup env --format github <ver> # Export to GitHub Actions│"
-    echo "│   llvm-test-expressions       # Test expression matching   │"
-    echo "│                                                            │"
-    echo -e "│ ${YELLOW}VERBOSITY CONTROLS:${NC}                                      │"
-    echo "│   llvm-verbose-on/off         # Toggle general verbose mode │"
-    echo "│   llvm-expression-verbose-on/off # Toggle expression verbose│"
-    echo "│   llvm-expression-debug-on/off   # Toggle expression debug  │"
-    echo "│                                                            │"
-    echo -e "│ ${BLUE}VERSION EXPRESSIONS (for auto-activate):${NC}                 │"
-    echo "│   • Selectors: latest, oldest, newest, earliest            │"
-    echo "│   • Type filters: prebuilt, source, latest-prebuilt        │"
-    echo "│   • Ranges: >=18.0.0, <=19.1.0, ~19.1, 18.*              │"
-    echo "│   • Specific: llvmorg-18.1.8, source-llvmorg-20.1.0       │"
-    echo "│                                                            │"
-    echo -e "│ ${GREEN}DEVELOPMENT INTEGRATION:${NC}                                 │"
-    echo "│   llvmup vscode-activate <ver># Setup VSCode integration   │"
-    echo "│   llvmup config init          # Initialize .llvmup-config  │"
-    echo "│   llvmup config load          # Load project config        │"
-    echo "│   llvmup config apply         # Install from config        │"
-    echo "│   llvmup config activate      # Activate configured version│"
-    echo "│                                                            │"
-    echo -e "│ ${CYAN}AVAILABLE TOOLS AFTER ACTIVATION:${NC}                       │"
-    echo "│   • clang/clang++    # C/C++ compilers                     │"
-    echo "│   • ld.lld          # LLVM linker                          │"
-    echo "│   • lldb            # LLVM debugger                        │"
-    echo "│   • clangd          # Language server for IDEs             │"
-    echo "│   • llvm-ar         # Archiver                             │"
-    echo "│   • llvm-nm         # Symbol table dumper                  │"
-    echo "│   • opt             # LLVM optimizer                       │"
-    echo "│                                                            │"
-    echo -e "│ ${BLUE}PROJECT CONFIGURATION (.llvmup-config):${NC}                  │"
-    echo "│   [version]                                                │"
-    echo "│   default = \"llvmorg-21.1.0\"                              │"
-    echo "│   [build]                                                  │"
-    echo "│   name = \"21.1.0-debug\"                                   │"
-    echo "│   cmake_flags = [\"-DCMAKE_BUILD_TYPE=Debug\"]              │"
-    echo "│   [profile]                                                │"
-    echo "│   type = \"full\"                                           │"
-    echo "│                                                            │"
-    echo -e "│ ${BLUE}TIPS:${NC}                                                    │"
-    echo "│   • Use TAB completion for version names                   │"
-    echo "│   • Check llvm-status after activation                     │"
-    echo "│   • Your PS1 prompt shows active LLVM version              │"
-    echo "│   • Environment is isolated per terminal session           │"
-    echo "│   • Use .llvmup-config for project-specific settings       │"
-    echo "│                                                            │"
-    echo -e "│ ${CYAN}MORE INFO: https://github.com/Fabio3rs/llvmup${NC}           │"
-    echo "╰────────────────────────────────────────────────────────────╯"
+    case "${1:-}" in
+        "") ;;
+        *) llvm-help-command "$1" && return 0
+           log_error "No help available for '$1'. Run 'llvmup help' for the list of commands."
+           return 1 ;;
+    esac
+    cat <<'EOF'
+LLVMUP - C/C++ Toolchain Manager
+Your toolchains. Your terminal. Your environment.
+
+Usage:
+  llvmup <command> [options]
+  llvmup +<toolchain> -- <command>
+  llvmup help <command>
+
+Getting started:
+  install       Install a toolchain (official LLVM, WinLibs, LLVM-MinGW)
+  use           Select a toolchain for this terminal
+  list          List installed toolchains
+  run           Run a command with a toolchain, without changing the shell
+  status        Show the current selection
+
+Toolchain management:
+  update        Install a newer release of an installed toolchain
+  remove        Remove an installed toolchain
+  default       Choose the user default toolchain
+  alias         Give toolchains stable names
+  resolve       Show which release a selector would install
+  toolchain     Link or unlink an external toolchain
+  disk-usage    Show disk usage of installed toolchains
+
+Projects:
+  pin           Record the toolchain in .llvmup-config
+  sync          Install what .llvmup-config or the lockfile asks for
+  config        Manage .llvmup-config (init, load, apply, activate, lock)
+
+Environment:
+  deactivate    Restore this terminal's previous environment
+  shell         Open a subshell with a toolchain active
+  pick          Choose an installed toolchain from a list
+  env           Print environment settings for scripts and CI
+
+Integration:
+  cmake-toolchain   Write a CMake toolchain file
+  vscode-activate   Configure VS Code for a toolchain
+
+Inspection:
+  info  which  where  provides  doctor
+
+Common flows:
+  llvmup install latest --use
+  llvmup install winlibs@23
+  llvmup use winlibs@23 --compiler gcc
+  llvmup run llvm-mingw@23 -- clang++ --version
+  llvmup pin --current
+  llvmup sync
+
+Options:
+  --version     Show the LLVMUP version
+  -h, --help    Show this help, or help for a command
+
+Historical commands such as 'activate' and the 'llvmup <version>' install shorthand still work.
+More: https://github.com/Fabio3rs/llvmup
+EOF
+}
+
+# llvm-help-command <command>: short, side-effect free help for one command (returns 1 if unknown).
+llvm-help-command() {
+    case "$1" in
+        install) cat <<'EOF'
+Install a toolchain.
+
+Usage:
+  llvmup install [<provider>@]<selector> [options]
+
+Selectors:
+  latest, 23, ~23.1, >=23.1.4, 23.*, winlibs@23, llvm-mingw@23, official@latest
+  Quote selectors containing > < or *, for example: llvmup install '>=23.1'
+
+Options:
+  --use                  Select the toolchain in this terminal after installing (shell function)
+  -n, --name <NAME>      Installation name (default: derived from the release)
+  --provider <P>         official, winlibs or llvm-mingw
+  --release <TAG>        Pin the upstream release
+  --crt <ucrt|msvcrt>    C runtime (WinLibs and LLVM-MinGW)
+  --verify <POLICY>      warn (default), strict or skip
+  --extractor <E>        auto, tar, 7z, zip or python
+  -p, --profile <P>      Component profile: minimal, compiler, full, custom
+  -d, --default          Also make it the user default
+  --force                Replace an existing installation with the same name
+  --no-cache             Download again instead of reusing the cache
+  -q, --quiet / -v, --verbose
+
+Selective installs (official LLVM):
+  --component <NAME>     Add an installation component (can be repeated)
+  --strip                Strip Linux ELF executables
+
+Source builds (official LLVM only):
+  --from-source          Build LLVM from source instead of installing a prebuilt release
+  -c, --cmake-flags "<FLAGS>"  Extra CMake flags (can be repeated)
+  --reconfigure          Force CMake to reconfigure (removes CMakeCache.txt)
+  --list-only            List available source releases and exit
+
+Examples:
+  llvmup install latest --use
+  llvmup install winlibs@23 --name win-dev
+  llvmup install llvm-mingw@23 --crt ucrt
+
+Effects: downloads and verifies an archive, then creates a new directory under the
+toolchains folder. It never changes this terminal unless --use is given.
+EOF
+        ;;
+        use|activate) cat <<'EOF'
+Select a toolchain for this terminal.
+
+Usage:
+  llvmup use <selector|installation|alias> [--compiler clang|gcc] [--target <T>] [--crt <C>] [--install]
+  llvmup use -        Return to the previous selection of this terminal
+  llvmup use --auto   Drop the manual selection and follow .llvmup-config or the default
+
+Options:
+  --compiler <C>   Compiler to export as CC/CXX (only compilers the toolchain provides)
+  --target <T>     Target triple (only targets the toolchain supports)
+  --install        Install the toolchain first, only if no installation matches
+
+Examples:
+  llvmup use official@23
+  llvmup use winlibs@23 --compiler gcc
+
+Effects: changes PATH and related variables of the current terminal only. This works
+through the 'llvmup' shell function; the standalone executable cannot do it. Use
+'llvmup run <toolchain> -- <command>' for a one-off command instead.
+EOF
+        ;;
+        run) cat <<'EOF'
+Run a command with a toolchain, without changing the current shell.
+
+Usage:
+  llvmup run [<selector>] [--compiler C] [--target T] [--install] -- <command> [args...]
+  llvmup +<selector> -- <command> [args...]
+  llvmup run --locked -- <command>    Use the toolchain recorded in .llvmup-lock.json
+
+Without a selector, the effective toolchain is used (session, project, then default).
+
+Examples:
+  llvmup run llvm-mingw@23 -- clang++ --version
+  llvmup +winlibs@23 -- gcc --version
+
+The command's own output and exit code are passed through unchanged.
+EOF
+        ;;
+        list) cat <<'EOF'
+List installed toolchains.
+
+Usage:
+  llvmup list [--json]
+  llvmup list --remote [--provider <P>] [--json]
+  llvmup list --providers
+
+--remote queries upstream releases (network); the other forms are offline.
+EOF
+        ;;
+        status) cat <<'EOF'
+Show the current selection.
+
+Usage:
+  llvmup status [--explain] [--json]
+
+--explain shows why the toolchain was selected (session override, project
+configuration or user default). --json prints machine-readable output only.
+EOF
+        ;;
+        config) cat <<'EOF'
+Manage the project configuration (.llvmup-config).
+
+Usage:
+  llvmup config init        Create a .llvmup-config in this directory
+  llvmup config load        Show the configuration that applies here
+  llvmup config apply       Install what the configuration asks for
+  llvmup config activate    Select the configured toolchain in this terminal
+  llvmup config lock        Write .llvmup-lock.json with exact asset identities
+
+See also: llvmup pin, llvmup sync.
+EOF
+        ;;
+        sync) cat <<'EOF'
+Install the toolchain requested by the project.
+
+Usage:
+  llvmup sync [--locked]
+
+Reads .llvmup-config and installs the matching toolchain if it is missing.
+With --locked, the exact asset recorded in .llvmup-lock.json is required.
+EOF
+        ;;
+        pin) cat <<'EOF'
+Record a toolchain in .llvmup-config.
+
+Usage:
+  llvmup pin [<selector>]
+  llvmup pin --current     Record the active toolchain
+
+Only .llvmup-config in the current project is modified.
+EOF
+        ;;
+        default) cat <<'EOF'
+Manage the user default toolchain.
+
+Usage:
+  llvmup default set <selector>
+  llvmup default show
+  llvmup default unset
+
+The default applies when neither a manual selection nor a project configuration exists.
+EOF
+        ;;
+        alias) cat <<'EOF'
+Give installations stable names.
+
+Usage:
+  llvmup alias set <name> <installation>
+  llvmup alias list | show <name> | remove <name>
+
+Removing an alias never removes the toolchain it points to.
+EOF
+        ;;
+        remove) cat <<'EOF'
+Remove an installed toolchain.
+
+Usage:
+  llvmup remove <installation> [--force]
+
+The default toolchain is refused unless --force is given. Only the installation
+directory is deleted.
+EOF
+        ;;
+        update) cat <<'EOF'
+Install a newer release of an installed toolchain.
+
+Usage:
+  llvmup update [<selector>]
+
+The previous installation is kept, and aliases, defaults and pins are not changed.
+EOF
+        ;;
+        env) cat <<'EOF'
+Print environment settings for scripts and CI.
+
+Usage:
+  llvmup env [<selector>|--config] [--compiler C] [--target T] [--format shell|github|json]
+
+Examples:
+  eval "$(llvmup env official@23)"
+  llvmup env win-dev --format json
+
+Only the settings are written to stdout; diagnostics go to stderr.
+EOF
+        ;;
+        deactivate) cat <<'EOF'
+Restore this terminal's previous environment.
+
+Usage:
+  llvmup deactivate
+
+Works through the 'llvmup' shell function.
+EOF
+        ;;
+        which|where) cat <<'EOF'
+Print paths for scripts.
+
+Usage:
+  llvmup which <tool> [--toolchain <S>]   Path of a tool inside a toolchain
+  llvmup where [<selector>]               Root directory of a toolchain
+
+Only the path is written to stdout.
+EOF
+        ;;
+        provides) cat <<'EOF'
+Find installed toolchains that provide a tool.
+
+Usage:
+  llvmup provides <tool> [--json]
+
+Examples:
+  llvmup provides gcc
+EOF
+        ;;
+        resolve) cat <<'EOF'
+Show which upstream release a selector resolves to, without installing.
+
+Usage:
+  llvmup resolve [<provider>@]<selector> [--format tag|json|plan] [--release TAG] [--crt C]
+  llvmup resolve --config
+EOF
+        ;;
+        doctor) cat <<'EOF'
+Diagnose the LLVMUP installation and environment. Read-only and offline by default.
+
+Usage:
+  llvmup doctor [--verbose] [--deep] [--network] [--json]
+EOF
+        ;;
+        toolchain) cat <<'EOF'
+Link an existing toolchain that LLVMUP did not install.
+
+Usage:
+  llvmup toolchain link <path> [--name <NAME>]
+  llvmup toolchain list
+  llvmup toolchain unlink <name>
+
+Unlinking forgets the entry. The external files are never deleted.
+EOF
+        ;;
+        shell) cat <<'EOF'
+Open a subshell with a toolchain active.
+
+Usage:
+  llvmup shell [<selector>]
+
+Exit the subshell to return to your previous environment.
+EOF
+        ;;
+        pick) cat <<'EOF'
+Choose an installed toolchain from a numbered list and select it.
+
+Usage:
+  llvmup pick
+
+Needs an interactive terminal and the 'llvmup' shell function. In scripts use 'llvmup use <toolchain>'.
+EOF
+        ;;
+        info) cat <<'EOF'
+Show details of an installed toolchain (provider, versions, targets, compilers).
+
+Usage:
+  llvmup info [<selector>] [--json]
+EOF
+        ;;
+        disk-usage) cat <<'EOF'
+Show disk usage of installed toolchains.
+
+Usage:
+  llvmup disk-usage [-h]
+
+-h prints sizes in binary units. Nothing is modified.
+EOF
+        ;;
+        cmake-toolchain) cat <<'EOF'
+Write a CMake toolchain file for a toolchain.
+
+Usage:
+  llvmup cmake-toolchain [<selector>] [--target T] [--compiler C] [--output FILE]
+EOF
+        ;;
+        vscode-activate) cat <<'EOF'
+Configure VS Code to use an installed toolchain.
+
+Usage:
+  llvmup vscode-activate <installation>
+
+Writes workspace settings in the current directory.
+EOF
+        ;;
+        *) return 1 ;;
+    esac
 }
 
 # Function to initialize a .llvmup-config file in the current directory
