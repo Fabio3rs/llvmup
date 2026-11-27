@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (user experience)
+- `llvmup use` (Bash) keeps the engine's real diagnostic: an incompatible `--compiler`/`--target`, an
+  ambiguous selector or a broken alias is reported as such, and `use --install` / `run --install`
+  install a toolchain only when no installation matches. Previously the error was replaced by a
+  generic "No installed toolchain matches" message and `run --install` could start a download for an
+  ambiguous selector.
+- Recovery hints: a missing toolchain suggests `llvmup install <selector>` (quoted where needed) and
+  `llvmup list`; ambiguous selectors list the candidate installations and the commands that
+  disambiguate; unavailable compilers and targets list what the installation provides.
+- Help is now a short overview grouped by intent, plus `llvmup <command> --help` and
+  `llvmup help <command>` for the main commands in the executable and the shell function. Help never
+  reads the network or the installation, and does not intercept arguments after `--`.
+- `list`, `status` and `deactivate` use plain text instead of fixed-width boxes. `list` shows active
+  and default markers, provider and LLVM version, and a useful empty state; `status` separates the
+  active toolchain from how it was selected; `deactivate` names the toolchain it restored from.
+- Errors and warnings are shown in quiet mode (`log_error`/`log_warn` in Bash, verification warnings
+  in PowerShell). `-Quiet`/`--quiet` only suppress progress and success messages.
+
 ### Added
 - `llvmup --version` reports the installed manager version or `development` for a source build of the manager.
 - Manager bootstraps and installers support quiet operation and report first install, update, or reinstall.

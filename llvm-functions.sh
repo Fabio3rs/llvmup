@@ -1502,6 +1502,7 @@ EOF
 Manage the user default toolchain.
 
 Usage:
+  llvmup default [<selector>]    Show the default, or set it when a selector is given
   llvmup default set <selector>
   llvmup default show
   llvmup default unset
@@ -1599,7 +1600,7 @@ EOF
 Link an existing toolchain that LLVMUP did not install.
 
 Usage:
-  llvmup toolchain link <path> [--name <NAME>]
+  llvmup toolchain link <name> <path>
   llvmup toolchain list
   llvmup toolchain unlink <name>
 

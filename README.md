@@ -113,8 +113,13 @@ llvmup update [toolchain]                Newest release of the same provider, ma
 llvmup toolchain link|unlink <name> [path]   Register an external toolchain (never modified)
 llvmup cmake-toolchain [toolchain] [--target T] [--compiler C] --output FILE
 llvmup pick                              Interactive local selector (requires a terminal)
-llvmup remove <toolchain> | disk-usage | doctor | help
+llvmup remove <toolchain> | disk-usage | doctor
+llvmup help [command] | llvmup <command> --help   Overview, or usage and examples for one command
 ```
+
+Help never touches the network or your installations. Errors name the real cause (for example an
+ambiguous selector, a compiler the toolchain does not ship, or a missing installation) and, when it
+helps, the command that fixes it. `--quiet` hides progress, never errors or warnings.
 
 Selection precedence: explicit selector of the command, then the session (`use`), then the project
 `.llvmup-config` (and `.llvmup-lock.json` with `--locked`), then the user default. `llvmup 22.1.8`
