@@ -188,3 +188,43 @@ fake_toolchain() {
     [ -f "$LLVM_HOME/toolchains/dev/.llvmup-toolchain.json" ]
 }
 
+
+@test "bash completion offers help topics and zsh completion still parses" {
+    run bash -c "source '$BATS_TEST_DIRNAME/../../llvmup-completion.sh'; COMP_WORDS=(llvmup help ''); COMP_CWORD=2; _llvmup_completions; printf '%s\n' \"\${COMPREPLY[@]}\""
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"install"* ]]
+    [[ "$output" == *"config"* ]]
+    if command -v zsh >/dev/null 2>&1; then
+        run zsh -n "$BATS_TEST_DIRNAME/../../_llvmup"
+        [ "$status" -eq 0 ]
+    fi
+}
+
+@test "doctor reports an invalid runtime inventory once, not once per bad line" {
+    local root="$TEST_HOME/pkg"
+    mkdir -p "$root"
+    cp "$BATS_TEST_DIRNAME"/../../llvmup-doctor*.sh "$root/"
+    printf 'bash 755 ../escape\nbash 755 bad name extra\nbash 755 also/../bad\n' > "$root/llvmup-files.tsv"
+    run bash "$root/llvmup-doctor.sh"
+    [ "$(grep -c "Invalid runtime inventory" <<<"$output")" -eq 1 ]
+    [[ "$output" == *"Reinstall a complete LLVMUP package"* ]]
+}
+
+@test "status --explain lists the precedence tiers with their real state" {
+    fake_toolchain official-dev official 23.1.6
+    fake_toolchain win-dev winlibs 23.1.3
+    ln -s "$LLVM_HOME/toolchains/official-dev" "$LLVM_HOME/default"
+    printf '[toolchain]\nversion = 99\nprovider = winlibs\n' > "$TEST_HOME/.llvmup-config"
+
+    run "$LLVMUP_SCRIPT" status --explain
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Selection precedence"* ]]
+    [[ "$output" == *"Project config"*"winlibs@99"*"not installed"* ]]
+    [[ "$output" == *"User default"*"official-dev"*"selected"* ]]
+
+    LLVMUP_SESSION_OVERRIDE=win-dev run "$LLVMUP_SCRIPT" status --explain
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Session override"*"win-dev"*"selected"* ]]
+    [[ "$output" == *"User default"*"official-dev"*"overridden"* ]]
+    [[ "$output" == *"llvmup use --auto"* ]]
+}

@@ -302,7 +302,7 @@ teardown() {
     [ -x "$LLVM_TOOLCHAINS_DIR/custom-llvm/bin/clang" ]
     [ -L "$HOME/.llvm/default" ]
     [ "$(basename "$(readlink "$HOME/.llvm/default")")" = "custom-llvm" ]
-    [[ "$output" == *"Installed 'custom-llvm'"* ]]
+    [[ "$output" == *"Installed custom-llvm successfully"* ]]
 }
 
 @test "verbose extraction propagates tar failures" {

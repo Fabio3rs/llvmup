@@ -261,7 +261,14 @@ _llvmup() {
             compadd -- --verbose --deep --network --json --help
             return 0
             ;;
-        deactivate|status|help)
+        help)
+            # 'llvmup help <command>' completes the commands that have their own help.
+            if (( CURRENT == 3 )); then
+                compadd -- install use run list status config sync pin default alias remove update env deactivate which where provides resolve doctor toolchain shell pick info disk-usage cmake-toolchain vscode-activate
+            fi
+            return 0
+            ;;
+        deactivate|status)
             return 0
             ;;
         list)

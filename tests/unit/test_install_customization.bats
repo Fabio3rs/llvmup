@@ -246,6 +246,8 @@ EOF
 
 @test "install.sh shows helpful output messages" {
     export LLVMUP_PREFIX="$BATS_TMPDIR/output_test"
+    # A previous run leaves this prefix behind, which would turn "Installation" into "Reinstallation".
+    rm -rf "$LLVMUP_PREFIX"
 
     run timeout 5 ./install.sh
 

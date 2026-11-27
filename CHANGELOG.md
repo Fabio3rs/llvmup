@@ -22,6 +22,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `list`, `status` and `deactivate` use plain text instead of fixed-width boxes. `list` shows active
   and default markers, provider and LLVM version, and a useful empty state; `status` separates the
   active toolchain from how it was selected; `deactivate` names the toolchain it restored from.
+- `install` shows what was resolved (provider, release, LLVM/GCC versions, architecture, CRT, threads,
+  exceptions, C++ library, asset, name, directory) before downloading, reports "Integrity" and
+  "Authenticity" separately, reuses a validated installation with a short message, and tells how to
+  activate it. `install --use` distinguishes a successful installation from a failed activation.
+- Name collisions list only the identity fields that differ, suggest `--name <new-name>` first and
+  present `--force` as an explicit replacement; the existing installation is never touched.
+- `update` states that the previous installation, aliases, defaults and pins were left untouched and
+  how to use the new release.
+- `status --explain` now works in the Bash engine and shows each selection tier (session override,
+  project config, active environment, user default) as selected, overridden, not installed or not set.
+- `doctor` reports an invalid runtime inventory once instead of once per malformed line.
+- Completion offers command names after `llvmup help` in Bash, Zsh and PowerShell.
+- The PowerShell module mirrors the Bash help, messages and diagnostics.
 - Errors and warnings are shown in quiet mode (`log_error`/`log_warn` in Bash, verification warnings
   in PowerShell). `-Quiet`/`--quiet` only suppress progress and success messages.
 

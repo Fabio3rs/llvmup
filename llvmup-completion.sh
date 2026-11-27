@@ -239,7 +239,14 @@ _llvmup_completions() {
             COMPREPLY=( $(compgen -W "--verbose --deep --network --json --help" -- "$cur") )
             return 0
             ;;
-        deactivate|status|help)
+        help)
+            # 'llvmup help <command>' completes the commands that have their own help.
+            if [ "$COMP_CWORD" -eq 2 ]; then
+                COMPREPLY=( $(compgen -W "install use run list status config sync pin default alias remove update env deactivate which where provides resolve doctor toolchain shell pick info disk-usage cmake-toolchain vscode-activate" -- "$cur") )
+            fi
+            return 0
+            ;;
+        deactivate|status)
             return 0
             ;;
         list)

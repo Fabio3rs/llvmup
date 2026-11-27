@@ -1361,6 +1361,7 @@ eng_parse_common() {
             --locked) ENG_OPT_LOCKED=1; shift ;;
             --config) ENG_OPT_CONFIG=1; shift ;;
             --json) ENG_OPT_JSON=1; shift ;;
+            --explain) ENG_OPT_EXPLAIN=1; shift ;;
             --no-cache) ENG_NO_CACHE=1; shift ;;
             --quiet|-q) ENGINE_QUIET=1; shift ;;
             --) shift; ENG_POSITIONAL+=(--); ENG_POSITIONAL+=("$@"); break ;;
@@ -1684,6 +1685,40 @@ cmd_info() {
            "Verification:    \(.verification.methods // "unverified" | if type == "array" then join("+") else . end)"' <<<"$m"
 }
 
+# eng_explain_selection <origin>: the selection tiers in the order eng_effective applies them.
+# Tiers that are unset or not installed are shown as such instead of being silently skipped.
+eng_explain_selection() {
+    local origin="$1" cfg="" v="" p="" s="" def="" tier_origin value state m
+    printf '\nSelection precedence:\n\n'
+    if [ -n "${LLVMUP_SESSION_OVERRIDE:-}" ]; then value="$LLVMUP_SESSION_OVERRIDE"; else value=""; fi
+    local labels=("Session override" "Project config" "Active environment" "User default")
+    local origins=(session-override project-config active-session default)
+    local values=("$value" "" "${_ACTIVE_LLVM:-}" "")
+    if cfg="$(eng_project_config)"; then
+        v="$(eng_config_get "$cfg" toolchain version)"; p="$(eng_config_get "$cfg" toolchain provider)"
+        [ -z "$v" ] || { s="$v"; [ -z "$p" ] || s="$p@$v"; }
+        values[1]="$s"
+    fi
+    def="$(eng_default_name 2>/dev/null)" || def=""
+    values[3]="$def"
+    local i
+    for i in 0 1 2 3; do
+        tier_origin="${origins[$i]}"; value="${values[$i]}"
+        if [ -z "$value" ]; then state="not set"
+        elif [ "$tier_origin" = "$origin" ]; then state="selected"
+        elif m="$(eng_resolve_installed "$value" 2>/dev/null)"; then state="overridden"
+        else state="not installed, skipped"
+        fi
+        # The active environment only matters when it decides the outcome.
+        if [ "$tier_origin" = active-session ] && [ "$state" = "not set" ]; then continue; fi
+        printf '  %-19s %-24s %s\n' "${labels[$i]}" "${value:--}" "$state"
+    done
+    [ -z "$cfg" ] || printf '\nProject configuration: %s\n' "$cfg"
+    if [ -n "${LLVMUP_SESSION_OVERRIDE:-}" ]; then
+        printf "\nRun 'llvmup use --auto' to restore automatic selection.\n"
+    fi
+}
+
 cmd_status() {
     eng_parse_common "$@"
     local line origin="" reason="" m="null"
@@ -1708,6 +1743,7 @@ cmd_status() {
     else
         echo "Selected for execution: none"
     fi
+    if [ "${ENG_OPT_EXPLAIN:-0}" -eq 1 ]; then eng_explain_selection "$origin"; fi
 }
 
 cmd_provides() {
