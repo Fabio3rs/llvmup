@@ -347,3 +347,23 @@ STUB
     run bash -c "eval \"\$('$LLVMUP_SCRIPT' env cross-dev 2>/dev/null)\"; printf '%s' \"\$_ACTIVE_LLVM\""
     [ "$output" = "cross-dev" ]
 }
+
+@test "inspection commands report one cause, and an empty provides result says so on stderr" {
+    fake_toolchain cross-dev llvm-mingw 23.1.6
+    run "$LLVMUP_SCRIPT" info nothing
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"No installed toolchain matches 'nothing'"* ]]
+    [[ "$output" != *"No toolchain is selected"* ]]
+    [ "$(grep -c '^Error:' <<<"$output")" -eq 1 ]
+
+    run "$LLVMUP_SCRIPT" info
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"No toolchain is selected, configured, or set as default."* ]]
+    [[ "$output" == *"llvmup use <toolchain>"* ]]
+
+    run bash -c "'$LLVMUP_SCRIPT' provides gcc 2>/dev/null"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    run bash -c "'$LLVMUP_SCRIPT' provides gcc 2>&1 >/dev/null"
+    [[ "$output" == *"No installed toolchain provides 'gcc'"* ]]
+}

@@ -100,6 +100,13 @@ eng_collision_die() {
     exit 1
 }
 
+# eng_effective_fail <message>: an explicit selector already explained itself (missing, ambiguous,
+# broken alias); only the no-selector case needs its own message.
+eng_effective_fail() {
+    if [ -n "${ENG_POSITIONAL[0]:-}" ]; then exit 1; fi
+    eng_die "$1 Run 'llvmup list' to see installed toolchains, or select one with 'llvmup use <toolchain>'."
+}
+
 eng_require() {
     command -v "$1" >/dev/null 2>&1 || eng_die "'$1' is required for this operation${2:+ ($2)}"
 }
@@ -1689,7 +1696,7 @@ cmd_which() {
 cmd_where() {
     eng_parse_common "$@"
     local line origin reason m
-    line="$(eng_effective "${ENG_POSITIONAL[0]:-}")" || eng_die "No matching toolchain found."
+    line="$(eng_effective "${ENG_POSITIONAL[0]:-}")" || eng_effective_fail "No toolchain is selected, configured, or set as default."
     eng_split_effective "$line"; origin="$EFF_ORIGIN"; reason="$EFF_REASON"; m="$EFF_MANIFEST"
     jq -r '.root_path' <<<"$m"
 }
@@ -1697,7 +1704,7 @@ cmd_where() {
 cmd_info() {
     eng_parse_common "$@"
     local line origin reason m
-    line="$(eng_effective "${ENG_POSITIONAL[0]:-}")" || eng_die "No matching toolchain found."
+    line="$(eng_effective "${ENG_POSITIONAL[0]:-}")" || eng_effective_fail "No toolchain is selected, configured, or set as default."
     eng_split_effective "$line"; origin="$EFF_ORIGIN"; reason="$EFF_REASON"; m="$EFF_MANIFEST"
     if [ "$ENG_OPT_JSON" -eq 1 ]; then jq . <<<"$m"; return; fi
     jq -r '"Name:            \(.install_name)",
@@ -1785,6 +1792,9 @@ cmd_provides() {
         | select(((.tools // {}) | has($t)) or (.capabilities.compilers // [] | index($t)))
         | {name: .install_name, provider, llvm_version, path: .root_path}]')"
     if [ "$ENG_OPT_JSON" -eq 1 ]; then jq . <<<"$res"; else jq -r '.[] | "\(.name)\t\(.provider)\tLLVM \(.llvm_version)\t\(.path)"' <<<"$res"; fi
+    if [ "$(jq length <<<"$res")" -eq 0 ] && [ "$ENG_OPT_JSON" -ne 1 ]; then
+        eng_info "No installed toolchain provides '$tool'."
+    fi
 }
 
 cmd_list_providers() {
@@ -1871,7 +1881,7 @@ cmd_toolchain() {
 cmd_cmake_toolchain() {
     eng_parse_common "$@"
     local line origin reason m d
-    line="$(eng_effective "${ENG_POSITIONAL[0]:-}")" || eng_die "No matching toolchain found for cmake-toolchain."
+    line="$(eng_effective "${ENG_POSITIONAL[0]:-}")" || eng_effective_fail "No toolchain is selected, configured, or set as default."
     eng_split_effective "$line"; origin="$EFF_ORIGIN"; reason="$EFF_REASON"; m="$EFF_MANIFEST"
     d="$(eng_delta "$m" "${ENG_OPT_TARGET:-${EFF_TARGET:-}}" "${ENG_OPT_COMPILER:-${EFF_COMPILER:-}}")" || exit 1
     local host_os host_arch
@@ -1915,7 +1925,7 @@ cmd_cmake_toolchain() {
 cmd_shell() {
     eng_parse_common "$@"
     local line origin reason m d sh
-    line="$(eng_effective "${ENG_POSITIONAL[0]:-}")" || eng_die "No matching toolchain found for shell."
+    line="$(eng_effective "${ENG_POSITIONAL[0]:-}")" || eng_effective_fail "No toolchain is selected, configured, or set as default."
     eng_split_effective "$line"; origin="$EFF_ORIGIN"; reason="$EFF_REASON"; m="$EFF_MANIFEST"
     d="$(eng_delta "$m" "${ENG_OPT_TARGET:-${EFF_TARGET:-}}" "${ENG_OPT_COMPILER:-${EFF_COMPILER:-}}")" || exit 1
     sh="${SHELL:-/bin/bash}"
