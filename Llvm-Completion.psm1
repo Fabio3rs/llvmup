@@ -321,7 +321,7 @@ $llvmupSB = {
     $selectors = { @(Get-LlvmToolchainCompletionItems) + @(Get-LlvmProviderNames | ForEach-Object { "$_@latest" }) }
     $values = @()
     if ($typed -le 1) {
-        $values = $commands + @(& $selectors | Where-Object { $wordToComplete -like '+*' } | ForEach-Object { "+$_" })
+        $values = $commands + @('--version') + @(& $selectors | Where-Object { $wordToComplete -like '+*' } | ForEach-Object { "+$_" })
     } elseif ($previous -eq '--provider') { $values = Get-LlvmProviderNames }
     elseif ($previous -eq '--compiler') { $values = @('clang', 'gcc') }
     elseif ($previous -eq '--target') { $values = Get-LlvmTargetCompletionItems }

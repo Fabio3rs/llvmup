@@ -9,8 +9,8 @@ manages three distributions through one set of commands:
 | `winlibs` | WinLibs MinGW-w64 bundles with GCC **and** LLVM/Clang in one tree | Windows |
 | `llvm-mingw` | LLVM-MinGW: Clang/LLD with MinGW-w64 for several Windows targets | Windows, Linux, macOS (cross to Windows) |
 
-The current release line is `v0.8.0` (pre-1.0; interfaces may still change). The multi-provider
-architecture is described in [docs/RECIPES.md](docs/RECIPES.md) and tracked in
+LLVMUP is pre-1.0. The multi-provider architecture is described in
+[docs/RECIPES.md](docs/RECIPES.md) and tracked in
 [docs/ARCHITECTURE_EVOLUTION.md](docs/ARCHITECTURE_EVOLUTION.md).
 
 ## What it does
@@ -31,33 +31,28 @@ architecture is described in [docs/RECIPES.md](docs/RECIPES.md) and tracked in
 Release packages install LLVMUP without a Git checkout on Linux and Windows. See the
 [bootstrap commands](docs/INSTALL.md#release-bootstrap-no-git-checkout) for downloads, custom
 directories, mirrors (`-BaseUrl`) and offline installation (`-PackageDir`). The commands install the
-manager; toolchains are installed separately.
+manager only. Use a release with published bootstrap, package and checksum assets for your platform.
 
 ## Windows quick start
 
-PowerShell 5.1 or 7, no administrator rights, no Git, no Visual Studio needed for the MinGW
-providers:
+Run this in PowerShell 5.1 or 7. The default user install requires no administrator privileges.
+LLVM-MinGW can build Windows programs without Visual Studio. To read the bootstrap before running
+it, use the [download and inspection instructions](docs/INSTALL.md#release-bootstrap-no-git-checkout).
 
 ```powershell
-# 1. Install llvmup for the current user (adds llvmup.cmd to the user PATH and imports the
-#    module in new PowerShell sessions). Use -NoProfile -NoPath for CI or manual setups.
-& ([scriptblock]::Create((Invoke-RestMethod https://github.com/Fabio3rs/llvmup/releases/download/v0.8.0/bootstrap.ps1)))
-
-# 2. Keep toolchains in a path without spaces (WinLibs GCC cannot link from paths with spaces).
-$env:LLVM_HOME = 'C:\llvmup'
-
-# 3. Install and use toolchains.
-llvmup install winlibs@23 --name win-dev        # GCC + Clang + MinGW-w64 (UCRT, POSIX threads, SEH)
-llvmup install llvm-mingw@23                   # Clang/LLD for x86_64, i686, aarch64 and armv7 Windows
-llvmup use win-dev                             # Clang is the default compiler of the bundle
-llvmup use win-dev --compiler gcc              # same installation, GCC
+& ([scriptblock]::Create((Invoke-RestMethod https://github.com/Fabio3rs/llvmup/releases/download/v0.9.0/bootstrap.ps1 -ErrorAction Stop))) -Import
+llvmup install llvm-mingw@latest --use
+clang++ --version
 clang++ -std=c++23 main.cpp -o main.exe
-
-# 4. One-off commands without touching the session (also works from cmd.exe and scripts).
-llvmup +llvm-mingw@23 -- clang --version
-llvmup run llvm-mingw@23 --target aarch64-w64-mingw32 -- clang hello.c -o hello-arm64.exe
-llvmup run win-dev --compiler gcc -- cmake -S . -B build -G Ninja
 ```
+
+From an extracted current Windows package or source tree, run
+`& .\packaging\Install-Llvmup.ps1 -Import` in place of the download. Builds that include
+this development update show the manager version with `llvmup --version`.
+
+For GCC plus Clang, use `llvmup install winlibs@latest --use`. WinLibs GCC needs a writable
+toolchain directory without spaces. Set `LLVM_HOME` before installing the toolchain when necessary.
+To see the available distributions, run `llvmup list --providers`.
 
 `llvmup` is a PowerShell **function** when the module is imported: `use`, `activate`, `deactivate`
 and `pick` change the current session. `llvmup.cmd` is a **child-process launcher** for cmd.exe,
@@ -72,17 +67,14 @@ clean Windows installation.
 
 ## Linux quick start
 
-Requirements for prebuilt installs are `curl`, `jq`, and `tar` (with `xz`; `zstd` for `.tar.zst`).
+From an extracted current Linux package or source tree, use Bash or Zsh. For prebuilt installs,
+have `jq`, `tar`, and `curl` or `wget`. Archive formats may require `xz`, `zstd`, or a compatible extractor.
 Source builds also require `git`, `cmake`, and `ninja`.
 
 ```bash
-git clone https://github.com/Fabio3rs/llvmup.git
-cd llvmup
-./install.sh
-source ~/.bashrc
-
-llvmup install 22.1.8                 # official, as before
-llvmup activate llvmorg-22.1.8
+bash ./install.sh
+source "$HOME/.local/bin/llvm-functions.sh"  # use the path printed by the installer for a custom prefix
+llvmup install official@latest --use
 clang --version
 
 llvmup install llvm-mingw@23          # Linux-hosted LLVM-MinGW for Windows targets
@@ -130,7 +122,7 @@ remains the legacy short form of `llvmup install 22.1.8`.
 
 More: [providers and variants](docs/PROVIDERS.md), [verification](docs/VERIFICATION.md),
 [extraction and 7-Zip](docs/EXTRACTION.md), [cross-compilation and CMake](docs/CROSS_COMPILATION.md),
-[project configuration](docs/CUSTOM_DIRECTORIES.md).
+[project configuration](docs/INSTALL.md#custom-directories).
 
 ## Diagnose problems
 
@@ -319,10 +311,9 @@ Caching is enabled by default.
 
 ```yaml
 - uses: actions/checkout@v6
-- uses: Fabio3rs/llvmup@v0.8.0
+- uses: Fabio3rs/llvmup@v0.9.0
   with:
     version: 22.1.8
-    verify: strict
 - run: clang --version
 ```
 
@@ -345,13 +336,13 @@ Outputs are `version`, `llvm-path`, `cache-hit`, `verification`, and `provider`,
     version: '23'
     crt: ucrt
     target: aarch64-w64-mingw32
-- run: $CXX -std=c++23 main.cpp -o main.exe
+- shell: bash
+  run: '"$CXX" -std=c++23 main.cpp -o main.exe'
 ```
 
-Without provider options the historical official flow runs unchanged (profiles, components,
-strip). Any provider option switches to the same `llvmup resolve/install/env` commands as the CLI;
-its cache key contains the provider, exact release, canonical id, asset digest, runner OS/arch and
-verification policy, so one multi-target bundle is cached once.
+The Action uses the CLI to resolve, install and export a toolchain. The official provider
+supports profiles, component selection and stripping on supported hosts. The cache key includes
+the provider, release, toolchain ID, asset digest, runner platform and verification policy.
 
 For other CI systems, install without modifying profiles and export the selected
 environment explicitly:
@@ -374,25 +365,28 @@ User installations default to:
 ```
 
 Installation paths and LLVM data directories can be overridden. See
-[custom directories](docs/CUSTOM_DIRECTORIES.md) for the supported variables and
+[custom directories](docs/INSTALL.md#custom-directories) for the supported variables and
 their precedence.
 
 ## Uninstalling
 
-Run the uninstaller from the repository checkout:
+Run the uninstaller from the installed manager directory.
 
 ```bash
-./uninstall.sh
+~/.local/bin/uninstall.sh
 ```
 
-Use the same installation variables that were used with `install.sh` when the
-prefix was customized. The uninstaller preserves installed LLVM toolchains. Use
-`llvmup remove <version>` to remove toolchains individually.
+```powershell
+& "$env:LOCALAPPDATA\llvmup\Uninstall-Llvmup.ps1"
+```
+
+For a custom installation, use the uninstaller in that location. Toolchains
+are preserved. Use `llvmup remove <version>` to remove one separately.
 
 ## Documentation
 
 - [Installation](docs/INSTALL.md)
-- [Custom directories](docs/CUSTOM_DIRECTORIES.md)
+- [Custom directories](docs/INSTALL.md#custom-directories)
 - [Build examples](docs/BUILD_EXAMPLE.md)
 - [Maintenance roadmap](docs/ROADMAP.md)
 - [Changelog](CHANGELOG.md)

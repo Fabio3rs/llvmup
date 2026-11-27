@@ -208,7 +208,7 @@ safe_remove_from_profile() {
     print_info "Cleaning shell profile configuration..."
     safe_remove_from_profile "$HOME/.bashrc" || true
     safe_remove_from_profile "$HOME/.profile" || true
-    safe_remove_from_profile "$HOME/.zshrc" || true
+    safe_remove_from_profile "${ZDOTDIR:-$HOME}/.zshrc" || true
 else
     print_info "System-wide uninstallation - skipping user profile cleanup"
 fi

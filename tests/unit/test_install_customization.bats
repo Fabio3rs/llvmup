@@ -121,7 +121,7 @@ EOF
     run timeout 5 ./install.sh
 
     [ -f "$HOME/.zshrc" ]
-    grep -Fq "source \"$LLVMUP_PREFIX/bin/llvm-functions.sh\"" "$HOME/.zshrc"
+    grep -Fq ". '$LLVMUP_PREFIX/bin/llvm-functions.sh'" "$HOME/.zshrc"
     grep -Fq "LLVMUP Zsh Completion - Start" "$HOME/.zshrc"
 }
 
@@ -180,7 +180,7 @@ EOF
 
     run timeout 5 ./install.sh --configure-shell
     [ "$status" -eq 0 ]
-    grep -Fq "source \"$LLVMUP_PREFIX/bin/llvm-functions.sh\"" "$HOME/.bashrc"
+    grep -Fq ". '$LLVMUP_PREFIX/bin/llvm-functions.sh'" "$HOME/.bashrc"
 }
 
 @test "install.sh --configure-shell fails when files are not installed" {
@@ -250,14 +250,13 @@ EOF
     run timeout 5 ./install.sh
 
     # Should show configuration info
-    assert_output --partial "Installation Configuration:"
+    assert_output --partial "Operation: Installation"
     assert_output --partial "Install Directory:"
-    assert_output --partial "Completion Directory:"
-    assert_output --partial "Zsh Completion Directory:"
+    assert_output --partial "Toolchain Directory:"
 
     # Should show success messages
     assert_output --partial "Installation complete!"
-    assert_output --partial "LLVMUP is now installed"
+    assert_output --partial "llvmup --version"
 }
 
 @test "multiple installations to different locations work independently" {

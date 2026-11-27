@@ -445,6 +445,9 @@ LLVMUP for PowerShell
 Usage: llvmup [COMMAND] [OPTIONS] [ARGS]
        llvmup +<toolchain> -- <command> [args...]
 
+Manager version:
+  llvmup --version                  Show the installed LLVMUP version
+
 Commands:
   install          Install a toolchain (providers: official, winlibs, llvm-mingw)
   use              Activate toolchain in current session (use -, --auto, --install)
@@ -1201,6 +1204,20 @@ function llvmup {
     $tokens = @()
     if ($null -ne $LlvmupSubcommand -and $LlvmupSubcommand -ne '') { $tokens += $LlvmupSubcommand }
     if ($LlvmupArgs) { $tokens += @($LlvmupArgs | ForEach-Object { [string]$_ }) }
+
+    if ($tokens.Count -and $tokens[0] -eq '--version') {
+        if ($tokens.Count -ne 1) {
+            Write-Error 'Usage: llvmup --version' -ErrorAction Continue
+            return $false
+        }
+        foreach ($name in @('llvmup-version', 'VERSION')) {
+            $versionPath = Join-Path $PSScriptRoot $name
+            if (Test-Path -LiteralPath $versionPath -PathType Leaf) {
+                return ('llvmup ' + ([IO.File]::ReadAllText($versionPath).Trim() -creplace '^v', ''))
+            }
+        }
+        return 'llvmup development'
+    }
 
     # Support +<toolchain> shorthand (e.g. llvmup +official@23 -- clang++ --version)
     if ($tokens.Count -gt 0 -and $tokens[0].StartsWith('+') -and $tokens[0].Length -gt 1) {

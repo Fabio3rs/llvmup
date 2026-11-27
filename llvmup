@@ -47,6 +47,18 @@
 set -e
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
+if [ "${1:-}" = --version ]; then
+    if [ "$#" -ne 1 ]; then echo 'Usage: llvmup --version' >&2; exit 2; fi
+    version=development
+    for version_file in "$SCRIPT_DIR/llvmup-version" "$SCRIPT_DIR/VERSION"; do
+        if [ -r "$version_file" ]; then
+            version="$(tr -d '\r\n' < "$version_file")"
+            break
+        fi
+    done
+    printf 'llvmup %s\n' "${version#v}"
+    exit 0
+fi
 
 # Dispatch before loading optional runtime modules, even in a damaged installation.
 if [ "${1:-}" = doctor ]; then
@@ -571,6 +583,9 @@ usage() {
 
     cat <<'EOF'
 Usage: llvmup [install] [OPTIONS] [VERSION]
+
+Manager version:
+  llvmup --version             Show the installed LLVMUP version
 
 Commands:
   install          Install an LLVM version (default command)

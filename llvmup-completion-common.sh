@@ -94,6 +94,7 @@ _llvmup_get_major_minor_templates() {
 
 _llvmup_get_main_command_items() {
     cat <<'EOF'
+--version	flag	Show the installed LLVMUP version
 doctor	command	Diagnose installation and environment
 install	command	Install an LLVM version
 activate	command	Activate an installed LLVM version in the current shell

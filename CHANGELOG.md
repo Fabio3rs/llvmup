@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `llvmup --version` reports the installed manager version or `development` for a source build of the manager.
+- Manager bootstraps and installers support quiet operation and report first install, update, or reinstall.
 - `scripts/toolchain_matrix.ps1`: reproducible real-toolchain matrix (compile, link, PE inspection,
   execution, static library, DLL, resource, debug info, header origin, CMake + Ninja)
 - Providers `winlibs` (GCC + LLVM/Clang + MinGW-w64, Windows) and `llvm-mingw` (Windows, Linux and
@@ -57,6 +59,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   available for callers of the standalone PowerShell installer.
 
 ### Fixed
+- Unix installs update their managed shell profiles in place and honor `ZDOTDIR`.
+- The PowerShell installer diagnoses import failures and prints the full launcher path.
 - PowerShell reports that the 7-Zip `pipe` strategy requires Windows when explicitly selected on Unix.
 - Linux release packages built from Windows checkouts use LF line endings.
 - Windows uninstall removes its profile block when the recorded module path uses
