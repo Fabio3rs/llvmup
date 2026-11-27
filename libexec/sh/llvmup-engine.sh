@@ -258,6 +258,28 @@ eng_http_get() {
     fi
 }
 
+# eng_github_failure_reason <headers-file>: why a GitHub API request failed, without leaking credentials.
+eng_github_failure_reason() {
+    local hdr="$1" code remaining reset
+    code="$(tr -d '\r' < "$hdr" 2>/dev/null | grep -i '^HTTP/' | tail -1 | awk '{print $2}')"
+    remaining="$(tr -d '\r' < "$hdr" 2>/dev/null | grep -i '^x-ratelimit-remaining:' | tail -1 | awk '{print $2}')"
+    reset="$(tr -d '\r' < "$hdr" 2>/dev/null | grep -i '^x-ratelimit-reset:' | tail -1 | awk '{print $2}')"
+    case "$code" in
+        403|429)
+            if [ "$remaining" = 0 ] || [ "$code" = 429 ]; then
+                local when=""
+                if [ -n "$reset" ]; then when=" It resets at $(date -u -d "@$reset" '+%H:%M UTC' 2>/dev/null || date -u -r "$reset" '+%H:%M UTC' 2>/dev/null)."; fi
+                printf 'the GitHub API rate limit was exceeded.%s Set GITHUB_TOKEN (or GH_TOKEN) to raise the limit, or try again later.' "$when"
+            else
+                printf 'GitHub refused the request (HTTP %s).' "$code"
+            fi ;;
+        404) printf 'the release metadata was not found (HTTP 404).' ;;
+        5??) printf 'GitHub is temporarily unavailable (HTTP %s). Try again later.' "$code" ;;
+        "") printf 'GitHub could not be reached. Check your network connection or proxy settings.' ;;
+        *) printf 'GitHub returned HTTP %s.' "$code" ;;
+    esac
+}
+
 eng_releases() {
     # eng_releases <provider> -> JSON array on stdout
     local provider="$1"
@@ -288,13 +310,15 @@ eng_releases() {
             eng_die "Refusing a release API page outside api.github.com."
         fi
         if ! eng_http_get "$url" "$tmp/p$page.json" "$tmp/h$page.txt"; then
+            local why
+            why="$(eng_github_failure_reason "$tmp/h$page.txt")"
             rm -rf -- "$tmp"
             if [ "$provider" = official ] && [ -f "$ENGINE_ROOT/githubreleases.json" ]; then
-                eng_warn 'GitHub API unavailable; falling back to bundled official release metadata.'
+                eng_warn "Could not query GitHub releases: $why Using the bundled official release metadata, which may be out of date."
                 jq -c . "$ENGINE_ROOT/githubreleases.json"
                 return
             fi
-            eng_die "GitHub API request failed for provider '$provider' (page $page)"
+            eng_die "Could not query $provider releases: $why"
         fi
         files+=("$tmp/p$page.json")
         url="$(tr -d '\r' < "$tmp/h$page.txt" | grep -i '^link:' | grep -o '<[^>]*>; rel="next"' | sed 's/^<//; s/>; rel="next"$//' | head -1)"

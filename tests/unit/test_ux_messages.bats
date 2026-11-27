@@ -228,3 +228,53 @@ fake_toolchain() {
     [[ "$output" == *"User default"*"official-dev"*"overridden"* ]]
     [[ "$output" == *"llvmup use --auto"* ]]
 }
+
+@test "messages carry no ANSI escapes when redirected or when NO_COLOR is set" {
+    run bash -c "source '$FUNCTIONS'; log_error boom 2>&1; log_warn careful 2>&1"
+    [[ "$output" == *"Error: boom"* ]]
+    [[ "$output" != *$'\033'* ]]
+    run env NO_COLOR=1 bash -c "source '$FUNCTIONS'; log_error boom 2>&1"
+    [[ "$output" != *$'\033'* ]]
+    run "$LLVMUP_SCRIPT" frobnicate
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"Unknown command 'frobnicate'"* ]]
+    [[ "$output" != *$'\033'* ]]
+}
+
+@test "GitHub rate limiting is reported as such, without exposing the token" {
+    mkdir -p "$TEST_HOME/bin"
+    cat > "$TEST_HOME/bin/curl" <<'STUB'
+#!/bin/sh
+while [ $# -gt 0 ]; do
+    case "$1" in -D) hdr="$2"; shift 2 ;; *) shift ;; esac
+done
+printf 'HTTP/2 403\r\nx-ratelimit-remaining: 0\r\nx-ratelimit-reset: 1893456000\r\n\r\n' > "$hdr"
+exit 22
+STUB
+    chmod +x "$TEST_HOME/bin/curl"
+    run env PATH="$TEST_HOME/bin:$PATH" GITHUB_TOKEN=ghp_secret123 "$LLVMUP_SCRIPT" resolve llvm-mingw@23
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"rate limit was exceeded"* ]]
+    [[ "$output" == *"GITHUB_TOKEN"* ]]
+    [[ "$output" != *"ghp_secret123"* ]]
+}
+
+@test "zsh function exposes help, keeps use diagnostics and never colors redirected output" {
+    command -v zsh >/dev/null 2>&1 || skip "zsh is not installed"
+    fake_toolchain cross-dev llvm-mingw 23.1.6
+    run zsh -c "source '$FUNCTIONS'; llvmup use --help"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"llvmup use"* ]]
+    run zsh -c "source '$FUNCTIONS'; llvmup help nope"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"No help available for 'nope'"* ]]
+    run zsh -c "source '$FUNCTIONS'; llvmup use cross-dev --compiler gcc --install"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"does not provide GCC"* ]]
+    [[ "$output" != *"installing it first"* ]]
+    [[ "$output" != *$'\033'* ]]
+    run zsh -c "source '$FUNCTIONS'; llvmup use cross-dev && llvmup status && llvmup deactivate"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Active toolchain: cross-dev"* ]]
+    [[ "$output" == *"Deactivated cross-dev"* ]]
+}

@@ -29,6 +29,11 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
+# Colors are only a visual aid: off for NO_COLOR, dumb terminals and non-interactive output.
+if [ -n "${NO_COLOR:-}" ] || [ "${TERM:-}" = dumb ] || { [ ! -t 1 ] && [ ! -t 2 ]; }; then
+    RED=''; GREEN=''; YELLOW=''; BLUE=''; CYAN=''; NC=''
+fi
+
 # Log error messages (always shown)
 log_error() {
     echo -e "${RED}Error: $*${NC}" >&2

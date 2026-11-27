@@ -207,6 +207,11 @@ GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Colors are only a visual aid: off for NO_COLOR, dumb terminals and non-interactive output.
+if [ -n "${NO_COLOR:-}" ] || [ "${TERM:-}" = dumb ] || { [ ! -t 1 ] && [ ! -t 2 ]; }; then
+    RED=''; GREEN=''; BLUE=''; NC=''
+fi
+
 log_info() {
     if [ "$QUIET" -eq 0 ]; then
         echo -e "${BLUE}Info: $*${NC}" >&2

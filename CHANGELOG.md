@@ -33,6 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `status --explain` now works in the Bash engine and shows each selection tier (session override,
   project config, active environment, user default) as selected, overridden, not installed or not set.
 - `doctor` reports an invalid runtime inventory once instead of once per malformed line.
+- GitHub release lookups explain why they failed (rate limit with reset time and `GITHUB_TOKEN` hint,
+  HTTP errors, unreachable network) without ever printing a token; the bundled-metadata fallback says
+  that it may be out of date.
+- Colors are disabled for `NO_COLOR`, `TERM=dumb` and redirected output.
 - Completion offers command names after `llvmup help` in Bash, Zsh and PowerShell.
 - The PowerShell module mirrors the Bash help, messages and diagnostics.
 - Errors and warnings are shown in quiet mode (`log_error`/`log_warn` in Bash, verification warnings
