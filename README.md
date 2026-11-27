@@ -40,7 +40,7 @@ LLVM-MinGW can build Windows programs without Visual Studio. To read the bootstr
 it, use the [download and inspection instructions](docs/INSTALL.md#release-bootstrap-no-git-checkout).
 
 ```powershell
-& ([scriptblock]::Create((Invoke-RestMethod https://github.com/Fabio3rs/llvmup/releases/download/v0.9.0/bootstrap.ps1 -ErrorAction Stop))) -Import
+& ([scriptblock]::Create((Invoke-RestMethod https://github.com/Fabio3rs/llvmup/releases/download/v0.9.1/bootstrap.ps1 -ErrorAction Stop))) -Import
 llvmup install llvm-mingw@latest --use
 clang++ --version
 clang++ -std=c++23 main.cpp -o main.exe
@@ -311,7 +311,7 @@ Caching is enabled by default.
 
 ```yaml
 - uses: actions/checkout@v6
-- uses: Fabio3rs/llvmup@v0.9.0
+- uses: Fabio3rs/llvmup@v0.9.1
   with:
     version: 22.1.8
 - run: clang --version

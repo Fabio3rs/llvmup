@@ -36,7 +36,7 @@ under `/usr/local` and may require sudo.
 
 ## Release bootstrap (no Git checkout)
 
-The examples use the packaged `v0.9.0` prerelease. For a different release, select
+The examples use the packaged `v0.9.1` prerelease. For a different release, select
 an explicit tag with a published bootstrap, package, and `SHA256SUMS`. Use the
 `latest` URL once a stable release ships all three assets. The bootstrap installs
 the manager. Choose a toolchain afterwards.
@@ -44,14 +44,14 @@ the manager. Choose a toolchain afterwards.
 Linux (Bash installer, Bash/Zsh integration):
 
 ```bash
-( t=$(mktemp) && trap 'rm -f "$t"' EXIT && curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --connect-timeout 10 --max-time 120 https://github.com/Fabio3rs/llvmup/releases/download/v0.9.0/bootstrap.sh -o "$t" && bash "$t" )
+( t=$(mktemp) && trap 'rm -f "$t"' EXIT && curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --connect-timeout 10 --max-time 120 https://github.com/Fabio3rs/llvmup/releases/download/v0.9.1/bootstrap.sh -o "$t" && bash "$t" )
 ```
 
 Windows PowerShell 5.1 or PowerShell 7, with inspection before execution:
 
 ```powershell
 $p = Join-Path ([IO.Path]::GetTempPath()) ('llvmup-bootstrap-' + [guid]::NewGuid() + '.ps1')
-Invoke-WebRequest https://github.com/Fabio3rs/llvmup/releases/download/v0.9.0/bootstrap.ps1 -UseBasicParsing -OutFile $p -TimeoutSec 120 -ErrorAction Stop
+Invoke-WebRequest https://github.com/Fabio3rs/llvmup/releases/download/v0.9.1/bootstrap.ps1 -UseBasicParsing -OutFile $p -TimeoutSec 120 -ErrorAction Stop
 Get-Content -LiteralPath $p
 # Run after reviewing the script.
 & $p -Import
@@ -59,7 +59,7 @@ Get-Content -LiteralPath $p
 
 On Linux, save the bootstrap to a named file if you want to inspect it before
 running it. The bootstrap is pinned to the release that supplied it. Replace
-`v0.9.0` in the URL to select a different published release.
+`v0.9.1` in the URL to select a different published release.
 
 The bootstrap verifies the package against the release's `SHA256SUMS` before
 extraction and rejects unsafe archive entries. Checksums detect corruption;
