@@ -54,6 +54,102 @@ if [ "${1:-}" = doctor ]; then
     exec bash "$SCRIPT_DIR/llvmup-doctor.sh" "$@"
 fi
 
+# Provider-aware commands run in the recipe engine (shared with the PowerShell implementation).
+LLVMUP_ENGINE="$SCRIPT_DIR/libexec/sh/llvmup-engine.sh"
+engine_exec() {
+    if [ ! -f "$LLVMUP_ENGINE" ]; then
+        echo "Error: llvmup provider engine not found at $LLVMUP_ENGINE" >&2
+        exit 1
+    fi
+    exec bash "$LLVMUP_ENGINE" "$@"
+}
+
+# Explicit provider requests and recipe-specific options use the provider engine.
+needs_provider_engine() {
+    local prev="" a
+    for a in "$@"; do
+        case "$a" in
+            official@*|winlibs@*|llvm-mingw@*|--crt|--release|--target|--compiler|--extractor|--threads) return 0 ;;
+        esac
+        if [ "$prev" = --provider ]; then return 0; fi
+        prev="$a"
+    done
+    return 1
+}
+
+# True when 'env' must use the engine: JSON output, an alias, or a toolchain described by a manifest
+# (provider bundles, external links). Plain legacy official installs keep the historical output.
+env_needs_engine() {
+    local prev="" a home tc
+    home="${LLVM_HOME:-$HOME/.llvm}"
+    tc="${LLVM_TOOLCHAINS_DIR:-$home/toolchains}"
+    for a in "$@"; do
+        if [ "$prev" = --format ] && [ "$a" = json ]; then return 0; fi
+        case "$a" in
+            -*|"") ;;
+            *)
+                if [ "$prev" != --format ] && [ "$prev" != --target ] && [ "$prev" != --compiler ]; then
+                    [ ! -f "$tc/$a/.llvmup-toolchain.json" ] || return 0
+                    if [ -f "$home/aliases.json" ] && grep -q "\"$a\"" "$home/aliases.json" 2>/dev/null; then return 0; fi
+                    if [ -f "$home/external-toolchains.json" ] && grep -q "\"$a\"" "$home/external-toolchains.json" 2>/dev/null; then return 0; fi
+                fi
+                ;;
+        esac
+        prev="$a"
+    done
+    return 1
+}
+
+# Strip "official@" and "--provider official" so the legacy official flow keeps its behaviour.
+LEGACY_ARGS=()
+for _arg in "$@"; do
+    case "$_arg" in
+        official@*) LEGACY_ARGS+=("${_arg#official@}") ;;
+        *) LEGACY_ARGS+=("$_arg") ;;
+    esac
+done
+for ((_i = 0; _i < ${#LEGACY_ARGS[@]}; _i++)); do
+    if [ "${LEGACY_ARGS[$_i]}" = --provider ] && [ "${LEGACY_ARGS[$((_i + 1))]:-}" = official ]; then
+        LEGACY_ARGS=("${LEGACY_ARGS[@]:0:$_i}" "${LEGACY_ARGS[@]:$((_i + 2))}")
+        break
+    fi
+done
+unset _arg _i
+
+case "${1:-}" in
+    run|which|where|provides|info|alias|toolchain|cmake-toolchain|shell|pin|sync|update)
+        engine_exec "$@"
+        ;;
+    config)
+        [ "${2:-}" != lock ] || engine_exec "$@"
+        ;;
+    +?*)
+        engine_exec "$@"
+        ;;
+    use|pick)
+        echo "Error: 'llvmup $1' cannot modify the parent shell when llvmup runs as an executable" >&2
+        echo "Info: source llvm-functions.sh and use the 'llvmup' shell function, or run 'llvmup run <toolchain> -- <cmd>'" >&2
+        exit 2
+        ;;
+    install|resolve|env)
+        if needs_provider_engine "${@:2}"; then engine_exec "$@"; fi
+        if [ "$1" = resolve ] && [ "${2:-}" = --config ]; then engine_exec "$@"; fi
+        if [ "$1" = env ] && env_needs_engine "${@:2}"; then engine_exec "$@"; fi
+        ;;
+    status)
+        case " ${*:2} " in *" --json "*|*" --explain "*) engine_exec "$@" ;; esac
+        ;;
+    list)
+        [ "${2:-}" != --providers ] || engine_exec list-providers
+        if [ "${2:-}" = --remote ] && [ "${3:-}" = --provider ]; then engine_exec list-remote "${@:4}"; fi
+        if [ "${2:-}" = --json ]; then engine_exec list --json; fi
+        ;;
+    winlibs@*|llvm-mingw@*)
+        engine_exec install "$@"
+        ;;
+esac
+set -- "${LEGACY_ARGS[@]}"
+
 # Default values
 COMMAND=""
 FROM_SOURCE=0
@@ -454,9 +550,13 @@ case "${1:-}" in
         # If starts with dash, empty, or looks like version, treat as install
         COMMAND="install"
         ;;
-    *)
-        # Unknown subcommand, treat as version for install
+    latest|newest|prebuilt|oldest|[~^\<\>=*]*)
+        # Version expressions keep the historical 'llvmup <version>' install shorthand.
         COMMAND="install"
+        ;;
+    *)
+        echo -e "${RED}Error: Unknown command '$1'. Run 'llvmup help' for the list of commands.${NC}" >&2
+        exit 1
         ;;
 esac
 

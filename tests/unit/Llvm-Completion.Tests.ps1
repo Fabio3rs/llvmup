@@ -13,6 +13,10 @@ Describe 'Llvm Completion Module' {
 
         # Mock Get-UserHome to point to our test dir
         function Get-UserHome { return $script:testDir }
+        # LLVM_TOOLCHAINS_DIR has documented precedence; pin it so real toolchains on the host
+        # (or modules imported by earlier test files) cannot change what this test observes.
+        $script:savedToolchainsDir = $env:LLVM_TOOLCHAINS_DIR
+        $env:LLVM_TOOLCHAINS_DIR = $script:testDir
 
     # Load the completion module (use Import-Module to avoid dot-sourcing path issues)
     $modulePath = Join-Path $PSScriptRoot '..\..\Llvm-Completion.psm1'
@@ -56,8 +60,30 @@ Describe 'Llvm Completion Module' {
         @($res | ForEach-Object CompletionText) | Should -Contain 'list'
     }
 
+    It 'registers with the real tab-completion engine and completes providers, toolchains and options' {
+        # A manifest-described toolchain with a non-llvmorg name must be offered too.
+        $wl = Join-Path $script:testDir 'win-dev'
+        $null = New-Item -ItemType Directory -Path (Join-Path $wl 'bin') -Force
+        Set-Content -LiteralPath (Join-Path $wl '.llvmup-toolchain.json') -Value '{"schema":1,"supported_targets":["x86_64-w64-mingw32"]}'
+        function global:llvmup {
+            param([Parameter(Position = 0)][string]$LlvmupSubcommand, [Parameter(ValueFromRemainingArguments = $true)][string[]]$LlvmupArgs)
+        }
+        try {
+            $complete = { param($line) @((TabExpansion2 -inputScript $line -cursorColumn $line.Length).CompletionMatches | ForEach-Object CompletionText) }
+            & $complete 'llvmup pi' | Should -Contain 'pick'
+            & $complete 'llvmup install --provider ' | Should -Contain 'llvm-mingw'
+            & $complete 'llvmup use ' | Should -Contain 'win-dev'
+            & $complete 'llvmup run win-dev --compiler ' | Should -Be @('clang', 'gcc')
+            & $complete 'llvmup +win' | Should -Contain '+win-dev'
+        } finally {
+            Remove-Item Function:\llvmup -ErrorAction SilentlyContinue
+        }
+    }
+
     AfterAll {
         # cleanup
+        if ($null -eq $script:savedToolchainsDir) { Remove-Item Env:LLVM_TOOLCHAINS_DIR -ErrorAction SilentlyContinue }
+        else { $env:LLVM_TOOLCHAINS_DIR = $script:savedToolchainsDir }
         Remove-Item -Path $script:testDir -Recurse -Force -ErrorAction SilentlyContinue
     if ($script:cachePath) { Remove-Item -Path $script:cachePath -ErrorAction SilentlyContinue }
     }

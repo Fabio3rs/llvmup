@@ -13,11 +13,22 @@ if (Test-Path $modulePath) { Import-Module $modulePath -Force } else { . "$PSScr
 $homeDir = Get-UserHome
 
 # Check if already activated
-if ($env:LLVM_ACTIVE_VERSION) {
-    throw "LLVM version '$env:LLVM_ACTIVE_VERSION' is already active. Please deactivate it first."
+if ($env:LLVM_ACTIVE_VERSION -or $env:_ACTIVE_LLVM) {
+    $active = if ($env:LLVM_ACTIVE_VERSION) { $env:LLVM_ACTIVE_VERSION } else { $env:_ACTIVE_LLVM }
+    throw "LLVM version '$active' is already active. Please deactivate it first."
 }
 
-$toolchainsDir = Join-Path $homeDir ".llvm\toolchains"
+$toolchainsDir = if ($env:LLVM_TOOLCHAINS_DIR) {
+    $env:LLVM_TOOLCHAINS_DIR
+} elseif ($env:LLVM_CUSTOM_TOOLCHAINS_DIR) {
+    $env:LLVM_CUSTOM_TOOLCHAINS_DIR
+} elseif ($env:LLVM_HOME) {
+    Join-Path $env:LLVM_HOME "toolchains"
+} elseif ($env:LLVM_CUSTOM_HOME) {
+    Join-Path $env:LLVM_CUSTOM_HOME "toolchains"
+} else {
+    Join-Path $homeDir ".llvm\toolchains"
+}
 $llvmDir = Join-Path $toolchainsDir $Version
 $binDir = Join-Path $llvmDir "bin"
 

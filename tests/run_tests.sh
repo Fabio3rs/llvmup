@@ -81,37 +81,13 @@ echo ""
 print_status "Running individual test suites with verbose output..."
 print_info "Each test will show detailed progress and timing information"
 
-# Run tests individually for better error reporting
-test_files=(
-    "tests/unit/test_doctor.bats"
-    "tests/unit/test_llvm_functions.bats"
-    "tests/unit/test_llvm_activate.bats"
-    "tests/unit/test_llvm_deactivate.bats"
-    "tests/unit/test_llvm_prebuilt.bats"
-    "tests/unit/test_llvmup.bats"
-    "tests/unit/test_version_expressions.bats"
-    "tests/unit/test_completion_enhanced.bats"
-    "tests/unit/test_zsh_completion.bats"
-    "tests/unit/test_enhanced_config.bats"
-    "tests/unit/test_install_customization.bats"
-    "tests/unit/test_libc_wno_error_flag.bats"
-    "tests/unit/test_llvm_build_enhanced.bats"
-    "tests/unit/test_llvm_config.bats"
-    "tests/unit/test_llvmup_config_activate.bats"
-    "tests/unit/test_llvmup_enhanced.bats"
-    "tests/unit/test_llvmup_lifecycle.bats"
-    "tests/unit/test_llvmup_libc_wno_error.bats"
-    "tests/unit/test_project_config.bats"
-    "tests/unit/test_safe_profile_removal.bats"
-)
-
-# Add integration tests if they exist
-if [ -d "tests/integration" ]; then
-    for integration_test in tests/integration/*.bats; do
-        if [ -f "$integration_test" ]; then
-            test_files+=("$integration_test")
-        fi
-    done
+# Include every unit and integration suite, including new regressions.
+shopt -s nullglob
+test_files=(tests/unit/*.bats tests/integration/*.bats)
+shopt -u nullglob
+if [ ${#test_files[@]} -eq 0 ]; then
+    print_error 'No Bats test suites found'
+    exit 1
 fi
 
 failed_tests=()

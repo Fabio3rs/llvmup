@@ -24,7 +24,7 @@ def build(version, output):
         platform, mode, name = line.split()
         if platform not in ("common", "bash", "powershell") or mode not in ("644", "755"):
             raise ValueError(f"Invalid manifest entry: {line}")
-        if not re.fullmatch(r"(?:libexec/)?[A-Za-z0-9_][A-Za-z0-9_.-]*", name) or name in names:
+        if not re.fullmatch(r"(?:libexec/(?:[A-Za-z0-9_-]+/)*)?[A-Za-z0-9_][A-Za-z0-9_.-]*", name) or name in names:
             raise ValueError(f"Unsafe or duplicate filename: {name}")
         names.add(name)
         if (ROOT / name).is_symlink():
@@ -43,6 +43,9 @@ def build(version, output):
         if platform == "bash":
             with path.open("wb") as raw, gzip.GzipFile(filename="", fileobj=raw, mode="wb", mtime=0) as gz, tarfile.open(fileobj=gz, mode="w") as archive:
                 for name, (mode, data) in sorted(files.items()):
+                    # Runtime files are text. Unix scripts and TSV readers require LF
+                    # even when the package is built from a Windows checkout.
+                    data = data.replace(b"\r\n", b"\n")
                     info = tarfile.TarInfo("llvmup/" + name)
                     info.mode, info.size, info.mtime = mode, len(data), 0
                     archive.addfile(info, io.BytesIO(data))
@@ -58,7 +61,10 @@ def build(version, output):
         path = output / name
         # Pin even the latest-release bootstrap to its own release to avoid
         # mixing archives/checksums if a new release appears during download.
-        path.write_bytes((ROOT / "packaging" / name).read_bytes().replace(b"@LLVMUP_VERSION@", version.encode()))
+        data = (ROOT / "packaging" / name).read_bytes().replace(b"@LLVMUP_VERSION@", version.encode())
+        if name == "bootstrap.sh":
+            data = data.replace(b"\r\n", b"\n")
+        path.write_bytes(data)
         assets.append(path)
     (output / "SHA256SUMS").write_text("".join(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}\n" for p in assets))
 

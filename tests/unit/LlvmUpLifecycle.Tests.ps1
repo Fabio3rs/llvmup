@@ -121,4 +121,28 @@ Describe 'PowerShell llvmup lifecycle facade' {
 
         $result.installed_versions[0].name | Should -Be 'llvmorg-20.1.8'
     }
+
+    It 'distinguishes unset vs empty environment variables on deactivation' {
+        $version = 'llvmorg-18.1.8'
+        $bin = Join-Path $env:LLVM_TOOLCHAINS_DIR "$version/bin"
+        New-Item -ItemType Directory -Force -Path $bin | Out-Null
+        [IO.File]::WriteAllText((Join-Path $bin 'clang.exe'), '')
+        [IO.File]::WriteAllText((Join-Path $bin 'clang++.exe'), '')
+
+        Remove-Item Env:CC -ErrorAction SilentlyContinue
+        $env:CXX = 'custom-cxx'
+        try {
+            llvmup activate $version | Should -BeTrue
+            $env:CC | Should -Be (Join-Path $bin 'clang.exe')
+            $env:CXX | Should -Be (Join-Path $bin 'clang++.exe')
+            llvmup deactivate | Should -BeTrue
+            [Environment]::GetEnvironmentVariable('CC', 'Process') | Should -BeNullOrEmpty
+            (Test-Path Env:CC) | Should -BeFalse
+            (Test-Path Env:CXX) | Should -BeTrue
+            $env:CXX | Should -Be 'custom-cxx'
+        } finally {
+            Remove-Item Env:CC -ErrorAction SilentlyContinue
+            Remove-Item Env:CXX -ErrorAction SilentlyContinue
+        }
+    }
 }

@@ -451,11 +451,10 @@ class SelectionTests(unittest.TestCase):
         curl.chmod(0o755)
         releases = self.root/'releases.json'
         releases.write_text(json.dumps([{'tag_name':'llvmorg-23.1.2', 'draft':False, 'prerelease':False, 'assets':[{'id':23, 'name':'LLVM-23.1.2-Linux-X64.tar.xz', 'state':'uploaded', 'browser_download_url':'https://example.invalid/llvm.tar.xz'}]}]))
-        env = dict(os.environ, PATH=str(bindir)+os.pathsep+os.environ['PATH'], FIXTURE_ARCHIVE=str(archive), LLVMUP_RELEASES_FILE=str(releases), LLVM_TOOLCHAINS_DIR=str(self.root/'toolchains'), RUNNER_TEMP=str(self.root/'tmp'), LLVMUP_DISABLE_AUTOACTIVATE='1')
+        env = dict(os.environ, PATH=str(bindir)+os.pathsep+os.environ['PATH'], FIXTURE_ARCHIVE=str(archive), LLVMUP_RELEASES_FILE=str(releases), LLVM_HOME=str(self.root/'home'), LLVM_TOOLCHAINS_DIR=str(self.root/'toolchains'), RUNNER_TEMP=str(self.root/'tmp'), LLVMUP_DISABLE_AUTOACTIVATE='1')
         result = subprocess.run([str(ROOT/'llvm-prebuilt'), '--profile', 'minimal', '--verify', 'skip', '--verbose', '23.1.2'], cwd=self.root, env=env, capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('Missing link target', result.stderr)
-        self.assertIn('before cleanup', result.stderr)
         self.assertFalse((self.root/'toolchains/llvmorg-23.1.2').exists())
         self.assertEqual(list((self.root/'toolchains').iterdir()), [])
 

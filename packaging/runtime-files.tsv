@@ -3,6 +3,10 @@ common 644 LICENSE
 common 644 githubreleases.json
 common 644 libexec/llvmup-components.json
 common 644 libexec/llvmup-selection.py
+common 644 libexec/llvmup-extract.py
+common 644 libexec/recipes/official.json
+common 644 libexec/recipes/winlibs.json
+common 644 libexec/recipes/llvm-mingw.json
 bash 644 libexec/llvmup-selection.sh
 bash 755 llvmup
 bash 755 llvm-prebuilt
@@ -25,7 +29,6 @@ powershell 644 Activate-LlvmVsCode.ps1
 powershell 644 Deactivate-Llvm.ps1
 powershell 644 Download-Llvm.ps1
 powershell 644 libexec/Llvm-Selection.psm1
-powershell 644 Download-Llvm-Enhanced.ps1
 powershell 644 Get-UserHome.psm1
 powershell 644 Install-Llvm.ps1
 powershell 644 Llvm-Completion.psm1
@@ -37,3 +40,18 @@ powershell 644 Llvm-Doctor-Deep.ps1
 powershell 644 Llvm-Functions.psm1
 powershell 644 Llvm-Functions-Core.psm1
 powershell 644 Uninstall-Llvmup.ps1
+powershell 755 llvmup.cmd
+powershell 644 libexec/pwsh/llvmup-cli.ps1
+powershell 644 libexec/pwsh/Llvm-Manifest.psm1
+powershell 644 libexec/pwsh/Llvm-Recipes.psm1
+powershell 644 libexec/pwsh/Llvm-Resolver.psm1
+powershell 644 libexec/pwsh/Llvm-Downloader.psm1
+powershell 644 libexec/pwsh/Llvm-Verifier.psm1
+powershell 644 libexec/pwsh/Llvm-Extractor.psm1
+powershell 644 libexec/pwsh/Llvm-Environment.psm1
+powershell 644 libexec/pwsh/Llvm-Runner.psm1
+powershell 644 libexec/pwsh/Llvm-ConfigEngine.psm1
+powershell 644 libexec/pwsh/Llvm-CMake.psm1
+powershell 644 libexec/pwsh/Llvm-Installer.psm1
+bash 755 libexec/sh/llvmup-engine.sh
+bash 644 libexec/sh/llvmup-session.sh

@@ -1,24 +1,34 @@
-# LLVMUP Maintenance Roadmap
+# LLVMUP Roadmap
 
-LLVMUP is in maintenance-first mode. The current command set is broad enough;
-the priority is to make it predictable before considering additional features.
+The multi-provider evolution (recipes for `official`, `winlibs` and `llvm-mingw`, the shared
+engines, Windows installation, verification, extraction, lockfiles and the ergonomic CLI) is
+implemented; see `docs/ARCHITECTURE_EVOLUTION.md` for what was verified and how. The priority now is
+to make it predictable on every platform before adding more.
 
 ## Current priorities
 
-1. Fix reproducible bugs in installation, activation, version selection, removal,
-   and project configuration.
-2. Add a regression test for each confirmed bug when practical.
-3. Keep Bash and PowerShell behavior aligned for commands that already exist.
-4. Preserve download integrity checks and fail safely on partial operations.
-5. Remove stale claims and examples when documentation differs from the code.
+1. Run the prepared CI jobs (`tests.yml`: Pester on PowerShell 5.1 and 7, Bats, engine parity;
+   `action-e2e.yml`: provider matrix) and fix whatever real runners reveal.
+2. Verify macOS hosts (official ARM64 and llvm-mingw universal) and Windows ARM64 execution;
+   both are implemented but not yet executed.
+3. Keep Bash and PowerShell behaviour aligned: extend `tests/integration/engine_parity.sh` beyond
+   resolution (environment deltas, lockfile entries, manifests).
+4. Release packages: add build provenance attestations for `llvmup-windows.zip` and
+   `llvmup-linux.tar.gz` in the release workflow (checksums are already published and verified by
+   the bootstraps); no self-generated certificates.
+5. Fix reproducible bugs with a regression test each.
 
-Work should be driven by a failing test or a minimal reproducer. Broad rewrites,
-new abstraction layers, and speculative performance work are out of scope unless
-they are required to correct a confirmed defect.
+## Under consideration
 
-## Feature requests
+- Selective profiles for WinLibs and LLVM-MinGW. Only `full` is offered today because their
+  runtimes, sysroots and wrappers have dependencies the official component catalog does not model;
+  a reduced profile must be shown to preserve them first.
+- Further WinLibs variants (MCF threads, i686 MSVCRT) beyond the ones exercised in tests: the
+  resolver selects them, but they have not been installed and validated end to end.
+- A bounded download cache size and `llvmup cache prune`.
 
-There is no feature backlog at this time. New feature proposals should remain in
-the issue tracker until there is evidence of recurring user need, a small design,
-and a clear long-term maintenance cost. Acceptance is exceptional while known
-reliability issues remain.
+## Out of scope
+
+- Transparent shims or proxies for `clang`, `gcc` and other toolchain binaries.
+- Executing recipes fetched from the network.
+- Building WinLibs or LLVM-MinGW from source.

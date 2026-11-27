@@ -39,20 +39,59 @@ inputs:
     description: Optional token used for GitHub API and attestation verification
     required: false
     default: ""
+  provider:
+    description: Toolchain provider (official, winlibs, llvm-mingw). The version input selects the LLVM version.
+    required: false
+    default: official
+  release:
+    description: Exact upstream release tag of the provider (for example 20261117 for llvm-mingw)
+    required: false
+    default: ""
+  crt:
+    description: C runtime variant for MinGW providers (ucrt or msvcrt)
+    required: false
+    default: ""
+  target:
+    description: Target triple to activate inside a multi-target bundle (for example aarch64-w64-mingw32)
+    required: false
+    default: ""
+  compiler:
+    description: Compiler to activate inside a bundle that ships several (clang or gcc for WinLibs)
+    required: false
+    default: ""
+  extractor:
+    description: Archive extractor (auto, 7z, tar, zip, python)
+    required: false
+    default: auto
 
 outputs:
   version:
-    description: Canonical LLVM release tag selected by llvmup
-    value: ${{ steps.resolve-linux.outputs.version || steps.resolve-windows.outputs.version }}
+    description: Exact upstream release tag selected by llvmup
+    value: ${{ steps.provider-resolve-unix.outputs.release || steps.provider-resolve-windows.outputs.release }}
   llvm-path:
-    description: Absolute path to the installed LLVM toolchain
-    value: ${{ steps.activate-linux.outputs.llvm-path || steps.activate-windows.outputs.llvm-path }}
+    description: Absolute path to the installed toolchain
+    value: ${{ steps.provider-activate-unix.outputs.toolchain-path || steps.provider-activate-windows.outputs.toolchain-path }}
   cache-hit:
-    description: Whether the exact LLVM toolchain was restored from cache
-    value: ${{ inputs.cache == 'true' && steps.cache.outputs.cache-hit || 'false' }}
+    description: Whether an exact toolchain cache entry was restored
+    value: ${{ steps.provider-cache.outputs.cache-hit || 'false' }}
   verification:
-    description: Authentication methods recorded for the installed or cached toolchain
-    value: ${{ steps.activate-linux.outputs.verification || steps.activate-windows.outputs.verification }}
+    description: Verification methods recorded for the installed toolchain
+    value: ${{ steps.provider-activate-unix.outputs.verification || steps.provider-activate-windows.outputs.verification }}
+  provider:
+    description: Provider of the installed toolchain
+    value: ${{ steps.provider-resolve-unix.outputs.provider || steps.provider-resolve-windows.outputs.provider }}
+  release:
+    description: Exact upstream release tag selected by llvmup
+    value: ${{ steps.provider-resolve-unix.outputs.release || steps.provider-resolve-windows.outputs.release }}
+  llvm-version:
+    description: LLVM compiler version in the selected release
+    value: ${{ steps.provider-resolve-unix.outputs.llvm-version || steps.provider-resolve-windows.outputs.llvm-version }}
+  toolchain-id:
+    description: Canonical LLVMUP toolchain identity
+    value: ${{ steps.provider-resolve-unix.outputs.toolchain-id || steps.provider-resolve-windows.outputs.toolchain-id }}
+  toolchain-path:
+    description: Absolute path to the installed toolchain
+    value: ${{ steps.provider-activate-unix.outputs.toolchain-path || steps.provider-activate-windows.outputs.toolchain-path }}
 
 runs:
   using: composite
@@ -64,26 +103,22 @@ runs:
         echo "llvmup's composite action supports Linux, macOS ARM64, and Windows runners." >&2
         exit 1
 
-    - name: Validate Unix inputs
-      if: runner.os == 'Linux' || runner.os == 'macOS'
+    - name: Validate inputs
+      id: request
       shell: bash
       env:
         INPUT_CACHE: ${{ inputs.cache }}
+        INPUT_PROVIDER: ${{ inputs.provider }}
+        INPUT_EXTRACTOR: ${{ inputs.extractor }}
         INPUT_VERIFY: ${{ inputs.verify }}
       run: |
         set -euo pipefail
         case "$INPUT_CACHE" in true|false) ;; *) echo "cache must be 'true' or 'false'." >&2; exit 1 ;; esac
         case "$INPUT_VERIFY" in warn|strict|skip) ;; *) echo "verify must be 'warn', 'strict', or 'skip'." >&2; exit 1 ;; esac
-
-    - name: Validate Windows inputs
-      if: runner.os == 'Windows'
-      shell: pwsh
-      env:
-        INPUT_CACHE: ${{ inputs.cache }}
-        INPUT_VERIFY: ${{ inputs.verify }}
-      run: |
-        if ($env:INPUT_CACHE -notin @('true', 'false')) { throw "cache must be 'true' or 'false'." }
-        if ($env:INPUT_VERIFY -notin @('warn', 'strict', 'skip')) { throw "verify must be 'warn', 'strict', or 'skip'." }
+        provider="$(printf '%s' "$INPUT_PROVIDER" | tr '[:upper:]' '[:lower:]')"
+        case "$provider" in official|winlibs|llvm-mingw) ;; *) echo "Unknown provider." >&2; exit 1 ;; esac
+        case "$INPUT_EXTRACTOR" in auto|7z|tar|zip|python) ;; *) echo "Unknown extractor." >&2; exit 1 ;; esac
+        printf 'provider=%s\n' "$provider" >> "$GITHUB_OUTPUT"
 
     - name: Install llvmup CLI
       if: runner.os == 'Linux' || runner.os == 'macOS'
@@ -116,38 +151,8 @@ runs:
         "LLVM_TOOLCHAINS_DIR=$(Join-Path $dataHome 'toolchains')" | Add-Content -Path $env:GITHUB_ENV
         "LLVMUP_DISABLE_AUTOACTIVATE=1" | Add-Content -Path $env:GITHUB_ENV
 
-    - name: Resolve stable LLVM release on Unix
-      if: runner.os == 'Linux' || runner.os == 'macOS'
-      id: resolve-linux
-      shell: bash
-      env:
-        INPUT_VERSION: ${{ inputs.version }}
-        GITHUB_TOKEN: ${{ inputs.github-token || github.token }}
-      run: |
-        set -euo pipefail
-        metadata="$(llvmup resolve --format json "$INPUT_VERSION")"
-        version="$(jq -r '.version' <<< "$metadata")"
-        asset_key="$(jq -r 'if .asset_digest != "" then .asset_digest else "asset-" + .asset_id end' <<< "$metadata")"
-        printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
-        printf 'asset-key=%s\n' "$asset_key" >> "$GITHUB_OUTPUT"
-
-    - name: Resolve stable LLVM release on Windows
-      if: runner.os == 'Windows'
-      id: resolve-windows
-      shell: pwsh
-      env:
-        INPUT_VERSION: ${{ inputs.version }}
-        GITHUB_TOKEN: ${{ inputs.github-token || github.token }}
-      run: |
-        $arch = switch ($env:RUNNER_ARCH) { 'ARM64' { 'arm64' } default { 'x64' } }
-        $metadataText = & (Join-Path $env:GITHUB_ACTION_PATH 'Download-Llvm.ps1') -Version $env:INPUT_VERSION -Platform Windows -Arch $arch -ArchiveOnly -ResolveOnly -OutputFormat Json -Quiet
-        $metadata = $metadataText | ConvertFrom-Json
-        $assetKey = if ($metadata.asset_digest) { $metadata.asset_digest } else { "asset-$($metadata.asset_id)" }
-        "version=$($metadata.version)" | Add-Content -Path $env:GITHUB_OUTPUT
-        "asset-key=$assetKey" | Add-Content -Path $env:GITHUB_OUTPUT
-
     - name: Resolve Unix component selection
-      if: runner.os == 'Linux' || runner.os == 'macOS'
+      if: (runner.os == 'Linux' || runner.os == 'macOS')
       id: selection-linux
       shell: bash
       env:
@@ -168,7 +173,7 @@ runs:
         printf 'key=%s\n' "$(jq -r '.key' <<< "$LLVM_SELECTION_JSON")" >> "$GITHUB_OUTPUT"
 
     - name: Resolve Windows component selection
-      if: runner.os == 'Windows'
+      if: (runner.os == 'Windows')
       id: selection-windows
       shell: pwsh
       env:
@@ -199,98 +204,172 @@ runs:
         Import-Module (Join-Path $env:GITHUB_ACTION_PATH 'libexec/Llvm-Selection.psm1') -Force
         Write-LlvmSpaceSnapshot -Label 'before cache restore' -Paths @((Join-Path $env:RUNNER_TEMP 'llvmup-data')) -Enabled $true
 
-    - name: Restore LLVM toolchain cache
-      if: inputs.cache == 'true'
-      id: cache
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-      with:
-        path: ${{ runner.temp }}/llvmup-data/toolchains/${{ steps.resolve-linux.outputs.version || steps.resolve-windows.outputs.version }}
-        key: llvmup-selection-v1-${{ steps.selection-linux.outputs.key || steps.selection-windows.outputs.key }}-${{ runner.os }}-${{ runner.arch }}-${{ inputs.verify }}-${{ steps.resolve-linux.outputs.version || steps.resolve-windows.outputs.version }}-${{ steps.resolve-linux.outputs.asset-key || steps.resolve-windows.outputs.asset-key }}
-
-    - name: Install or validate LLVM toolchain on Unix
-      if: runner.os == 'Linux' || runner.os == 'macOS'
+    - name: Resolve provider release on Unix
+      if: (runner.os == 'Linux' || runner.os == 'macOS')
+      id: provider-resolve-unix
       shell: bash
       env:
         LLVMUP_IGNORE_CONFIG: '1'
-        INPUT_PROFILE: ${{ inputs.profile }}
-        INPUT_COMPONENTS: ${{ inputs.components }}
-        INPUT_STRIP: ${{ inputs.strip }}
-        INPUT_VERBOSE: ${{ inputs.verbose }}
-        RESOLVED_VERSION: ${{ steps.resolve-linux.outputs.version }}
-        VERIFY_POLICY: ${{ inputs.verify }}
+        LLVMUP_DISABLE_AUTOACTIVATE: '1'
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_RELEASE: ${{ inputs.release }}
+        INPUT_CRT: ${{ inputs.crt }}
+        INPUT_EXTRACTOR: ${{ inputs.extractor }}
+        INPUT_TARGET: ${{ inputs.target }}
+        PROVIDER: ${{ steps.request.outputs.provider }}
         GITHUB_TOKEN: ${{ inputs.github-token || github.token }}
-        GH_TOKEN: ${{ inputs.github-token || github.token }}
       run: |
         set -euo pipefail
-        args=(--verify "$VERIFY_POLICY")
-        [ -z "$INPUT_PROFILE" ] || args+=(--profile "$INPUT_PROFILE")
-        while IFS= read -r component; do [ -z "$component" ] || args+=(--component "$component"); done < <(printf '%s' "$INPUT_COMPONENTS" | tr ',[:space:]' '\n')
-        [ "$INPUT_STRIP" != true ] || args+=(--strip)
-        if [ "$INPUT_VERBOSE" = true ]; then args+=(--verbose); else args+=(--quiet); fi
-        llvmup install "${args[@]}" "$RESOLVED_VERSION"
+        args=("$PROVIDER@${INPUT_VERSION:-latest}" --format json --extractor "$INPUT_EXTRACTOR")
+        [ -z "$INPUT_RELEASE" ] || args+=(--release "$INPUT_RELEASE")
+        [ -z "$INPUT_CRT" ] || args+=(--crt "$INPUT_CRT")
+        [ -z "$INPUT_TARGET" ] || args+=(--target "$INPUT_TARGET")
+        metadata="$(llvmup resolve "${args[@]}")"
+        {
+          printf 'provider=%s\n' "$PROVIDER"
+          printf 'expected-asset=%s\n' "$(jq -c '{canonical_id, release, asset_name, asset_id, asset_digest}' <<< "$metadata")"
+          printf 'release=%s\n' "$(jq -r '.release' <<< "$metadata")"
+          printf 'llvm-version=%s\n' "$(jq -r '.llvm_version' <<< "$metadata")"
+          printf 'toolchain-id=%s\n' "$(jq -r '.canonical_id' <<< "$metadata")"
+          printf 'asset-key=%s\n' "$(jq -r '"asset-" + (.asset_id | tostring) + "-" + (.asset_digest // "")' <<< "$metadata")"
+        } >> "$GITHUB_OUTPUT"
 
-    - name: Install or validate LLVM toolchain on Windows
+    - name: Resolve provider release on Windows
       if: runner.os == 'Windows'
+      id: provider-resolve-windows
       shell: pwsh
       env:
-        INPUT_PROFILE: ${{ inputs.profile }}
-        INPUT_COMPONENTS: ${{ inputs.components }}
-        INPUT_STRIP: ${{ inputs.strip }}
-        INPUT_VERBOSE: ${{ inputs.verbose }}
-        RESOLVED_VERSION: ${{ steps.resolve-windows.outputs.version }}
-        VERIFY_POLICY: ${{ inputs.verify }}
+        LLVMUP_IGNORE_CONFIG: '1'
+        LLVMUP_DISABLE_AUTOACTIVATE: '1'
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_RELEASE: ${{ inputs.release }}
+        INPUT_CRT: ${{ inputs.crt }}
+        INPUT_TARGET: ${{ inputs.target }}
+        INPUT_EXTRACTOR: ${{ inputs.extractor }}
+        PROVIDER: ${{ steps.request.outputs.provider }}
         GITHUB_TOKEN: ${{ inputs.github-token || github.token }}
-        GH_TOKEN: ${{ inputs.github-token || github.token }}
       run: |
-        $arch = switch ($env:RUNNER_ARCH) { 'ARM64' { 'arm64' } default { 'x64' } }
-        $components = @($env:INPUT_COMPONENTS -split '[,\s]+' | Where-Object { $_ })
-        & (Join-Path $env:GITHUB_ACTION_PATH 'Download-Llvm.ps1') -Version $env:RESOLVED_VERSION -Platform Windows -Arch $arch -ArchiveOnly -VerifyPolicy $env:VERIFY_POLICY -Profile $env:INPUT_PROFILE -Component $components -VerboseMode:($env:INPUT_VERBOSE -eq 'true') -Quiet:($env:INPUT_VERBOSE -ne 'true')
+        $version = if ($env:INPUT_VERSION) { $env:INPUT_VERSION } else { 'latest' }
+        $cliArgs = @("$($env:PROVIDER)@$version", '--format', 'json')
+        if ($env:INPUT_RELEASE) { $cliArgs += @('--release', $env:INPUT_RELEASE) }
+        if ($env:INPUT_TARGET) { $cliArgs += @('--target', $env:INPUT_TARGET) }
+        if ($env:INPUT_EXTRACTOR) { $cliArgs += @('--extractor', $env:INPUT_EXTRACTOR) }
+        if ($env:INPUT_CRT) { $cliArgs += @('--crt', $env:INPUT_CRT) }
+        $text = & (Join-Path $env:GITHUB_ACTION_PATH 'llvmup.cmd') resolve @cliArgs
+        if ($LASTEXITCODE -ne 0) { throw "llvmup resolve failed with exit code $LASTEXITCODE" }
+        $m = ($text -join "`n") | ConvertFrom-Json
+        $assetKey = "asset-$($m.asset_id)-$($m.asset_digest)"
+        $expectedAsset = $m | Select-Object canonical_id, release, asset_name, asset_id, asset_digest | ConvertTo-Json -Compress
+        @("provider=$($env:PROVIDER)", "expected-asset=$expectedAsset", "release=$($m.release)", "llvm-version=$($m.llvm_version)", "toolchain-id=$($m.canonical_id)", "asset-key=$assetKey") |
+          Add-Content -Path $env:GITHUB_OUTPUT
 
-    - name: Validate and activate LLVM toolchain on Unix
-      if: runner.os == 'Linux' || runner.os == 'macOS'
-      id: activate-linux
+    - name: Restore provider toolchain cache
+      if: inputs.cache == 'true'
+      id: provider-cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ${{ runner.temp }}/llvmup-data/toolchains/${{ steps.provider-resolve-unix.outputs.toolchain-id || steps.provider-resolve-windows.outputs.toolchain-id }}
+        # Cache exact provider assets and component selections. Activation choices share the bundle.
+        key: llvmup-provider-v3-${{ steps.selection-linux.outputs.key || steps.selection-windows.outputs.key }}-${{ steps.request.outputs.provider }}-${{ runner.os }}-${{ runner.arch }}-${{ inputs.verify }}-${{ steps.provider-resolve-unix.outputs.toolchain-id || steps.provider-resolve-windows.outputs.toolchain-id }}-${{ steps.provider-resolve-unix.outputs.asset-key || steps.provider-resolve-windows.outputs.asset-key }}
+
+    - name: Install or validate provider toolchain on Unix
+      if: (runner.os == 'Linux' || runner.os == 'macOS')
       shell: bash
       env:
-        RESOLVED_VERSION: ${{ steps.resolve-linux.outputs.version }}
+        LLVMUP_IGNORE_CONFIG: '1'
+        PROVIDER: ${{ steps.request.outputs.provider }}
+        RELEASE: ${{ steps.provider-resolve-unix.outputs.release }}
+        TOOLCHAIN_ID: ${{ steps.provider-resolve-unix.outputs.toolchain-id }}
+        INPUT_PROFILE: ${{ inputs.profile }}
+        INPUT_COMPONENTS: ${{ inputs.components }}
+        INPUT_STRIP: ${{ inputs.strip }}
+        INPUT_VERBOSE: ${{ inputs.verbose }}
+        INPUT_TARGET: ${{ inputs.target }}
+        LLVMUP_EXPECTED_ASSET_JSON: ${{ steps.provider-resolve-unix.outputs.expected-asset }}
+        INPUT_CRT: ${{ inputs.crt }}
+        INPUT_EXTRACTOR: ${{ inputs.extractor }}
+        VERIFY_POLICY: ${{ inputs.verify }}
+        GITHUB_TOKEN: ${{ inputs.github-token || github.token }}
+        GH_TOKEN: ${{ inputs.github-token || github.token }}
       run: |
         set -euo pipefail
-        llvm_path="$LLVM_TOOLCHAINS_DIR/$RESOLVED_VERSION"
-        llvmup env --format github "$RESOLVED_VERSION"
-        verification="$(jq -r '.methods // "unverified"' "$llvm_path/.llvmup-verification.json" 2>/dev/null || printf unverified)"
-        printf 'llvm-path=%s\n' "$llvm_path" >> "$GITHUB_OUTPUT"
-        printf 'verification=%s\n' "$verification" >> "$GITHUB_OUTPUT"
+        args=("$PROVIDER@latest" --release "$RELEASE" --name "$TOOLCHAIN_ID" --verify "$VERIFY_POLICY" --extractor "${INPUT_EXTRACTOR:-auto}")
+        [ -z "$INPUT_CRT" ] || args+=(--crt "$INPUT_CRT")
+        [ -z "$INPUT_PROFILE" ] || args+=(--profile "$INPUT_PROFILE")
+        [ -z "$INPUT_TARGET" ] || args+=(--target "$INPUT_TARGET")
+        [ "$INPUT_STRIP" != true ] || args+=(--strip)
+        [ "$INPUT_VERBOSE" = true ] || args+=(--quiet)
+        while IFS= read -r component; do [ -z "$component" ] || args+=(--component "$component"); done < <(printf '%s' "$INPUT_COMPONENTS" | tr ',[:space:]' '\n')
+        llvmup install "${args[@]}"
 
-    - name: Validate and activate LLVM toolchain on Windows
+    - name: Install or validate provider toolchain on Windows
       if: runner.os == 'Windows'
-      id: activate-windows
       shell: pwsh
       env:
-        RESOLVED_VERSION: ${{ steps.resolve-windows.outputs.version }}
+        LLVMUP_IGNORE_CONFIG: '1'
+        PROVIDER: ${{ steps.request.outputs.provider }}
+        RELEASE: ${{ steps.provider-resolve-windows.outputs.release }}
+        TOOLCHAIN_ID: ${{ steps.provider-resolve-windows.outputs.toolchain-id }}
+        INPUT_PROFILE: ${{ inputs.profile }}
+        INPUT_COMPONENTS: ${{ inputs.components }}
+        INPUT_STRIP: ${{ inputs.strip }}
+        INPUT_VERBOSE: ${{ inputs.verbose }}
+        INPUT_TARGET: ${{ inputs.target }}
+        LLVMUP_EXPECTED_ASSET_JSON: ${{ steps.provider-resolve-windows.outputs.expected-asset }}
+        INPUT_CRT: ${{ inputs.crt }}
+        INPUT_EXTRACTOR: ${{ inputs.extractor }}
+        VERIFY_POLICY: ${{ inputs.verify }}
+        GITHUB_TOKEN: ${{ inputs.github-token || github.token }}
+        GH_TOKEN: ${{ inputs.github-token || github.token }}
       run: |
-        $llvmPath = Join-Path $env:LLVM_TOOLCHAINS_DIR $env:RESOLVED_VERSION
-        $binPath = Join-Path $llvmPath 'bin'
-        $clang = Join-Path $binPath 'clang.exe'
-        $clangxx = Join-Path $binPath 'clang++.exe'
-        if (-not (Test-Path $clang)) { $clang = Join-Path $binPath 'clang.cmd' }
-        if (-not (Test-Path $clangxx)) { $clangxx = Join-Path $binPath 'clang++.cmd' }
-        if (-not (Test-Path $clang) -or -not (Test-Path $clangxx)) { throw 'Cached or installed LLVM toolchain is incomplete.' }
-        $ld = Join-Path $binPath 'lld-link.exe'
-        if (-not (Test-Path $ld)) { $ld = Join-Path $binPath 'lld-link.cmd' }
-        if (-not (Test-Path $ld)) { $ld = Join-Path $binPath 'lld.exe' }
-        if (-not (Test-Path $ld)) { $ld = Join-Path $binPath 'lld.cmd' }
-        $binPath | Add-Content -Path $env:GITHUB_PATH
-        $environment = @(
-          "CC=$clang"
-          "CXX=$clangxx"
-          "LLVMUP_ACTIVE_VERSION=$env:RESOLVED_VERSION"
-          "LLVMUP_ACTIVE_PATH=$llvmPath"
-        )
-        if (Test-Path $ld) { $environment += "LD=$ld" }
-        $environment | Add-Content -Path $env:GITHUB_ENV
-        $markerPath = Join-Path $llvmPath '.llvmup-verification.json'
-        $verification = if (Test-Path $markerPath) { (Get-Content $markerPath -Raw | ConvertFrom-Json).methods } else { 'unverified' }
-        "llvm-path=$llvmPath" | Add-Content -Path $env:GITHUB_OUTPUT
-        "verification=$verification" | Add-Content -Path $env:GITHUB_OUTPUT
+        $cliArgs = @("$($env:PROVIDER)@latest", '--release', $env:RELEASE, '--name', $env:TOOLCHAIN_ID, '--verify', $env:VERIFY_POLICY, '--extractor', $env:INPUT_EXTRACTOR)
+        if ($env:INPUT_CRT) { $cliArgs += @('--crt', $env:INPUT_CRT) }
+        if ($env:INPUT_PROFILE) { $cliArgs += @('--profile', $env:INPUT_PROFILE) }
+        if ($env:INPUT_TARGET) { $cliArgs += @('--target', $env:INPUT_TARGET) }
+        if ($env:INPUT_VERBOSE -ne 'true') { $cliArgs += '--quiet' }
+        foreach ($component in ($env:INPUT_COMPONENTS -split '[,\s]+' | Where-Object { $_ })) {
+            $cliArgs += @('--component', $component)
+        }
+        & (Join-Path $env:GITHUB_ACTION_PATH 'llvmup.cmd') install @cliArgs
+        if ($LASTEXITCODE -ne 0) { throw "llvmup install failed with exit code $LASTEXITCODE" }
+
+    - name: Activate provider toolchain on Unix
+      if: (runner.os == 'Linux' || runner.os == 'macOS')
+      id: provider-activate-unix
+      shell: bash
+      env:
+        TOOLCHAIN_ID: ${{ steps.provider-resolve-unix.outputs.toolchain-id }}
+        INPUT_TARGET: ${{ inputs.target }}
+        INPUT_COMPILER: ${{ inputs.compiler }}
+      run: |
+        set -euo pipefail
+        args=("$TOOLCHAIN_ID" --format github)
+        [ -z "$INPUT_TARGET" ] || args+=(--target "$INPUT_TARGET")
+        [ -z "$INPUT_COMPILER" ] || args+=(--compiler "$INPUT_COMPILER")
+        llvmup env "${args[@]}"
+        root="$(llvmup where "$TOOLCHAIN_ID")"
+        verification="$(jq -r '(.verification.methods // ["unverified"]) | if type == "array" then join("+") else . end' "$root/.llvmup-toolchain.json" 2>/dev/null || printf unverified)"
+        printf 'toolchain-path=%s\nverification=%s\n' "$root" "$verification" >> "$GITHUB_OUTPUT"
+
+    - name: Activate provider toolchain on Windows
+      if: runner.os == 'Windows'
+      id: provider-activate-windows
+      shell: pwsh
+      env:
+        TOOLCHAIN_ID: ${{ steps.provider-resolve-windows.outputs.toolchain-id }}
+        INPUT_TARGET: ${{ inputs.target }}
+        INPUT_COMPILER: ${{ inputs.compiler }}
+      run: |
+        $launcher = Join-Path $env:GITHUB_ACTION_PATH 'llvmup.cmd'
+        $cliArgs = @($env:TOOLCHAIN_ID, '--format', 'github')
+        if ($env:INPUT_TARGET) { $cliArgs += @('--target', $env:INPUT_TARGET) }
+        if ($env:INPUT_COMPILER) { $cliArgs += @('--compiler', $env:INPUT_COMPILER) }
+        & $launcher env @cliArgs
+        if ($LASTEXITCODE -ne 0) { throw "llvmup env failed with exit code $LASTEXITCODE" }
+        $root = (& $launcher where $env:TOOLCHAIN_ID | Select-Object -Last 1)
+        $manifest = Join-Path $root '.llvmup-toolchain.json'
+        $verification = if (Test-Path $manifest) { @((Get-Content $manifest -Raw | ConvertFrom-Json).verification.methods) -join '+' } else { 'unverified' }
+        @("toolchain-path=$root", "verification=$verification") | Add-Content -Path $env:GITHUB_OUTPUT
 
     - name: Report final Linux disk usage
       if: always() && runner.os == 'Linux' && inputs.verbose == 'true'

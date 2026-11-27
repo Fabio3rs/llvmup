@@ -226,7 +226,8 @@ Describe "Environment Activation and Deactivation" {
 
             # Assert
             $result | Should -Be $true
-            $env:PATH | Should -Match ([regex]::Escape((Join-Path $TestToolchainsPath $testVersion "bin")))
+            $expectedBin = Join-Path (Join-Path $TestToolchainsPath $testVersion) "bin"
+            $env:PATH | Should -Match ([regex]::Escape($expectedBin))
         }
 
         It "Should set version-specific environment variables correctly for various versions" {
@@ -259,7 +260,7 @@ Describe "Environment Activation and Deactivation" {
                 # Assert
                 $result | Should -Be $true
                 (Get-Item "Env:$expectedEnvVar" -ErrorAction SilentlyContinue).Value | Should -Be $mockPath
-                Write-Host "✓ $version → $expectedEnvVar = $mockPath"
+                Write-Host "[OK] $version -> $expectedEnvVar = $mockPath"
             }
         }
 

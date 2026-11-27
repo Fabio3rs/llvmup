@@ -66,41 +66,41 @@ function Write-InfoLog {
 
 function Write-ErrorLog {
     param([string]$Message)
-    Write-Host "❌ $Message" -ForegroundColor Red
+    Write-Host "[ERROR] $Message" -ForegroundColor Red
 }
 
 function Write-SuccessLog {
     param([string]$Message)
     if ($script:VERBOSE_MODE -or $env:LLVM_TEST_MODE) {
-        Write-Host "✅ $Message" -ForegroundColor Green
+        Write-Host "[OK] $Message" -ForegroundColor Green
     }
 }
 
 function Write-WarningLog {
     param([string]$Message)
     if ($script:VERBOSE_MODE -or $env:LLVM_TEST_MODE) {
-        Write-Host "⚠️  $Message" -ForegroundColor Yellow
+        Write-Host "[WARN] $Message" -ForegroundColor Yellow
     }
 }
 
 function Write-ProgressLog {
     param([string]$Message)
     if ($script:VERBOSE_MODE -or $env:LLVM_TEST_MODE) {
-        Write-Host "🔄 $Message" -ForegroundColor Cyan
+        Write-Host "[PROGRESS] $Message" -ForegroundColor Cyan
     }
 }
 
 function Write-TipLog {
     param([string]$Message)
     if ($script:VERBOSE_MODE -or $env:LLVM_TEST_MODE) {
-        Write-Host "💡 $Message" -ForegroundColor Blue
+        Write-Host "[TIP] $Message" -ForegroundColor Blue
     }
 }
 
 function Write-ConfigLog {
     param([string]$Message)
     if ($script:VERBOSE_MODE -or $env:LLVM_TEST_MODE) {
-        Write-Host "📋 $Message" -ForegroundColor Magenta
+        Write-Host "[CONFIG] $Message" -ForegroundColor Magenta
     }
 }
 
@@ -127,9 +127,9 @@ function Write-Log {
     }
 
     $prefix = switch ($Level) {
-        "Info" { "📋" }
-        "Warning" { "⚠️ " }
-        "Error" { "❌" }
+        "Info" { "[CONFIG]" }
+        "Warning" { "[WARN]" }
+        "Error" { "[ERROR]" }
         "Verbose" { "[VERBOSE]" }
     }
 
@@ -375,7 +375,7 @@ function Set-DefaultVersion {
     param([string]$VersionName)
     try {
         Set-LlvmDefaultVersion -Version $VersionName -ToolchainsPath $script:TOOLCHAINS_DIR -HomePath $script:LLVM_HOME | Out-Null
-        Write-Log "✅ Default LLVM version set to: $VersionName" -Level Info
+        Write-Log "[OK] Default LLVM version set to: $VersionName" -Level Info
         return $true
     } catch {
         Write-Log "Failed to set default version: $($_.Exception.Message)" -Level Error
@@ -390,17 +390,17 @@ function Show-DefaultVersion {
         $target = (Get-Item $defaultPath).Target
         if ($target) {
             $versionName = Split-Path $target -Leaf
-            Write-Log "📦 Current default LLVM version: $versionName" -Level Info
+            Write-Log "Current default LLVM version: $versionName" -Level Info
 
             $clangPath = Join-Path $defaultPath "bin\clang.exe"
             if (Test-Path $clangPath) {
                 $clangVersion = & $clangPath --version 2>$null | Select-Object -First 1
-                Write-Log "🔍 Clang version: $clangVersion" -Level Info
+                Write-Log "Clang version: $clangVersion" -Level Info
             }
         }
     } else {
-        Write-Log "❌ No default LLVM version is set" -Level Info
-        Write-Log "💡 Use '.\Install-Llvm.ps1 default set <version>' to set one" -Level Info
+        Write-Log "[ERROR] No default LLVM version is set" -Level Info
+        Write-Log "[TIP] Use '.\Install-Llvm.ps1 default set <version>' to set one" -Level Info
     }
 }
 
@@ -598,7 +598,7 @@ function Install-LlvmVersion {
         return $false
     }
 
-    Write-InfoLog "🚀 Installing LLVM version: $VersionToInstall"
+    Write-InfoLog "Installing LLVM version: $VersionToInstall"
 
     if ($BuildFromSource) {
         return Install-FromSource -Version $VersionToInstall -CmakeFlags $CmakeFlagsArray -Name $CustomName -SetDefault $SetAsDefault -Profile $BuildProfile -Components $ComponentsArray -DisableLibcWnoError $DisableLibcWnoErrorFlag -ForceReconfigure $ForceReconfigure
@@ -616,7 +616,7 @@ function Install-PreBuilt {
         [string[]]$SelectedComponents
     )
 
-    Write-InfoLog "📥 Installing pre-built LLVM $Version..."
+    Write-InfoLog "Installing pre-built LLVM $Version..."
 
     $parameters = @{ Version = $Version; Profile = $SelectedProfile; Component = $SelectedComponents; Strip = [bool]$Strip; Quiet = [bool]$script:Quiet; VerboseMode = [bool]$script:VERBOSE_MODE }
     if ($Name) { $parameters.Name = $Name }
@@ -653,7 +653,7 @@ function Install-FromSource {
         return $false
     }
 
-    Write-InfoLog "🔨 Building LLVM $Version from source..."
+    Write-InfoLog "Building LLVM $Version from source..."
 
     $buildName = if ($Name) { $Name } else { $Version }
     if ($buildName -in @('.', '..') -or $buildName.Contains('/') -or $buildName.Contains('\')) {
@@ -678,13 +678,13 @@ function Install-FromSource {
         }
     }
 
-    Write-InfoLog "🔧 Build Configuration:"
-    Write-InfoLog "   📦 Version: $Version $(if ($majorVersion) { "(LLVM $majorVersion)" })"
-    Write-InfoLog "   🏷️  Name: $buildName"
-    Write-InfoLog "   📋 Profile: $(if ($Profile) { $Profile } else { 'default' })"
-    Write-InfoLog "   🧩 Projects: $projectsToBuild"
+    Write-InfoLog "Build Configuration:"
+    Write-InfoLog "   Version: $Version $(if ($majorVersion) { "(LLVM $majorVersion)" })"
+    Write-InfoLog "   Name: $buildName"
+    Write-InfoLog "   [CONFIG] Profile: $(if ($Profile) { $Profile } else { 'default' })"
+    Write-InfoLog "   Projects: $projectsToBuild"
     if ($CmakeFlags.Count -gt 0) {
-        Write-InfoLog "   🔧 Custom CMake flags: $($CmakeFlags -join ' ')"
+        Write-InfoLog "   Custom CMake flags: $($CmakeFlags -join ' ')"
     }
 
     # Show LIBC_WNO_ERROR flag status
@@ -694,7 +694,7 @@ function Install-FromSource {
         Write-VerboseLog "Skipped LIBC_WNO_ERROR=ON flag (disabled)"
     }
 
-    Write-InfoLog "🏗️  Starting real LLVM build process..."
+    Write-InfoLog "Starting real LLVM build process..."
 
     $sourceDir = Join-Path $script:SOURCES_DIR $Version
     $llvmSourceDir = Join-Path $sourceDir 'llvm'
@@ -801,7 +801,7 @@ function Install-FromSource {
 
     $cmakeCachePath = Join-Path $buildDir 'CMakeCache.txt'
     if ($ForceReconfigure -and (Test-Path -LiteralPath $cmakeCachePath)) {
-        Write-InfoLog "♻️  Forcing CMake reconfiguration..."
+        Write-InfoLog "Forcing CMake reconfiguration..."
         Remove-Item -LiteralPath $cmakeCachePath -Force -ErrorAction SilentlyContinue
         $cmakeFilesPath = Join-Path $buildDir 'CMakeFiles'
         if (Test-Path -LiteralPath $cmakeFilesPath) {
@@ -845,7 +845,7 @@ function Install-FromSource {
     }
 
     Write-SuccessLog "Build and installation complete!"
-    Write-InfoLog "📁 LLVM version $Version has been installed at $installDir"
+    Write-InfoLog "LLVM version $Version has been installed at $installDir"
     Write-TipLog "To activate: llvm-activate $buildName"
 
     if ($SetDefault) {
@@ -891,7 +891,7 @@ function Initialize-LlvmConfig {
 
         if ($installedVersions.Count -gt 0) {
             Write-InfoLog "Detected installed versions:"
-            $installedVersions | ForEach-Object { Write-InfoLog "  • $_" }
+            $installedVersions | ForEach-Object { Write-InfoLog "  - $_" }
             $suggestedVersion = $installedVersions[0]
             Write-InfoLog ""
         }
@@ -993,9 +993,9 @@ function Invoke-LlvmConfigLoad {
     }
 
     Write-ConfigLog "Configuration loaded:"
-    Write-InfoLog "   📦 Version: $($config.Version)"
-    if ($config.Name) { Write-InfoLog "   🏷️  Name: $($config.Name)" }
-    if ($config.Profile) { Write-InfoLog "   📋 Profile: $($config.Profile)" }
+    Write-InfoLog "   Version: $($config.Version)"
+    if ($config.Name) { Write-InfoLog "   Name: $($config.Name)" }
+    if ($config.Profile) { Write-InfoLog "   [CONFIG] Profile: $($config.Profile)" }
     if ($config.CmakeFlags.Count -gt 0) { Write-VerboseLog "CMake flags: $($config.CmakeFlags -join ' ')" }
     if ($config.Components.Count -gt 0) { Write-VerboseLog "Components: $($config.Components -join ', ')" }
     if ($config.CmakePreset) { Write-VerboseLog "CMake preset: $($config.CmakePreset)" }
@@ -1006,8 +1006,8 @@ function Invoke-LlvmConfigLoad {
     }
 
     Write-TipLog "Next steps:"
-    Write-TipLog "  • .\Install-Llvm.ps1 config apply    - Install with these settings"
-    Write-TipLog "  • .\Install-Llvm.ps1 config activate - Activate if already installed"
+    Write-TipLog "  - .\Install-Llvm.ps1 config apply    - Install with these settings"
+    Write-TipLog "  - .\Install-Llvm.ps1 config activate - Activate if already installed"
 
     return $config
 }

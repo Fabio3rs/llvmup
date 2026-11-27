@@ -9,11 +9,11 @@ Describe 'Complete Auto-Activation Idempotency Workflow' {
         $script:TestToolchainsPath = Join-Path $TestDrive "toolchains"
         $script:TestProjectPath = Join-Path $TestDrive "project"
 
-        # Criar estrutura de diretórios
+        # Criar estrutura de diretorios
         New-Item -Type Directory -Path $script:TestToolchainsPath -Force | Out-Null
         New-Item -Type Directory -Path $script:TestProjectPath -Force | Out-Null
 
-        # Criar versões LLVM mock realistas
+        # Criar versoes LLVM mock realistas
         $mockVersions = @(
             'llvmorg-19.1.5',      # Latest prebuilt
             'llvmorg-19.1.2',
@@ -29,7 +29,7 @@ Describe 'Complete Auto-Activation Idempotency Workflow' {
             New-Item -Type Directory -Path (Join-Path $script:TestToolchainsPath $version) -Force | Out-Null
         }
 
-        # Criar arquivo de configuração do projeto
+        # Criar arquivo de configuracao do projeto
         $script:ConfigFile = Join-Path $script:TestProjectPath ".llvmup-config"
     }
 
@@ -45,10 +45,10 @@ Describe 'Complete Auto-Activation Idempotency Workflow' {
 
     Context 'Scenario 1: Already on Latest Version' {
         It 'should detect no activation needed when on latest-prebuilt' {
-            # Setup: configuração pede latest-prebuilt
+            # Setup: configuracao pede latest-prebuilt
             'default = "latest-prebuilt"' | Out-File -FilePath $script:ConfigFile -Encoding utf8
 
-            # Setup: simular que já estamos na versão mais recente
+            # Setup: simular que ja estamos na versao mais recente
             $currentlyActive = 'llvmorg-19.1.5'
 
             # Teste: verificar fluxo completo
@@ -64,55 +64,55 @@ Describe 'Complete Auto-Activation Idempotency Workflow' {
 
     Context 'Scenario 2: Version Upgrade Required' {
         It 'should detect activation needed when on older version' {
-            # Setup: configuração pede latest-prebuilt
+            # Setup: configuracao pede latest-prebuilt
             'default = "latest-prebuilt"' | Out-File -FilePath $script:ConfigFile -Encoding utf8
 
-            # Setup: simular versão ativa mais antiga
+            # Setup: simular versao ativa mais antiga
             $currentlyActive = 'llvmorg-18.1.8'
 
-            # Teste: verificar que ativação é necessária
+            # Teste: verificar que ativacao e necessaria
             $configExpression = Invoke-LlvmAutoActivate -StartDirectory $script:TestProjectPath
             $needsActivation = -not (Test-LlvmVersionSatisfiesExpression -ActiveVersion $currentlyActive -Expression $configExpression -ToolchainsPath $script:TestToolchainsPath)
             $needsActivation | Should -Be $true
 
-            # Teste: encontrar qual versão deveria ser ativada
+            # Teste: encontrar qual versao deveria ser ativada
             $targetVersion = Invoke-LlvmMatchVersions -Expression $configExpression -ToolchainsPath $script:TestToolchainsPath
             $targetVersion | Should -Be 'llvmorg-19.1.5'
 
-            Write-Host "🔄 Version upgrade needed: $currentlyActive → $targetVersion" -ForegroundColor Yellow
+            Write-Host "[PROGRESS] Version upgrade needed: $currentlyActive -> $targetVersion" -ForegroundColor Yellow
         }
     }
 
     Context 'Scenario 3: Source vs Prebuilt Switching' {
         It 'should detect type change requirement' {
-            # Setup: configuração pede latest-source
+            # Setup: configuracao pede latest-source
             'default = "latest-source"' | Out-File -FilePath $script:ConfigFile -Encoding utf8
 
-            # Setup: atualmente em versão prebuilt
+            # Setup: atualmente em versao prebuilt
             $currentlyActive = 'llvmorg-19.1.5'
 
-            # Teste: verificar que mudança de tipo é necessária
+            # Teste: verificar que mudanca de tipo e necessaria
             $configExpression = Invoke-LlvmAutoActivate -StartDirectory $script:TestProjectPath
             $needsActivation = -not (Test-LlvmVersionSatisfiesExpression -ActiveVersion $currentlyActive -Expression $configExpression -ToolchainsPath $script:TestToolchainsPath)
             $needsActivation | Should -Be $true
 
-            # Teste: encontrar versão source apropriada
+            # Teste: encontrar versao source apropriada
             $targetVersion = Invoke-LlvmMatchVersions -Expression $configExpression -ToolchainsPath $script:TestToolchainsPath
             $targetVersion | Should -Be 'source-llvmorg-19.1.5'
 
-            Write-Host "🔀 Type change needed: prebuilt → source ($targetVersion)" -ForegroundColor Cyan
+            Write-Host "[SWITCH] Type change needed: prebuilt -> source ($targetVersion)" -ForegroundColor Cyan
         }
     }
 
     Context 'Scenario 4: Wildcard Pattern Satisfaction' {
         It 'should detect satisfaction with wildcard patterns' {
-            # Setup: configuração usa wildcard
+            # Setup: configuracao usa wildcard
             'default = "19.1.*"' | Out-File -FilePath $script:ConfigFile -Encoding utf8
 
-            # Setup: versão ativa que satisfaz o wildcard
+            # Setup: versao ativa que satisfaz o wildcard
             $currentlyActive = 'llvmorg-19.1.2'
 
-            # Teste: verificar que não precisa ativar
+            # Teste: verificar que nao precisa ativar
             $configExpression = Invoke-LlvmAutoActivate -StartDirectory $script:TestProjectPath
             $needsActivation = -not (Test-LlvmVersionSatisfiesExpression -ActiveVersion $currentlyActive -Expression $configExpression -ToolchainsPath $script:TestToolchainsPath)
             $needsActivation | Should -Be $false
@@ -121,10 +121,10 @@ Describe 'Complete Auto-Activation Idempotency Workflow' {
         }
 
         It 'should detect wildcard pattern violation' {
-            # Setup: configuração usa wildcard específico
+            # Setup: configuracao usa wildcard especifico
             'default = "19.1.*"' | Out-File -FilePath $script:ConfigFile -Encoding utf8
 
-            # Setup: versão ativa que NÃO satisfaz o wildcard
+            # Setup: versao ativa que NAO satisfaz o wildcard
             $currentlyActive = 'llvmorg-18.1.8'
 
             # Teste: verificar que precisa ativar
@@ -138,24 +138,24 @@ Describe 'Complete Auto-Activation Idempotency Workflow' {
 
     Context 'Scenario 5: RC Version Handling' {
         It 'should handle RC versions correctly' {
-            # Setup: configuração pede versão específica RC
+            # Setup: configuracao pede versao especifica RC
             'default = "llvmorg-19.1.0-rc2"' | Out-File -FilePath $script:ConfigFile -Encoding utf8
 
             # Setup: atualmente em RC1
             $currentlyActive = 'llvmorg-19.1.0-rc1'
 
-            # Teste: verificar que upgrade de RC é necessário
+            # Teste: verificar que upgrade de RC e necessario
             $configExpression = Invoke-LlvmAutoActivate -StartDirectory $script:TestProjectPath
             $needsActivation = -not (Test-LlvmVersionSatisfiesExpression -ActiveVersion $currentlyActive -Expression $configExpression -ToolchainsPath $script:TestToolchainsPath)
             $needsActivation | Should -Be $true
 
-            Write-Host "🔄 RC upgrade needed: $currentlyActive → rc2" -ForegroundColor Magenta
+            Write-Host "[PROGRESS] RC upgrade needed: $currentlyActive -> rc2" -ForegroundColor Magenta
         }
     }
 
     Context 'Complete Workflow Integration Test' {
         It 'should demonstrate complete idempotency logic' {
-            # Setup: múltiplas configurações para testar
+            # Setup: multiplas configuracoes para testar
             $testCases = @(
                 @{ Config = 'latest-prebuilt'; Active = 'llvmorg-19.1.5'; ShouldActivate = $false; Scenario = 'Already latest' },
                 @{ Config = 'latest-prebuilt'; Active = 'llvmorg-18.1.8'; ShouldActivate = $true; Scenario = 'Upgrade needed' },
@@ -172,7 +172,7 @@ Describe 'Complete Auto-Activation Idempotency Workflow' {
                 $configExpression = Invoke-LlvmAutoActivate -StartDirectory $script:TestProjectPath
                 $needsActivation = -not (Test-LlvmVersionSatisfiesExpression -ActiveVersion $case.Active -Expression $configExpression -ToolchainsPath $script:TestToolchainsPath)
 
-                # Verificação
+                # Verificacao
                 $needsActivation | Should -Be $case.ShouldActivate
 
                 $status = if ($needsActivation) { "ACTIVATE" } else { "SKIP" }

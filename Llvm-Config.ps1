@@ -35,17 +35,17 @@ if ($Help) {
 # Logging functions
 function Write-LogInfo {
     param([string]$Message)
-    Write-Output "ℹ️  $Message"
+    Write-Output "[INFO] $Message"
 }
 
 function Write-LogSuccess {
     param([string]$Message)
-    Write-Output "✅ $Message"
+    Write-Output "[OK] $Message"
 }
 
 function Write-LogError {
     param([string]$Message)
-    Write-Error "❌ $Message"
+    Write-Error "[ERROR] $Message"
 }
 
 function Initialize-LlvmConfig {
@@ -201,12 +201,12 @@ function Load-LlvmConfig {
         return 1
     }
 
-    Write-LogInfo "🎯 Configuration loaded:"
-    Write-LogInfo "   📦 Version: $defaultVersion"
-    if ($customName) { Write-LogInfo "   🏷️  Name: $customName" }
-    if ($profile) { Write-LogInfo "   📋 Profile: $profile" }
-    if ($cmakeFlags) { Write-LogInfo "   🔧 CMake flags: $($cmakeFlags -join ', ')" }
-    if ($components) { Write-LogInfo "   📦 Components: $($components -join ', ')" }
+    Write-LogInfo "Configuration loaded:"
+    Write-LogInfo "   Version: $defaultVersion"
+    if ($customName) { Write-LogInfo "   Name: $customName" }
+    if ($profile) { Write-LogInfo "   [CONFIG] Profile: $profile" }
+    if ($cmakeFlags) { Write-LogInfo "   CMake flags: $($cmakeFlags -join ', ')" }
+    if ($components) { Write-LogInfo "   Components: $($components -join ', ')" }
 
     # Build command
     $cmdArgs = @($defaultVersion)
@@ -221,13 +221,13 @@ function Load-LlvmConfig {
         $cmdArgs += @("-Component", $comp)
     }
 
-    Write-LogInfo "💡 To install with these settings, run:"
+    Write-LogInfo "[TIP] To install with these settings, run:"
     Write-LogInfo "   Download-Llvm.ps1 -FromSource $($cmdArgs -join ' ')"
 
     # Ask if user wants to install now
-    $response = Read-Host "🤔 Install now? [y/N]"
+    $response = Read-Host "Install now? [y/N]"
     if ($response -match "^[Yy]") {
-        Write-LogInfo "🚀 Installing LLVM with project configuration..."
+        Write-LogInfo "Installing LLVM with project configuration..."
         & "./Download-Llvm.ps1" -FromSource @cmdArgs
     }
 }

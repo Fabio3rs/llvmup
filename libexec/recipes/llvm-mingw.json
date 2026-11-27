@@ -1,0 +1,89 @@
+{
+  "schema": 1,
+  "provider": "llvm-mingw",
+  "display_name": "LLVM-MinGW",
+  "description": "LLVM/Clang/LLD/LLDB based MinGW-w64 cross and native toolchains from mstorsjo/llvm-mingw",
+  "homepage": "https://github.com/mstorsjo/llvm-mingw",
+  "repository": "mstorsjo/llvm-mingw",
+  "api_url": "https://api.github.com/repos/mstorsjo/llvm-mingw/releases",
+  "supports_source": false,
+  "profiles": ["full"],
+  "default_profile": "full",
+  "available_compilers": ["clang"],
+  "default_compiler": "clang",
+  "default_variant": {
+    "crt": "ucrt",
+    "threads": "posix",
+    "exceptions": "seh",
+    "cxx_stdlib": "libc++"
+  },
+  "supported_crts": ["ucrt", "msvcrt"],
+  "tag_rules": {
+    "release_tag_pattern": "^([0-9]{8})$",
+    "llvm_version_source": "release_metadata",
+    "llvm_version_metadata_regex": "(?i)(?:with\\s+)?LLVM\\s+([0-9]+\\.[0-9]+\\.[0-9]+)",
+    "exclude_prerelease": true,
+    "exclude_draft": true
+  },
+  "verification": {
+    "origin_authentication_available": false,
+    "checksum_extensions": [".sha256", ".sha512"],
+    "signature_extensions": [],
+    "attestation_extensions": [],
+    "gpg_keys_url": "",
+    "attestation_repo": ""
+  },
+  "asset_rules": {
+    "ignore_suffixes": [".sha256", ".sha512", ".sig", ".jsonl", ".txt"],
+    "supported_hosts": ["windows", "linux", "macos"],
+    "host_patterns": {
+      "windows:x64": "^llvm-mingw-[0-9]{8}-(ucrt|msvcrt)-x86_64\\.zip$",
+      "windows:x86": "^llvm-mingw-[0-9]{8}-(ucrt|msvcrt)-i686\\.zip$",
+      "windows:arm64": "^llvm-mingw-[0-9]{8}-(ucrt|msvcrt)-aarch64\\.zip$",
+      "windows:armv7a": "^llvm-mingw-[0-9]{8}-(ucrt|msvcrt)-armv7\\.zip$",
+      "linux:x64": "^llvm-mingw-[0-9]{8}-(ucrt|msvcrt)-ubuntu-[^/]+-x86_64\\.tar\\.xz$",
+      "linux:arm64": "^llvm-mingw-[0-9]{8}-(ucrt|msvcrt)-ubuntu-[^/]+-aarch64\\.tar\\.xz$",
+      "macos:arm64": "^llvm-mingw-[0-9]{8}-(ucrt|msvcrt)-macos-universal\\.tar\\.xz$",
+      "macos:x64": "^llvm-mingw-[0-9]{8}-(ucrt|msvcrt)-macos-universal\\.tar\\.xz$"
+    },
+    "default_target_map": {
+      "x64": "x86_64-w64-mingw32",
+      "x86": "i686-w64-mingw32",
+      "arm64": "aarch64-w64-mingw32",
+      "armv7a": "armv7-w64-mingw32"
+    },
+    "multi_target_triples": [
+      "x86_64-w64-mingw32",
+      "i686-w64-mingw32",
+      "aarch64-w64-mingw32",
+      "armv7-w64-mingw32"
+    ]
+  },
+  "layout": {
+    "bin_dir": "bin",
+    "lib_dir": "lib",
+    "include_dir": "include",
+    "unwrap_single_top_dir": true,
+    "target_runtime_dirs": ["{target}/bin"],
+    "target_runtime_dirs_note": "Per-target runtime DLLs (libc++, libunwind, libwinpthread). bin/ holds the host's copies, so a program for another architecture (i686 on an x64 host) must find these first."
+  },
+  "tools": {
+    "clang": ["bin/clang"],
+    "clangxx": ["bin/clang++"],
+    "lld": ["bin/ld.lld", "bin/lld"],
+    "ld_lld": ["bin/ld.lld"],
+    "ar": ["bin/llvm-ar"],
+    "ranlib": ["bin/llvm-ranlib"],
+    "rc": ["bin/llvm-windres", "bin/llvm-rc"],
+    "clangd": ["bin/clangd"],
+    "lldb": ["bin/lldb"],
+    "target_wrapper_templates": {
+      "clang": "bin/{target}-clang",
+      "clangxx": "bin/{target}-clang++",
+      "ar": "bin/{target}-ar",
+      "ranlib": "bin/{target}-ranlib",
+      "rc": "bin/{target}-windres",
+      "ld": "bin/{target}-ld"
+    }
+  }
+}

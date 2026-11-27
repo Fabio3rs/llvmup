@@ -2,7 +2,7 @@
 function Get-UserHome {
     <#
     .SYNOPSIS
-    Retorna o diretório home do usuário de forma cross-platform.
+    Returns the user home directory in a cross-platform way.
     #>
     param()
 
@@ -14,7 +14,7 @@ function Get-UserHome {
 function Get-TempDir {
     <#
     .SYNOPSIS
-    Retorna um diretório temporário apropriado para a plataforma.
+    Returns an appropriate temporary directory for the current platform.
     #>
     param()
 

@@ -1,0 +1,86 @@
+{
+  "schema": 1,
+  "provider": "winlibs",
+  "display_name": "WinLibs (GCC + LLVM/Clang + MinGW-w64)",
+  "description": "WinLibs standalone MinGW-w64 builds bundling GCC, LLVM/Clang/LLD/LLDB, GDB, CMake, and Ninja",
+  "homepage": "https://winlibs.com/",
+  "repository": "brechtsanders/winlibs_mingw",
+  "api_url": "https://api.github.com/repos/brechtsanders/winlibs_mingw/releases",
+  "supports_source": false,
+  "profiles": ["full"],
+  "default_profile": "full",
+  "available_compilers": ["clang", "gcc"],
+  "default_compiler": "clang",
+  "default_variant": {
+    "crt": "ucrt",
+    "threads": "posix",
+    "exceptions": "seh",
+    "cxx_stdlib": "libstdc++"
+  },
+  "supported_crts": ["ucrt", "msvcrt"],
+  "supported_threads": ["posix", "mcf"],
+  "tag_rules": {
+    "release_tag_pattern": "^([0-9]+\\.[0-9]+\\.[0-9]+)(posix|mcf|win32)(?:-([0-9]+\\.[0-9]+\\.[0-9]+))?-([0-9]+\\.[0-9]+\\.[0-9]+)-(ucrt|msvcrt)-r([0-9]+)$",
+    "llvm_version_source": "asset_or_tag",
+    "requires_llvm_component": true,
+    "exclude_prerelease": true,
+    "exclude_draft": true
+  },
+  "verification": {
+    "origin_authentication_available": false,
+    "checksum_extensions": [".sha256", ".sha512"],
+    "signature_extensions": [],
+    "attestation_extensions": [],
+    "gpg_keys_url": "",
+    "attestation_repo": ""
+  },
+  "asset_rules": {
+    "ignore_suffixes": [".sha256", ".sha512", ".sig", ".jsonl", ".txt"],
+    "filename_pattern": "^winlibs-(x86_64|i686)-(posix|mcf|win32)-(seh|sjlj|dwarf)-gcc-([0-9]+\\.[0-9]+\\.[0-9]+)(?:-llvm-([0-9]+\\.[0-9]+\\.[0-9]+))?-mingw-w64(ucrt|msvcrt)-([0-9]+\\.[0-9]+\\.[0-9]+)-r([0-9]+)\\.(7z|zip)$",
+    "arch_map": {
+      "x64": "x86_64",
+      "x86": "i686"
+    },
+    "target_triple_map": {
+      "x64": "x86_64-w64-mingw32",
+      "x86": "i686-w64-mingw32"
+    },
+    "supported_hosts": ["windows"]
+  },
+  "path_constraints": [
+    {
+      "compilers": ["gcc"],
+      "forbid_whitespace": true,
+      "reason": "WinLibs GCC (collect2/ld) cannot link when the installation path contains spaces; Clang from the same bundle is unaffected (verified with GCC 16.2.0 r3 on Windows 10).",
+      "remedy": "Install under a directory without spaces, for example: $env:LLVM_TOOLCHAINS_DIR = 'C:\\llvmup\\toolchains'"
+    }
+  ],
+  "layout": {
+    "expected_top_dirs": ["mingw64", "mingw32"],
+    "bin_dir": "bin",
+    "lib_dir": "lib",
+    "include_dir": "include",
+    "unwrap_single_top_dir": true
+  },
+  "tools": {
+    "clang": ["bin/clang.exe"],
+    "clangxx": ["bin/clang++.exe"],
+    "gcc": ["bin/gcc.exe"],
+    "gxx": ["bin/g++.exe"],
+    "lld": ["bin/lld.exe", "bin/ld.lld.exe"],
+    "ld_lld": ["bin/ld.lld.exe"],
+    "ld_bfd": ["bin/ld.exe"],
+    "ar_clang": ["bin/llvm-ar.exe", "bin/ar.exe"],
+    "ar_gcc": ["bin/ar.exe", "bin/gcc-ar.exe"],
+    "ranlib_clang": ["bin/llvm-ranlib.exe", "bin/ranlib.exe"],
+    "ranlib_gcc": ["bin/ranlib.exe", "bin/gcc-ranlib.exe"],
+    "rc": ["bin/windres.exe", "bin/llvm-windres.exe"],
+    "llvm_config": ["bin/llvm-config.exe"],
+    "clangd": ["bin/clangd.exe"],
+    "gdb": ["bin/gdb.exe"],
+    "lldb": ["bin/lldb.exe"],
+    "libclang": {
+      "windows": ["bin/libclang.dll", "lib/libclang.dll"]
+    }
+  }
+}

@@ -61,6 +61,13 @@ Describe 'LLVMUP package installation' {
         { & $installer -InstallDir $destination -NoProfile } | Should -Throw '*Missing runtime file*'
         (Get-FileHash (Join-Path $destination 'Llvm-Functions.psm1')).Hash | Should -Be $before
     }
+    It 'removes a profile block that uses an equivalent absolute module path' {
+        & $installer -InstallDir $destination -ProfilePath $profileFile
+        $text = (Get-Content -LiteralPath $profileFile -Raw).Replace('custom install', ('custom install' + [IO.Path]::DirectorySeparatorChar + '.'))
+        [IO.File]::WriteAllText($profileFile, $text)
+        & (Join-Path $destination 'Uninstall-Llvmup.ps1') -ProfilePath $profileFile
+        (Get-Content -LiteralPath $profileFile -Raw).Trim() | Should -Be '# existing profile'
+    }
     It 'rolls back a failed replacement and leaves the profile untouched' {
         & $installer -InstallDir $destination -NoProfile
         $before = (Get-FileHash (Join-Path $destination 'Activate-Llvm.ps1')).Hash
@@ -100,6 +107,21 @@ Describe 'LLVMUP package installation' {
         Test-Path (Join-Path $destination 'Llvm-Functions.psm1') | Should -BeTrue
         Should -Invoke Invoke-WebRequest -Times 2 -Exactly -ParameterFilter { $Uri -like 'https://github.com/Fabio3rs/llvmup/releases/download/v0.0.0-test/*' -and $TimeoutSec -eq 120 }
     }
+    It 'installs from a local package directory or a mirror and rejects unsupported URLs' {
+        $assets = Join-Path $TestDrive 'bootstrap-assets'
+        Test-Path (Join-Path $assets 'llvmup-windows.zip') | Should -BeTrue
+        Mock Invoke-WebRequest { throw 'network must not be used' }
+        & (Join-Path $repo 'packaging/bootstrap.ps1') -Version v0.0.0-test -InstallDir $destination -NoProfile -PackageDir $assets
+        Test-Path (Join-Path $destination 'llvmup.cmd') | Should -BeTrue
+        Should -Invoke Invoke-WebRequest -Times 0 -Exactly
+
+        Mock Invoke-WebRequest {
+            Copy-Item -LiteralPath (Join-Path (Join-Path $TestDrive 'bootstrap-assets') (([string]$Uri).Split('/')[-1])) -Destination $OutFile
+        }
+        & (Join-Path $repo 'packaging/bootstrap.ps1') -Version v0.0.0-test -InstallDir $destination -NoProfile -BaseUrl 'https://mirror.example/llvmup/'
+        Should -Invoke Invoke-WebRequest -Times 2 -Exactly -ParameterFilter { $Uri -like 'https://mirror.example/llvmup/*' }
+        { & (Join-Path $repo 'packaging/bootstrap.ps1') -Version v0.0.0-test -InstallDir $destination -NoProfile -BaseUrl 'ftp://mirror.example' } | Should -Throw '*Unsupported bootstrap URL*'
+    }
     It 'rejects a bad checksum without installing anything' {
         Mock Invoke-WebRequest {
             if ($Uri -like '*/SHA256SUMS') { (('0' * 64) + '  llvmup-windows.zip') | Set-Content $OutFile }
@@ -113,5 +135,40 @@ Describe 'LLVMUP package installation' {
         { & (Join-Path $repo 'packaging/bootstrap.ps1') -Version v0.0.0-test -InstallDir $destination -NoProfile } | Should -Throw '*Interrupted download*'
         { & (Join-Path $repo 'packaging/bootstrap.ps1') -Version '../bad' -InstallDir $destination -NoProfile } | Should -Throw '*supply -Version*'
         Test-Path $destination | Should -BeFalse
+    }
+    It 'runs the packaged CLI outside the checkout and cleans nested libexec files on uninstall' {
+        & $installer -InstallDir $destination -NoProfile
+        $launcher = Join-Path $destination 'llvmup.cmd'
+        Test-Path $launcher | Should -BeTrue
+        $cli = Join-Path $destination 'libexec/pwsh/llvmup-cli.ps1'
+        Test-Path $cli | Should -BeTrue
+        $command = if ($env:OS -eq 'Windows_NT') { $launcher } else { (Get-Process -Id $PID).Path }
+        $prefix = @()
+        if ($env:OS -ne 'Windows_NT') { $prefix = @('-NoProfile', '-File', $cli) }
+
+        $savedHome = $env:LLVM_HOME
+        $savedToolchains = $env:LLVM_TOOLCHAINS_DIR
+        $env:LLVM_HOME = Join-Path $case 'llvm-home'
+        $env:LLVM_TOOLCHAINS_DIR = Join-Path $case 'toolchains'
+        Push-Location $case
+        try {
+            $doctorOut = (& $command @prefix doctor --json | Out-String)
+            $LASTEXITCODE | Should -Be 0 -Because $doctorOut
+            $doctorJson = $doctorOut | ConvertFrom-Json
+            $doctorJson.schema_version | Should -Be 1
+            $doctorJson.exit_code | Should -Be 0
+
+            $activateOut = (& $command @prefix activate missing-version 2>&1 | Out-String)
+            $LASTEXITCODE | Should -Be 2
+            $activateOut | Should -Match 'cannot modify the parent shell'
+        } finally {
+            Pop-Location
+            $env:LLVM_HOME = $savedHome
+            $env:LLVM_TOOLCHAINS_DIR = $savedToolchains
+        }
+
+        & (Join-Path $destination 'Uninstall-Llvmup.ps1') -NoProfile
+        Test-Path $launcher | Should -BeFalse
+        Test-Path (Join-Path $destination 'libexec/pwsh/llvmup-cli.ps1') | Should -BeFalse
     }
 }

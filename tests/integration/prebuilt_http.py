@@ -43,7 +43,7 @@ class PrebuiltHTTPTests(unittest.TestCase):
                 package.addfile(info, io.BytesIO(data))
         cls.archive = archive.getvalue()
 
-    def check_install(self, scenario, expected_size, profile=None):
+    def check_install(self, scenario, profile=None):
         requests = []
         archive = self.archive
 
@@ -99,6 +99,7 @@ class PrebuiltHTTPTests(unittest.TestCase):
                     env.update({
                         "LLVMUP_RELEASES_FILE": str(releases),
                         "LLVM_TOOLCHAINS_DIR": str(root / "toolchains"),
+                        "LLVM_HOME": str(root / "home"),
                         "TMPDIR": directory, "RUNNER_TEMP": directory,
                         "NO_PROXY": "127.0.0.1", "no_proxy": "127.0.0.1",
                     })
@@ -108,37 +109,35 @@ class PrebuiltHTTPTests(unittest.TestCase):
                         stderr=subprocess.STDOUT, timeout=45,
                     )
                     self.assertEqual(result.returncode, 0, result.stdout)
-                    self.assertIn(f"File size: {expected_size}", result.stdout)
-                    self.assertNotIn("File size: 0MB", result.stdout)
-                    self.assertIn("SHA256 asset.digest matches the downloaded file", result.stdout)
-                    self.assertTrue((root / "toolchains" / VERSION / "bin/clang").is_file())
+                    installed = root / "toolchains" / VERSION
+                    manifest = json.loads((installed / ".llvmup-toolchain.json").read_text())
+                    self.assertEqual(manifest["verification"]["checksum"], "valid")
+                    self.assertTrue((installed / "bin/clang").is_file())
                     if profile:
                         installed = root / 'toolchains' / VERSION
                         self.assertFalse((installed / 'bin/padding').exists())
                         marker = json.loads((installed / '.llvmup-installation.json').read_text())
                         self.assertEqual(marker['profile'], profile)
                         self.assertTrue((installed / 'lib/clang/20/lib/linux/libclang_rt.profile.a').is_file())
-                    for method in ("HEAD", "GET"):
-                        for path in ("/release", "/archive"):
-                            self.assertIn((method, path), requests)
+                    self.assertEqual(requests, [("GET", "/release"), ("GET", "/archive")])
             finally:
                 server.shutdown()
                 thread.join(timeout=5)
 
     def test_selective_install_through_real_http(self):
-        self.check_install('length', f'{len(self.archive) // 1024 // 1024}MB', profile='compiler')
+        self.check_install('length', profile='compiler')
 
-    def test_final_size_after_zero_length_redirect(self):
-        self.check_install("length", f"{len(self.archive) // 1024 // 1024}MB")
+    def test_download_after_zero_length_redirect(self):
+        self.check_install("length")
 
-    def test_missing_final_length_does_not_reuse_redirect_size(self):
-        self.check_install("missing_length", "unknown")
+    def test_download_without_length(self):
+        self.check_install("missing_length")
 
-    def test_invalid_final_length(self):
-        self.check_install("invalid_length", "unknown")
+    def test_download_when_head_length_would_be_invalid(self):
+        self.check_install("invalid_length")
 
-    def test_head_failure_still_allows_download(self):
-        self.check_install("head_failure", "unknown")
+    def test_download_without_head_support(self):
+        self.check_install("head_failure")
 
 
 if __name__ == "__main__":

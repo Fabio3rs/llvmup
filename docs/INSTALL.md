@@ -267,6 +267,48 @@ For offline installation, transfer and verify the package and `SHA256SUMS`,
 extract it, then run `bash llvmup/install.sh --no-profile` or
 `& ./llvmup/packaging/Install-Llvmup.ps1 -NoProfile`.
 
+The PowerShell bootstrap also installs from a directory holding `SHA256SUMS` and
+`llvmup-windows.zip`, or from a mirror of the release assets; the checksum is verified in
+both cases (a checksum detects corruption, not a malicious mirror):
+
+```powershell
+.\bootstrap.ps1 -PackageDir '\\fileserver\tools\llvmup\v0.8.0'
+.\bootstrap.ps1 -BaseUrl 'https://mirror.example.com/llvmup/v0.8.0'   # or LLVMUP_BOOTSTRAP_BASE_URL
+```
+
+### Windows: function versus launcher
+
+The installer adds two entry points:
+
+- the **`llvmup` PowerShell function** (module imported by the profile block, with
+  `-DisableNameChecking`). It runs in the current session, so `use`, `activate`,
+  `deactivate` and `pick` can change `PATH`, `CC`, `CXX`, ...;
+- **`llvmup.cmd`** on the user `PATH`, a launcher for cmd.exe, batch files, CMake and CI. It runs
+  llvmup in a child PowerShell process (PowerShell 7 when present, otherwise Windows PowerShell
+  5.1, with `-ExecutionPolicy Bypass` for that process only). It returns the exit code of the
+  command (for `run`, `+toolchain` and `shell`, the exit code of the program), prints errors as a
+  single `Error: ...` line, and rejects session-changing commands with exit code 2. Use
+  `llvmup run <toolchain> -- <command>` or `for /f "delims=" %i in ('llvmup env <toolchain> --format cmd') do %i`
+  there instead.
+
+Windows clients default to the `Restricted` execution policy, which prevents profiles and
+modules from loading. llvmup never changes it; if the function is missing in new sessions,
+choose a policy for your account (for example
+`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`) or keep using `llvmup.cmd`.
+
+### Windows: where toolchains live
+
+Toolchains go to `%LLVM_HOME%\toolchains` (default `%USERPROFILE%\.llvm\toolchains`). WinLibs GCC
+cannot link from a directory whose path contains spaces (a GCC/binutils limitation; Clang from the
+same bundle works, and accented paths work). If your user name contains spaces, set a different
+location before installing WinLibs:
+
+```powershell
+[Environment]::SetEnvironmentVariable('LLVM_HOME', 'C:\llvmup', 'User'); $env:LLVM_HOME = 'C:\llvmup'
+```
+
+llvmup warns at install time and whenever GCC is selected from such a path.
+
 ## Reinstallation and removal
 
 Re-run the installer to replace LLVMUP's own files. All required source files are

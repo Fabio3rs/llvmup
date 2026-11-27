@@ -191,3 +191,58 @@ jobs:
           }
           python tests/integration/toolchain_smoke.py "$env:LLVM_PATH"
           if ($LASTEXITCODE -ne 0) { throw 'Compiler/coverage smoke test failed' }
+
+  providers:
+    # Real downloads of the non-official providers through the provider path of the Action, followed
+    # by a compile/link/run check that uses only the activated toolchain.
+    name: Provider ${{ matrix.provider }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, provider: llvm-mingw, target: x86_64-w64-mingw32, compiler: '' }
+          - { os: ubuntu-latest, provider: llvm-mingw, target: aarch64-w64-mingw32, compiler: '' }
+          - { os: macos-15, provider: llvm-mingw, target: x86_64-w64-mingw32, compiler: '' }
+          - { os: windows-latest, provider: llvm-mingw, target: x86_64-w64-mingw32, compiler: '' }
+          - { os: windows-latest, provider: winlibs, target: '', compiler: clang }
+          - { os: windows-latest, provider: winlibs, target: '', compiler: gcc }
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Install through the local Action
+        id: setup
+        uses: ./
+        with:
+          provider: ${{ matrix.provider }}
+          version: '23'
+          crt: ucrt
+          target: ${{ matrix.target }}
+          compiler: ${{ matrix.compiler }}
+          verify: ${{ inputs.verify }}
+          cache: true
+
+      - name: Check outputs
+        shell: bash
+        env:
+          PROVIDER: ${{ steps.setup.outputs.provider }}
+          RELEASE: ${{ steps.setup.outputs.release }}
+          LLVM_VERSION: ${{ steps.setup.outputs.llvm-version }}
+          TOOLCHAIN_ID: ${{ steps.setup.outputs.toolchain-id }}
+          TOOLCHAIN_PATH: ${{ steps.setup.outputs.toolchain-path }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$PROVIDER" "$RELEASE" "$LLVM_VERSION" "$TOOLCHAIN_ID" "$TOOLCHAIN_PATH"
+          test "$PROVIDER" = "${{ matrix.provider }}"
+          test -n "$RELEASE" && test -n "$LLVM_VERSION" && test -d "$TOOLCHAIN_PATH"
+          case "$LLVM_VERSION" in 23.*) ;; *) echo "unexpected LLVM $LLVM_VERSION" >&2; exit 1 ;; esac
+
+      - name: Compile, link and run with the activated toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '#include <cstdio>\n#include <vector>\n#include <thread>\nint main(){std::vector<int> v{1,2,3};std::thread t([&]{v.push_back(4);});t.join();std::printf("ok %%zu\\n", v.size());}\n' > t.cpp
+          "$CXX" -std=c++23 -O1 t.cpp -o t.exe
+          file t.exe || true
+          if [ "${{ runner.os }}" = Windows ] && [ "${{ matrix.target }}" != aarch64-w64-mingw32 ]; then ./t.exe; fi

@@ -1,6 +1,5 @@
 #!/bin/bash
-# llvm_prebuilt.sh: Manages the download and installation of LLVM versions from the GitHub API.
-# Requirements: curl, jq, tar
+# Compatibility entrypoint for official installations. The recipe engine owns the installation.
 
 # Source LLVM functions for directory configuration support
 case "${BASH_SOURCE[0]}" in
@@ -8,7 +7,7 @@ case "${BASH_SOURCE[0]}" in
     *) SCRIPT_DIR="." ;;
 esac
 if [ -f "$SCRIPT_DIR/llvm-functions.sh" ]; then
-    source "$SCRIPT_DIR/llvm-functions.sh"
+    LLVMUP_DISABLE_AUTOACTIVATE=1 source "$SCRIPT_DIR/llvm-functions.sh"
 
     # Load configuration if .llvmup-config exists
     if [ "${LLVMUP_IGNORE_CONFIG:-0}" != 1 ] && [ -f ".llvmup-config" ]; then
@@ -31,7 +30,6 @@ COMPONENTS=("${LLVM_CONFIG_COMPONENTS[@]}")
 if [ "${LLVMUP_IGNORE_CONFIG:-0}" = 1 ]; then PROFILE=""; COMPONENTS=(); fi
 STRIP=0
 COMPONENTS_CLI=0
-source "$SCRIPT_DIR/libexec/llvmup-selection.sh"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -121,276 +119,16 @@ case "$CUSTOM_NAME" in
         ;;
 esac
 
-# Logging functions
-log_verbose() {
-    if [ "$VERBOSE" -eq 1 ] && [ "$QUIET" -eq 0 ]; then
-        echo "[VERBOSE] $*" >&2
-    fi
-}
-
-log_info() {
-    if [ "$QUIET" -eq 0 ]; then
-        echo "$*"
-    fi
-}
-
-log_error() {
-    echo "Error: $*" >&2
-}
-
-log_warning() {
-    echo "Warning: $*" >&2
-}
-
-# Check if required commands are installed
-command -v curl >/dev/null 2>&1 || {
-    log_error "The 'curl' command is required but not installed."
-    log_info "Please install curl using your package manager:"
-    log_info "  Ubuntu/Debian: sudo apt-get install curl"
-    log_info "  Fedora: sudo dnf install curl"
-    log_info "  Arch Linux: sudo pacman -S curl"
-    exit 1
-}
-
-command -v jq >/dev/null 2>&1 || {
-    log_error "The 'jq' command is required but not installed."
-    log_info "Please install jq using your package manager:"
-    log_info "  Ubuntu/Debian: sudo apt-get install jq"
-    log_info "  Fedora: sudo dnf install jq"
-    log_info "  Arch Linux: sudo pacman -S jq"
-    exit 1
-}
-
-llvm_selection_init || exit 1
-if [ "$LLVM_SELECTION_ENABLED" -eq 1 ] && [ "$(uname -s)" != Linux ]; then
-    log_error "Selective prebuilt installation in Bash supports Linux only; use the full profile on macOS."; exit 1
-fi
-
-VERIFY_POLICY="$(llvm-resolve-verification-policy "$VERIFY_REQUEST")" || exit 1
-
-VERSION_EXPRESSION="${1:-${LLVM_CONFIG_VERSION:-latest}}"
-
-# Retain numeric selection for direct llvm-prebuilt users while the documented
-# llvmup entrypoint defaults to the latest stable release.
-if [[ "$VERSION_EXPRESSION" =~ ^[0-9]+$ ]]; then
-    RELEASES_JSON="$(llvm-get-remote-stable-releases)" || exit 1
-    VERSION_LIST=()
-    while IFS= read -r candidate; do VERSION_LIST+=("$candidate"); done < <(jq -r '.[].tag_name' <<< "$RELEASES_JSON")
-    if [ "$VERSION_EXPRESSION" -lt 1 ] || [ "$VERSION_EXPRESSION" -gt "${#VERSION_LIST[@]}" ]; then
-        log_error "Invalid release number: $VERSION_EXPRESSION"
-        exit 1
-    fi
-    VERSION_EXPRESSION="${VERSION_LIST[$((VERSION_EXPRESSION-1))]}"
-fi
-
-log_info "Resolving stable LLVM release: $VERSION_EXPRESSION"
-RELEASE_METADATA="$(llvm-resolve-remote-release "$VERSION_EXPRESSION")" || exit 1
-SELECTED_VERSION="$(jq -r '.version' <<< "$RELEASE_METADATA")"
-ASSET_NAME="$(jq -r '.asset_name' <<< "$RELEASE_METADATA")"
-ASSET_URL="$(jq -r '.asset_url' <<< "$RELEASE_METADATA")"
-ASSET_DIGEST="$(jq -r '.asset_digest // ""' <<< "$RELEASE_METADATA")"
-SIG_URL="$(jq -r '.signature_url // ""' <<< "$RELEASE_METADATA")"
-SHA_URL="$(jq -r '.checksum_url // ""' <<< "$RELEASE_METADATA")"
-JSONL_URL="$(jq -r '.attestation_url // ""' <<< "$RELEASE_METADATA")"
-
-LLVM_TOOLCHAINS_DIR="$(llvm-get-toolchains-dir 2>/dev/null || echo "$HOME/.llvm/toolchains")"
-INSTALL_NAME="${CUSTOM_NAME:-$SELECTED_VERSION}"
-TARGET_DIR="$LLVM_TOOLCHAINS_DIR/$INSTALL_NAME"
-
-if [ -e "$TARGET_DIR" ]; then
-    if llvm-validate-toolchain-path "$TARGET_DIR"; then
-        llvm_selection_check "$TARGET_DIR" || exit 1
-        llvm-validate-verification-marker "$TARGET_DIR" "$SELECTED_VERSION" \
-            "$ASSET_DIGEST" "$VERIFY_POLICY" || exit 1
-        if [ "$SET_DEFAULT" -eq 1 ]; then
-            llvm-default-set "$INSTALL_NAME" || exit 1
-        fi
-        log_success "LLVM $SELECTED_VERSION is already installed as $INSTALL_NAME in $TARGET_DIR"
-        exit 0
-    fi
-
-    log_error "Incomplete LLVM installation already exists at $TARGET_DIR"
-    log_info "Remove or repair that directory before retrying."
-    exit 1
-fi
-
-log_info "Selected stable release: $SELECTED_VERSION"
-log_verbose "Download URL: $ASSET_URL"
-
-TEMP_BASE="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
-mkdir -p "$TEMP_BASE" || {
-    log_error "Failed to create temporary base directory: $TEMP_BASE"
-    exit 1
-}
-TEMP_DIR="$(mktemp -d "$TEMP_BASE/llvmup-${SELECTED_VERSION}.XXXXXX")" || {
-    log_error "Failed to create a temporary directory in $TEMP_BASE"
-    exit 1
-}
-STAGING_ROOT=""
-log_verbose "Temporary directory: $TEMP_DIR"
-cleanup_prebuilt_install() {
-    local result=$?
-    llvm_space_snapshot "before cleanup (status=$result)" "$TEMP_DIR" "${STAGING_ROOT:-}" "$TARGET_DIR"
-    rm -rf -- "$TEMP_DIR"
-    if [ -n "$STAGING_ROOT" ]; then
-        rm -rf -- "$STAGING_ROOT"
-    fi
-    llvm_space_snapshot "after cleanup" "$TEMP_DIR" "$TARGET_DIR"
-    return "$result"
-}
-trap cleanup_prebuilt_install EXIT
-
-DEST_FILE="$TEMP_DIR/$ASSET_NAME"
-
-llvm_space_snapshot "before download" "$TEMP_DIR" "$LLVM_TOOLCHAINS_DIR"
-
-# Get file size for progress indication
-log_info "Getting file information..."
-log_verbose "Checking file size at URL: $ASSET_URL"
-FILE_HEADERS=$(curl -fsIL --connect-timeout 10 --max-time 30 "$ASSET_URL" 2>/dev/null) || FILE_HEADERS=""
-# Redirects (and proxy responses) have their own headers. Only use the final
-# response, including when it omits Content-Length entirely.
-FILE_SIZE=$(awk '
-    /^HTTP\// { size = "" }
-    tolower($1) == "content-length:" { size = $2; sub(/\r$/, "", size) }
-    END { if (size ~ /^[0-9]+$/) print size }
-' <<< "$FILE_HEADERS")
-if [ -n "$FILE_SIZE" ]; then
-    FILE_SIZE_MB=$((FILE_SIZE / 1024 / 1024))
-    log_info "File size: ${FILE_SIZE_MB}MB"
-    log_verbose "Raw file size: $FILE_SIZE bytes"
-else
-    log_info "File size: unknown (no Content-Length header)"
-fi
-
-log_info "Starting download..."
-log_info "This may take several minutes depending on your connection speed."
-log_verbose "Downloading to: $DEST_FILE"
-
-# Always show progress bar for downloads, regardless of verbose mode
-# Use curl's progress bar which writes to stderr and doesn't interfere with logging
-echo "Download progress:"
-if ! curl -L \
-    --progress-bar \
-    --connect-timeout 30 \
-    --max-time 3600 \
-    --retry 3 \
-    --retry-delay 5 \
-    "$ASSET_URL" -o "$DEST_FILE"; then
-    log_error "Failed to download the tarball."
-    log_info "This could be due to:"
-    log_info "  - Network connectivity issues"
-    log_info "  - GitHub API rate limiting"
-    log_info "  - Invalid or expired download URL"
-    log_info "Please check your internet connection and try again."
-    log_verbose "Cleaning up temporary directory: $TEMP_DIR"
-    rm -rf "$TEMP_DIR"
-    exit 1
-fi
-
-echo # Add newline after progress bar
-log_success "Download completed successfully!"
-log_verbose "Downloaded file: $DEST_FILE ($(du -h "$DEST_FILE" | cut -f1))"
-log_info "Download finished; verifying integrity and release provenance..."
-if ! llvm-verify-release-asset "$DEST_FILE" "$ASSET_DIGEST" "$SHA_URL" \
-    "$SIG_URL" "$JSONL_URL" "$TEMP_DIR" "$VERIFY_POLICY"; then
-    log_error "Release verification failed; the archive will not be installed."
-    exit 1
-fi
-
-llvm_space_snapshot "after download" "$TEMP_DIR"
-
-log_info "Extracting the archive... (this may take a few moments)"
-echo "Extraction progress:"
-
-mkdir -p "$LLVM_TOOLCHAINS_DIR" || exit 1
-STAGING_ROOT="$(mktemp -d "$LLVM_TOOLCHAINS_DIR/.llvmup-${INSTALL_NAME}.installing.XXXXXX")" || exit 1
-STAGED_TOOLCHAIN="$STAGING_ROOT/toolchain"
-if [ "$(jq -r '.selective' <<< "$LLVM_SELECTION_JSON")" = true ]; then
-    python3 "$SCRIPT_DIR/libexec/llvmup-selection.py" extract --archive "$DEST_FILE" --root "$STAGED_TOOLCHAIN" "${LLVM_SELECTION_ARGS[@]}" || exit 1
-else
-log_info "Extraction backend: tar (full archive; xz handled by tar)"
-EXTRACT_STARTED=$SECONDS
-
-# Always show some extraction feedback, even in non-verbose mode
-if [ "$VERBOSE" -eq 1 ]; then
-    log_verbose "Extracting with verbose output (showing first 50 files):"
-    EXTRACTION_LOG="$TEMP_DIR/extraction.log"
-    if ! tar -xf "$DEST_FILE" -C "$STAGING_ROOT" --verbose >"$EXTRACTION_LOG" 2>&1; then
-        sed -n '1,50p' "$EXTRACTION_LOG" >&2
-        log_error "Failed to extract the tarball."
-        log_info "The downloaded file might be corrupted. Please try again."
-        exit 1
-    fi
-    sed -n '1,50p' "$EXTRACTION_LOG"
-else
-    # Show basic extraction progress with a simple progress indicator
-    echo -n "Extracting files... "
-    if ! tar -xf "$DEST_FILE" -C "$STAGING_ROOT" 2>&1; then
-        echo "FAILED"
-        log_error "Failed to extract the tarball."
-        log_info "The downloaded file might be corrupted. Please try again."
-        exit 1
-    fi
-    echo "DONE"
-fi
-
-    EXTRACTED_DIRS=()
-    for entry in "$STAGING_ROOT"/* "$STAGING_ROOT"/.[!.]* "$STAGING_ROOT"/..?*; do
-        [ -e "$entry" ] || [ -L "$entry" ] || continue
-        EXTRACTED_DIRS+=("$entry")
-    done
-    if [ "${#EXTRACTED_DIRS[@]}" -ne 1 ] || [ ! -d "${EXTRACTED_DIRS[0]}" ] || [ -L "${EXTRACTED_DIRS[0]}" ]; then
-        log_error "The downloaded tarball must contain one top-level toolchain directory."
-        exit 1
-    fi
-    if [ "${EXTRACTED_DIRS[0]}" != "$STAGED_TOOLCHAIN" ]; then
-        mv "${EXTRACTED_DIRS[0]}" "$STAGED_TOOLCHAIN" || exit 1
-    fi
-    log_info "Archive extracted in $((SECONDS-EXTRACT_STARTED))s"
-fi
-llvm_space_snapshot "after extraction" "$STAGED_TOOLCHAIN" "$TEMP_DIR"
-llvm_selection_finalize "$STAGED_TOOLCHAIN" || exit 1
-
-# Verify before publishing the final installation path.
-if ! llvm-validate-toolchain-path "$STAGED_TOOLCHAIN"; then
-    log_error "Installation verification failed before publishing $TARGET_DIR"
-    if [ "$VERBOSE" -eq 1 ]; then
-        log_verbose "Contents of installation directory:"
-        ls -la "$STAGED_TOOLCHAIN" 2>/dev/null || log_verbose "Directory listing failed"
-    fi
-    exit 1
-fi
-
-if ! llvm-write-verification-marker "$STAGED_TOOLCHAIN" "$SELECTED_VERSION" \
-    "$ASSET_NAME" "$ASSET_DIGEST" "$VERIFY_POLICY"; then
-    log_error "Failed to write the toolchain verification marker."
-    exit 1
-fi
-
-log_info "Installing LLVM to final location..."
-log_verbose "Moving from: $STAGED_TOOLCHAIN"
-log_verbose "Moving to: $TARGET_DIR"
-if ! mv "$STAGED_TOOLCHAIN" "$TARGET_DIR"; then
-    log_error "Failed to publish the validated toolchain at $TARGET_DIR"
-    exit 1
-fi
-
-if [ "$SET_DEFAULT" -eq 1 ]; then
-    llvm-default-set "$INSTALL_NAME" || exit 1
-fi
-
-log_info "LLVM $SELECTED_VERSION installed as $INSTALL_NAME in $TARGET_DIR."
-cleanup_prebuilt_install
-trap - EXIT
-
-log_info "Installation verification: clang and clang++ are usable ✓"
-if [ "$VERBOSE" -eq 1 ]; then
-    log_verbose "clang version info:"
-    "$TARGET_DIR/bin/clang" --version 2>/dev/null | head -3
-fi
-
-log_info ""
-log_success "Installation completed successfully!"
-log_info "Run 'llvm-activate $INSTALL_NAME' to activate the installed version."
-log_info ""
+version="${1:-${LLVM_CONFIG_VERSION:-latest}}"
+engine_args=("official@$version")
+[ -z "$PROFILE" ] || engine_args+=(--profile "$PROFILE")
+for component in "${COMPONENTS[@]}"; do engine_args+=(--component "$component"); done
+[ "$STRIP" -eq 0 ] || engine_args+=(--strip)
+[ "$SET_DEFAULT" -eq 0 ] || engine_args+=(--default)
+[ "$QUIET" -eq 0 ] || engine_args+=(--quiet)
+[ "$VERBOSE" -eq 0 ] || engine_args+=(--verbose)
+[ -z "$VERIFY_REQUEST" ] || engine_args+=(--verify "$VERIFY_REQUEST")
+[ -z "$CUSTOM_NAME" ] || engine_args+=(--name "$CUSTOM_NAME")
+LLVM_TOOLCHAINS_DIR="$(llvm-get-toolchains-dir)" || exit 1
+export LLVM_TOOLCHAINS_DIR
+exec /bin/bash "$SCRIPT_DIR/libexec/sh/llvmup-engine.sh" install "${engine_args[@]}"

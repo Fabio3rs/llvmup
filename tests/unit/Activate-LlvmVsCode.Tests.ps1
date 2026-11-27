@@ -3,10 +3,10 @@
 
 Describe "Activate-LlvmVsCode" {
     BeforeAll {
-        #––– Locate your script under test
+        #--- Locate your script under test
         $scriptPath = Join-Path $PSScriptRoot '../../Activate-LlvmVsCode.ps1'
 
-        #––– Define the helper *inside* BeforeAll
+        #--- Define the helper *inside* BeforeAll
         function Test-ActivateLlvmVsCode {
             [CmdletBinding()]
             param (
@@ -25,7 +25,7 @@ Describe "Activate-LlvmVsCode" {
             }
         }
 
-        #––– Test fixtures
+        #--- Test fixtures
         $Script:testDir       = 'TestDrive:\test'
         $Script:vscodeDir     = Join-Path $testDir '.vscode'
         $Script:toolchainsDir = Join-Path $testDir '.llvm\toolchains'
@@ -33,7 +33,7 @@ Describe "Activate-LlvmVsCode" {
         $Script:versionDir    = Join-Path $toolchainsDir $testVersion
         $Script:binDir        = Join-Path $versionDir 'bin'
 
-        #––– Create directories and fake binaries
+        #--- Create directories and fake binaries
         New-Item -ItemType Directory -Path $vscodeDir     -Force | Out-Null
         New-Item -ItemType Directory -Path $versionDir     -Force | Out-Null
         New-Item -ItemType Directory -Path $binDir         -Force | Out-Null
@@ -42,7 +42,7 @@ Describe "Activate-LlvmVsCode" {
         New-Item -ItemType File      -Path (Join-Path $binDir 'clang++.exe')-Force | Out-Null
         New-Item -ItemType File      -Path (Join-Path $binDir 'lldb.exe')   -Force | Out-Null
 
-        #––– Mock HOME and save environment
+        #--- Mock HOME and save environment
         $env:USERPROFILE      = $testDir
         $script:originalPath  = $env:PATH
         $script:originalCC    = $env:CC
@@ -50,12 +50,12 @@ Describe "Activate-LlvmVsCode" {
         $script:originalLD    = $env:LD
         $script:originalPWD   = $PWD
 
-        #––– Change to test directory to simulate VSCode workspace
+        #--- Change to test directory to simulate VSCode workspace
         Set-Location $testDir
     }
 
     AfterAll {
-        #––– Restore environment and clean up
+        #--- Restore environment and clean up
         $env:PATH = $script:originalPath
         $env:CC   = $script:originalCC
         $env:CXX  = $script:originalCXX

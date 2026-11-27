@@ -144,7 +144,7 @@ teardown() {
 @test "reusable action isolates caches by verification policy" {
     run grep -F '${{ inputs.verify }}' "$BATS_TEST_DIRNAME/../../action.yml"
     [ "$status" -eq 0 ]
-    run grep -F 'llvmup-selection-v1' "$BATS_TEST_DIRNAME/../../action.yml"
+    run grep -F 'llvmup-provider-v3' "$BATS_TEST_DIRNAME/../../action.yml"
     [ "$status" -eq 0 ]
 }
 
@@ -158,7 +158,7 @@ teardown() {
 @test "reusable action has native Linux and Windows execution paths" {
     run grep -F "runner.os == 'Windows'" "$BATS_TEST_DIRNAME/../../action.yml"
     [ "$status" -eq 0 ]
-    run grep -F 'Download-Llvm.ps1' "$BATS_TEST_DIRNAME/../../action.yml"
+    run grep -F 'llvmup.cmd' "$BATS_TEST_DIRNAME/../../action.yml"
     [ "$status" -eq 0 ]
     run grep -F 'verification:' "$BATS_TEST_DIRNAME/../../action.yml"
     [ "$status" -eq 0 ]

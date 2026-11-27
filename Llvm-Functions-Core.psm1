@@ -462,7 +462,7 @@ function Set-LlvmDefaultVersion {
         if (-not $cleared) { return $false }
     }
 
-    $itemType = if ($IsWindows -or $env:OS -eq 'Windows_NT') { 'Junction' } else { 'SymbolicLink' }
+    $itemType = if (Test-LlvmIsWindows) { 'Junction' } else { 'SymbolicLink' }
     New-Item -ItemType $itemType -Path $defaultPath -Target $versionPath -ErrorAction Stop | Out-Null
     return $true
 }
@@ -805,8 +805,18 @@ function Invoke-LlvmAutoActivateEnhanced {
     param(
         [string]$StartDirectory = (Get-Location).Path,
         [string]$ConfigExpression = $null,
-        [string]$ToolchainsPath = $null
+        [string]$ToolchainsPath = $null,
+        [switch]$IgnoreSessionOverride
     )
+
+    if (-not $IgnoreSessionOverride -and $env:LLVMUP_SESSION_OVERRIDE -eq '1') {
+        return @{
+            Action = 'SkippedSessionOverride'
+            ActiveVersion = (Get-LlvmActiveVersion)
+            Expression = $ConfigExpression
+            Reason = 'Manual session override is active'
+        }
+    }
 
     $config = if ($ConfigExpression) {
         @{ Expression = $ConfigExpression; AutoActivate = $true }
@@ -926,6 +936,51 @@ function Clear-LlvmSysEnvironmentVariables {
     }
 }
 
+function Test-LlvmIsWindows {
+    [CmdletBinding()]
+    param()
+    if ($PSVersionTable.PSVersion.Major -lt 6) { return $true }
+    if ($null -ne $IsWindows) { return [bool]$IsWindows }
+    return ($env:OS -eq 'Windows_NT')
+}
+
+function ConvertTo-LlvmHashtable {
+    [CmdletBinding()]
+    param([Parameter(ValueFromPipeline = $true)]$InputObject)
+    if ($null -eq $InputObject) { return $null }
+    if ($InputObject -is [System.Collections.IDictionary]) {
+        $ht = @{}
+        foreach ($key in $InputObject.Keys) {
+            $ht[$key] = ConvertTo-LlvmHashtable -InputObject $InputObject[$key]
+        }
+        return $ht
+    }
+    if ($InputObject -is [pscustomobject]) {
+        $ht = @{}
+        foreach ($prop in $InputObject.PSObject.Properties) {
+            $ht[$prop.Name] = ConvertTo-LlvmHashtable -InputObject $prop.Value
+        }
+        return $ht
+    }
+    if ($InputObject -is [System.Collections.IEnumerable] -and -not ($InputObject -is [string])) {
+        $items = @()
+        foreach ($item in $InputObject) {
+            $items += ,(ConvertTo-LlvmHashtable -InputObject $item)
+        }
+        return $items
+    }
+    return $InputObject
+}
+
+# Variables an activation may set; deactivation restores each one to its exact prior state
+# (including "was not set at all").
+$script:LlvmTrackedEnvNames = @(
+    'PATH', 'LIBCLANG_PATH', 'LLVM_CONFIG_PATH',
+    'CC', 'CXX', 'AR', 'RANLIB', 'RC', 'LD', 'NM', 'STRIP', 'DLLTOOL', 'WINDRES', 'PKG_CONFIG',
+    'LLVMUP_ACTIVE_VERSION', 'LLVMUP_ACTIVE_PATH', 'LLVMUP_ACTIVE_ID',
+    'LLVMUP_ACTIVE_PROVIDER', 'LLVMUP_ACTIVE_COMPILER', 'LLVMUP_ACTIVE_TARGET'
+)
+
 function Backup-LlvmEnvironment {
     <#
     .SYNOPSIS
@@ -939,25 +994,26 @@ function Backup-LlvmEnvironment {
     Hashtable containing backed up environment state
     #>
 
-    # Get all LLVM_SYS variables dynamically
     $llvmSysVars = Get-LlvmSysEnvironmentVariables
+    $trackedNames = @($script:LlvmTrackedEnvNames) + @('_ACTIVE_LLVM', '_ACTIVE_LLVM_PATH', '_LLVM_BACKUP')
+    $setFlags = @{}
+    $values = @{}
+    foreach ($name in $trackedNames) {
+        $isSet = Test-Path -LiteralPath "Env:$name"
+        $setFlags[$name] = $isSet
+        $values[$name] = if ($isSet) { (Get-Item -LiteralPath "Env:$name").Value } else { $null }
+    }
 
-    $backup = @{
-        PATH = $env:PATH
-        LIBCLANG_PATH = $env:LIBCLANG_PATH
-        LLVM_CONFIG_PATH = $env:LLVM_CONFIG_PATH
-        CC = $env:CC
-        CXX = $env:CXX
-        AR = $env:AR
-        RANLIB = $env:RANLIB
-        _ACTIVE_LLVM = $env:_ACTIVE_LLVM
-        _LLVM_BACKUP = $env:_LLVM_BACKUP
+    $backup = @{}
+    foreach ($name in $trackedNames) { $backup[$name] = $values[$name] }
+    $backup += @{
+        SET_FLAGS = $setFlags
         LLVM_SYS_VARS = $llvmSysVars
-        Timestamp = Get-Date
+        Timestamp = (Get-Date).ToString('o')
     }
 
     # Store backup in environment as JSON for persistence across function calls
-    $env:_LLVM_BACKUP = ($backup | ConvertTo-Json -Compress)
+    $env:_LLVM_BACKUP = ($backup | ConvertTo-Json -Depth 6 -Compress)
 
     return $backup
 }
@@ -981,10 +1037,10 @@ function Restore-LlvmEnvironment {
         [hashtable]$Backup
     )
 
-    # Try to get backup from parameter or environment
     if (-not $Backup -and $env:_LLVM_BACKUP) {
         try {
-            $Backup = ($env:_LLVM_BACKUP | ConvertFrom-Json -AsHashtable)
+            $parsedBackup = $env:_LLVM_BACKUP | ConvertFrom-Json
+            $Backup = ConvertTo-LlvmHashtable -InputObject $parsedBackup
         } catch {
             Write-Warning "Failed to parse backup from environment: $_"
             return $false
@@ -999,29 +1055,39 @@ function Restore-LlvmEnvironment {
     # Clear all current LLVM_SYS variables (cleanup before restore)
     Clear-LlvmSysEnvironmentVariables
 
-    # Restore basic environment variables
-    $env:PATH = $Backup.PATH
-    $env:LIBCLANG_PATH = $Backup.LIBCLANG_PATH
-    $env:LLVM_CONFIG_PATH = $Backup.LLVM_CONFIG_PATH
-    $env:CC = $Backup.CC
-    $env:CXX = $Backup.CXX
-    $env:AR = $Backup.AR
-    $env:RANLIB = $Backup.RANLIB
+    $setFlags = if ($Backup.ContainsKey('SET_FLAGS') -and $Backup.SET_FLAGS -is [hashtable]) { $Backup.SET_FLAGS } else { $null }
+    foreach ($name in @($script:LlvmTrackedEnvNames)) {
+        if ($setFlags -and $setFlags.ContainsKey($name)) {
+            if ($setFlags[$name]) {
+                Set-Item -LiteralPath "Env:$name" -Value ([string]$Backup[$name])
+            } else {
+                Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+            }
+        } else {
+            $val = $Backup[$name]
+            if ($null -eq $val -or ($name -ne 'PATH' -and [string]::IsNullOrEmpty([string]$val))) {
+                Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+            } else {
+                Set-Item -LiteralPath "Env:$name" -Value ([string]$val)
+            }
+        }
+    }
 
     # Restore LLVM_SYS variables from backup (if any existed before activation)
     if ($Backup.LLVM_SYS_VARS) {
         foreach ($varName in $Backup.LLVM_SYS_VARS.Keys) {
             $varValue = $Backup.LLVM_SYS_VARS[$varName]
-            if ($varValue) {
-                [Environment]::SetEnvironmentVariable($varName, $varValue, "Process")
+            if ($null -ne $varValue) {
+                Set-Item -LiteralPath "Env:$varName" -Value ([string]$varValue)
                 Write-Verbose "Restored environment variable: $varName = $varValue"
             }
         }
     }
 
     # Clear active LLVM marker and backup
-    Remove-Item Env:_ACTIVE_LLVM -ErrorAction SilentlyContinue
-    Remove-Item Env:_LLVM_BACKUP -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath 'Env:_ACTIVE_LLVM' -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath 'Env:_ACTIVE_LLVM_PATH' -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath 'Env:_LLVM_BACKUP' -ErrorAction SilentlyContinue
 
     return $true
 }
@@ -1112,6 +1178,8 @@ function Invoke-LlvmActivate {
             $rounded = [math]::Floor($combined / 10) * 10
             $envVarName = "LLVM_SYS_${rounded}_PREFIX"
             [Environment]::SetEnvironmentVariable($envVarName, $versionPath, "Process")
+            # llvm-sys >= 18.1 reads LLVM_SYS_<major><minor>_PREFIX (e.g. 181).
+            [Environment]::SetEnvironmentVariable("LLVM_SYS_${combined}_PREFIX", $versionPath, "Process")
             Write-Verbose "Set environment variable $envVarName = $versionPath (for LLVM $parsedVersion)"
         }
     }
@@ -1166,6 +1234,8 @@ function Invoke-LlvmDeactivate {
 }
 
 Export-ModuleMember -Function @(
+    'Test-LlvmIsWindows',
+    'ConvertTo-LlvmHashtable',
     'ConvertFrom-LlvmVersion',
     'Normalize-LlvmSemver',
     'Compare-LlvmVersion',

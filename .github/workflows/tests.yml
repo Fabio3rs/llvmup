@@ -28,7 +28,7 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y jq curl zsh python3
+        sudo apt-get install -y jq curl zsh python3 xz-utils 7zip
 
     - name: Install BATS
       run: |
@@ -64,35 +64,40 @@ jobs:
     - name: Test selective installation engine
       run: python3 tests/unit/test_selection.py
 
-    - name: Run BATS tests
-      run: |
-        # Ensure PATH is updated in this step
-        export PATH="$HOME/.local/bin:$PATH"
-        echo "Running tests with PATH: $PATH"
-        echo ""
-        echo "Available test files:"
-        ls -la tests/unit/*.bats
-        echo ""
+    - name: Run Bats tests
+      run: bats --verbose-run --timing tests/unit tests/integration
 
-        # Run the test runner script
-        chmod +x tests/run_tests.sh
-        ./tests/run_tests.sh
-      continue-on-error: false
+    - name: Run PowerShell Pester tests
+      shell: pwsh
+      run: ./tests/_pester_runner.ps1
+
+    - name: Check Bash and PowerShell engine parity on recorded release metadata
+      run: bash tests/integration/engine_parity.sh
+
+    - name: Cross-compile for Windows with llvm-mingw installed by the Bash engine
+      run: |
+        export LLVM_HOME="$RUNNER_TEMP/llvmup-cross"
+        engine="$PWD/libexec/sh/llvmup-engine.sh"
+        bash "$engine" install llvm-mingw@latest --crt ucrt
+        cat > "$RUNNER_TEMP/x.cpp" <<'CPP'
+        #include <vector>
+        #include <iostream>
+        int main() { std::vector<int> v{1, 2, 3}; std::cout << v.size() << "\n"; }
+        CPP
+        for t in x86_64-w64-mingw32 aarch64-w64-mingw32; do
+          bash "$engine" run llvm-mingw@latest --target "$t" -- "$t-clang++" -std=c++23 "$RUNNER_TEMP/x.cpp" -o "$RUNNER_TEMP/x-$t.exe"
+          file "$RUNNER_TEMP/x-$t.exe" | grep -q PE32+
+        done
 
     - name: Prepare lightweight LLVM fixture for action smoke test
-      run: |
-        fixture="$RUNNER_TEMP/llvmup-data/toolchains/llvmorg-20.1.8/bin"
-        mkdir -p "$fixture"
-        printf '#!/bin/sh\necho clang version 20.1.8\n' > "$fixture/clang"
-        printf '#!/bin/sh\necho clang version 20.1.8\n' > "$fixture/clang++"
-        printf '#!/bin/sh\nexit 0\n' > "$fixture/lld"
-        chmod +x "$fixture/clang" "$fixture/clang++" "$fixture/lld"
+      run: python3 tests/integration/action_fixture.py
 
     - name: Smoke test reusable action
       id: setup-llvm
       uses: ./
       env:
-        LLVMUP_RELEASES_FILE: ${{ github.workspace }}/githubreleases.json
+        LLVMUP_RELEASES_FILE: ${{ runner.temp }}/llvmup-action-releases.json
+        LLVMUP_ALLOW_FILE_URLS: '1'
       with:
         version: 20.1.8
         # Never persist the lightweight fake compiler under a production cache key.
@@ -111,7 +116,7 @@ jobs:
 
     - name: Upload test results
       if: always()
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
       with:
         name: bats-test-results
         path: |
@@ -141,6 +146,15 @@ jobs:
         }
         Write-Host "All tests passed successfully!"
 
+    - name: Run Pester tests on Windows PowerShell 5.1
+      shell: powershell
+      run: |
+        Install-Module -Name Pester -RequiredVersion 6.1.0 -Force -SkipPublisherCheck -Scope CurrentUser
+        $mod = Get-Module -ListAvailable Pester | Where-Object { $_.Version -eq [version]'6.1.0' } | Select-Object -First 1
+        $env:LLVMUP_PESTER_PATH = $mod.Path
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/_pester_runner.ps1
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
     - name: Smoke test the distributable Windows package
       shell: pwsh
       run: |
@@ -154,19 +168,14 @@ jobs:
         & "$env:RUNNER_TEMP/installed llvmup/Uninstall-Llvmup.ps1" -NoProfile
 
     - name: Prepare lightweight LLVM fixture for Windows action smoke test
-      shell: pwsh
-      run: |
-        $bin = Join-Path $env:RUNNER_TEMP 'llvmup-data\toolchains\llvmorg-20.1.8\bin'
-        New-Item -ItemType Directory -Path $bin -Force | Out-Null
-        '@echo off', 'echo clang version 20.1.8' | Set-Content -Path (Join-Path $bin 'clang.cmd') -Encoding Ascii
-        '@echo off', 'echo clang version 20.1.8' | Set-Content -Path (Join-Path $bin 'clang++.cmd') -Encoding Ascii
-        '@echo off', 'exit /b 0' | Set-Content -Path (Join-Path $bin 'lld-link.cmd') -Encoding Ascii
+      run: python tests/integration/action_fixture.py
 
     - name: Smoke test reusable action on Windows
       id: setup-llvm-windows
       uses: ./
       env:
-        LLVMUP_RELEASES_FILE: ${{ github.workspace }}\githubreleases.json
+        LLVMUP_RELEASES_FILE: ${{ runner.temp }}/llvmup-action-releases.json
+        LLVMUP_ALLOW_FILE_URLS: '1'
       with:
         version: 20.1.8
         cache: false
@@ -223,19 +232,14 @@ jobs:
           jq -e '.version == "llvmorg-20.1.8" and .asset_name == "LLVM-20.1.8-macOS-ARM64.tar.xz"'
 
     - name: Prepare lightweight LLVM fixture for macOS action smoke test
-      run: |
-        fixture="$RUNNER_TEMP/llvmup-data/toolchains/llvmorg-20.1.8/bin"
-        mkdir -p "$fixture"
-        printf '#!/bin/sh\necho clang version 20.1.8\n' > "$fixture/clang"
-        printf '#!/bin/sh\necho clang version 20.1.8\n' > "$fixture/clang++"
-        printf '#!/bin/sh\nexit 0\n' > "$fixture/lld"
-        chmod +x "$fixture/clang" "$fixture/clang++" "$fixture/lld"
+      run: python3 tests/integration/action_fixture.py
 
     - name: Smoke test reusable action on macOS
       id: setup-llvm-macos
       uses: ./
       env:
-        LLVMUP_RELEASES_FILE: ${{ github.workspace }}/githubreleases.json
+        LLVMUP_RELEASES_FILE: ${{ runner.temp }}/llvmup-action-releases.json
+        LLVMUP_ALLOW_FILE_URLS: '1'
       with:
         version: 20.1.8
         cache: false

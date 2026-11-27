@@ -22,7 +22,7 @@ function Get-DoctorInstallation {
             foreach ($line in Get-Content -LiteralPath $manifest -ErrorAction Stop) {
                 $parts = $line -split '\s+'
                 if ($parts[0] -notin @('common', 'powershell')) { continue }
-                if ($parts.Count -ne 3 -or $parts[2] -notmatch '^(libexec/)?[A-Za-z0-9_][A-Za-z0-9_.-]*$') { throw 'Invalid manifest entry' }
+                if ($parts.Count -ne 3 -or $parts[2] -notmatch '^(libexec/([A-Za-z0-9_-]+/)*)?[A-Za-z0-9_][A-Za-z0-9_.-]*$') { throw 'Invalid manifest entry' }
                 if ($parts[2] -notin $files) { $files += $parts[2] }
             }
         } catch { Add-DoctorCheck $Checks installation.manifest installation FAIL 'Cannot read runtime inventory.' 'Reinstall a complete LLVMUP package.' $manifest }

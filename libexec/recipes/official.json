@@ -1,0 +1,297 @@
+{
+  "schema": 1,
+  "provider": "official",
+  "display_name": "Official LLVM",
+  "description": "Official upstream LLVM Project releases from llvm/llvm-project",
+  "homepage": "https://releases.llvm.org/",
+  "repository": "llvm/llvm-project",
+  "api_url": "https://api.github.com/repos/llvm/llvm-project/releases",
+  "supports_source": true,
+  "profiles": [
+    "minimal",
+    "compiler",
+    "full",
+    "custom"
+  ],
+  "default_profile": "full",
+  "available_compilers": [
+    "clang"
+  ],
+  "default_compiler": "clang",
+  "default_variant": {
+    "crt": "system",
+    "threads": "system",
+    "exceptions": "system",
+    "cxx_stdlib": {
+      "windows": "msvc",
+      "linux": "libstdc++",
+      "macos": "libc++"
+    }
+  },
+  "tag_rules": {
+    "release_tag_pattern": "^llvmorg-([0-9]+\\.[0-9]+\\.[0-9]+)$",
+    "llvm_version_source": "tag",
+    "exclude_prerelease": true,
+    "exclude_draft": true
+  },
+  "verification": {
+    "origin_authentication_available": true,
+    "checksum_extensions": [
+      ".sha256",
+      ".sha256sum",
+      ".sha256.txt",
+      ".sha256sum.txt"
+    ],
+    "signature_extensions": [
+      ".sig"
+    ],
+    "attestation_extensions": [
+      ".jsonl"
+    ],
+    "gpg_keys_url": "https://releases.llvm.org/release-keys.asc",
+    "attestation_repo": "llvm/llvm-project",
+    "authenticode_publishers": [],
+    "notes": "Recent releases publish GitHub/Sigstore attestations (.jsonl); some also publish detached GPG signatures (.sig). Authenticode publishers are not pinned because upstream does not document a stable signing identity."
+  },
+  "asset_rules": {
+    "ignore_suffixes": [
+      ".sig",
+      ".jsonl",
+      ".sha256",
+      ".sha512",
+      ".sha256sum",
+      ".txt"
+    ],
+    "exclude_patterns": [
+      "\\.src\\.",
+      "_doxygen",
+      "_man_pages",
+      "test-suite"
+    ],
+    "targets": {
+      "windows:x64": {
+        "supported_targets": [
+          "x86_64-pc-windows-msvc"
+        ],
+        "archive_patterns": [
+          {
+            "pattern": "^clang\\+llvm-.*-(x86_64|amd64)-pc-windows-msvc\\.tar\\.zst$",
+            "priority": 110,
+            "format": "tar.zst"
+          },
+          {
+            "pattern": "^clang\\+llvm-.*-(x86_64|amd64)-pc-windows-msvc\\.tar\\.xz$",
+            "priority": 100,
+            "format": "tar.xz"
+          }
+        ],
+        "installer_patterns": [
+          {
+            "pattern": "^LLVM-.*-win64\\.exe$",
+            "priority": 120,
+            "format": "exe"
+          },
+          {
+            "pattern": "^LLVM-.*-win64\\.msi$",
+            "priority": 110,
+            "format": "msi"
+          }
+        ]
+      },
+      "windows:arm64": {
+        "supported_targets": [
+          "aarch64-pc-windows-msvc"
+        ],
+        "archive_patterns": [
+          {
+            "pattern": "^clang\\+llvm-.*-aarch64-pc-windows-msvc\\.tar\\.zst$",
+            "priority": 110,
+            "format": "tar.zst"
+          },
+          {
+            "pattern": "^clang\\+llvm-.*-aarch64-pc-windows-msvc\\.tar\\.xz$",
+            "priority": 100,
+            "format": "tar.xz"
+          }
+        ],
+        "installer_patterns": [
+          {
+            "pattern": "^LLVM-.*-woa64\\.exe$",
+            "priority": 120,
+            "format": "exe"
+          },
+          {
+            "pattern": "^LLVM-.*-woa64\\.msi$",
+            "priority": 110,
+            "format": "msi"
+          }
+        ]
+      },
+      "windows:x86": {
+        "supported_targets": [
+          "i686-pc-windows-msvc"
+        ],
+        "archive_patterns": [
+          {
+            "pattern": "^clang\\+llvm-.*-(i686|x86)-pc-windows-msvc\\.tar\\.xz$",
+            "priority": 100,
+            "format": "tar.xz"
+          }
+        ],
+        "installer_patterns": [
+          {
+            "pattern": "^LLVM-.*-win32\\.exe$",
+            "priority": 120,
+            "format": "exe"
+          }
+        ]
+      },
+      "linux:x64": {
+        "supported_targets": [
+          "x86_64-unknown-linux-gnu"
+        ],
+        "archive_patterns": [
+          {
+            "pattern": "^LLVM-.*-Linux-X64\\.tar\\.zst$",
+            "priority": 110,
+            "format": "tar.zst"
+          },
+          {
+            "pattern": "^LLVM-.*-Linux-X64\\.tar\\.xz$",
+            "priority": 100,
+            "format": "tar.xz"
+          },
+          {
+            "pattern": "^clang\\+llvm-.*-x86_64-linux-gnu.*\\.tar\\.(xz|gz)$",
+            "priority": 80,
+            "format": "tar"
+          }
+        ]
+      },
+      "linux:arm64": {
+        "supported_targets": [
+          "aarch64-unknown-linux-gnu"
+        ],
+        "archive_patterns": [
+          {
+            "pattern": "^LLVM-.*-Linux-ARM64\\.tar\\.zst$",
+            "priority": 110,
+            "format": "tar.zst"
+          },
+          {
+            "pattern": "^LLVM-.*-Linux-ARM64\\.tar\\.xz$",
+            "priority": 100,
+            "format": "tar.xz"
+          },
+          {
+            "pattern": "^clang\\+llvm-.*-aarch64-linux-gnu.*\\.tar\\.(xz|gz)$",
+            "priority": 80,
+            "format": "tar"
+          }
+        ]
+      },
+      "macos:arm64": {
+        "supported_targets": [
+          "arm64-apple-darwin"
+        ],
+        "archive_patterns": [
+          {
+            "pattern": "^LLVM-.*-macOS-ARM64\\.tar\\.zst$",
+            "priority": 110,
+            "format": "tar.zst"
+          },
+          {
+            "pattern": "^LLVM-.*-macOS-ARM64\\.tar\\.xz$",
+            "priority": 100,
+            "format": "tar.xz"
+          },
+          {
+            "pattern": "^clang\\+llvm-.*-arm64-apple-darwin.*\\.tar\\.(xz|gz)$",
+            "priority": 80,
+            "format": "tar"
+          }
+        ]
+      },
+      "macos:x64": {
+        "supported_targets": [
+          "x86_64-apple-darwin"
+        ],
+        "archive_patterns": [
+          {
+            "pattern": "^LLVM-.*-macOS-X64\\.tar\\.zst$",
+            "priority": 110,
+            "format": "tar.zst"
+          },
+          {
+            "pattern": "^LLVM-.*-macOS-X64\\.tar\\.xz$",
+            "priority": 100,
+            "format": "tar.xz"
+          },
+          {
+            "pattern": "^clang\\+llvm-.*-x86_64-apple-darwin.*\\.tar\\.(xz|gz)$",
+            "priority": 80,
+            "format": "tar"
+          }
+        ]
+      }
+    }
+  },
+  "layout": {
+    "bin_dir": "bin",
+    "lib_dir": "lib",
+    "include_dir": "include",
+    "unwrap_single_top_dir": true
+  },
+  "tools": {
+    "clang": [
+      "bin/clang"
+    ],
+    "clangxx": [
+      "bin/clang++"
+    ],
+    "clang_cl": [
+      "bin/clang-cl"
+    ],
+    "lld": [
+      "bin/lld",
+      "bin/lld-link",
+      "bin/ld.lld"
+    ],
+    "lld_link": [
+      "bin/lld-link"
+    ],
+    "ld_lld": [
+      "bin/ld.lld"
+    ],
+    "ar": [
+      "bin/llvm-ar"
+    ],
+    "ranlib": [
+      "bin/llvm-ranlib"
+    ],
+    "rc": [
+      "bin/llvm-rc"
+    ],
+    "llvm_config": [
+      "bin/llvm-config"
+    ],
+    "clangd": [
+      "bin/clangd"
+    ],
+    "lldb": [
+      "bin/lldb"
+    ],
+    "libclang": {
+      "windows": [
+        "bin/libclang.dll",
+        "lib/libclang.dll"
+      ],
+      "linux": [
+        "lib/libclang.so"
+      ],
+      "macos": [
+        "lib/libclang.dylib"
+      ]
+    }
+  }
+}
