@@ -37,7 +37,7 @@ setup() {
     cp "$BATS_TEST_DIRNAME/../../llvm-activate" "$INSTALL_DIR/"
     cp "$BATS_TEST_DIRNAME/../../llvm-deactivate" "$INSTALL_DIR/"
     cp "$BATS_TEST_DIRNAME/../../llvm-vscode-activate" "$INSTALL_DIR/"
-    cp "$BATS_TEST_DIRNAME/../../llvm-functions.sh" "$INSTALL_DIR/"
+    cp "$BATS_TEST_DIRNAME/../../llvm-functions.sh" "$BATS_TEST_DIRNAME/../../llvmup-core.sh" "$INSTALL_DIR/"
     cp "$BATS_TEST_DIRNAME/../../llvmup" "$INSTALL_DIR/"
     chmod +x "$INSTALL_DIR"/*
 

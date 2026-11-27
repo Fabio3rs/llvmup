@@ -363,6 +363,7 @@ teardown() {
 
     mkdir -p "$TEST_DIR/isolated"
     cp "$BATS_TEST_DIRNAME/../../llvm-functions.sh" "$TEST_DIR/isolated/llvm-functions.sh"
+    cp "$BATS_TEST_DIRNAME/../../llvmup-core.sh" "$TEST_DIR/isolated/llvmup-core.sh"
 
     run bash -lc "export HOME='$TEST_DIR'; export LLVM_TEST_MODE=1; source '$TEST_DIR/isolated/llvm-functions.sh'; llvm-activate '$TEST_VERSION'"
     [ "$status" -eq 1 ]

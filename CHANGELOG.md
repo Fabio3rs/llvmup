@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (shell integration weight)
+- `llvm-functions.sh` is now a small loader. Sourcing it defines one stub per public function and the
+  directory hook; the implementation lives in `llvmup-core.sh` (installed next to it) and is loaded
+  the first time a function is used. A new shell no longer parses ~3,400 lines or defines the core's
+  helper variables (`RED`, `NC`, `QUIET_MODE`, ...): sourcing costs about 2 ms in Bash and 2 ms in
+  Zsh (previously about 5 ms and 28 ms), and about 2 ms instead of about 45 ms with auto-activation
+  enabled. `LLVMUP_FUNCTIONS_EAGER=1` loads the core immediately for scripts that rely on its variables.
+- The directory auto-activation hook no longer costs ~120 ms before every prompt. It compares `$PWD`
+  with the previous value (Zsh registers `chpwd` only), looks for `.llvmup-config` with shell built-ins
+  and loads the core only inside a project or to undo an auto-activation. A `.llvmup-config` edited in
+  the current directory is picked up on the next directory change or with `llvmup use --auto`.
+- Profiles keep sourcing `llvm-functions.sh`; installers and the uninstaller handle `llvmup-core.sh`.
+
 ### Changed (user experience)
 - `llvmup use` (Bash) keeps the engine's real diagnostic: an incompatible `--compiler`/`--target`, an
   ambiguous selector or a broken alias is reported as such, and `use --install` / `run --install`

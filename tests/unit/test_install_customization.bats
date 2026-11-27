@@ -16,6 +16,7 @@ setup() {
     cp "$BATS_TEST_DIRNAME/../../uninstall.sh" .
     cp -r "$BATS_TEST_DIRNAME/../../"llvm-* .
     cp "$BATS_TEST_DIRNAME/../../llvmup" .
+    cp "$BATS_TEST_DIRNAME/../../llvmup-core.sh" .
     cp "$BATS_TEST_DIRNAME/../../"llvmup-doctor*.sh .
     cp "$BATS_TEST_DIRNAME/../../llvmup-completion.sh" .
     cp "$BATS_TEST_DIRNAME/../../llvmup-completion-common.sh" .

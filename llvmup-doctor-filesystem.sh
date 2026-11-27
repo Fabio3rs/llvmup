@@ -2,7 +2,7 @@ doctor_filesystem() {
     local file dir tool count=0
     # Keep a minimal rescue inventory when a partial/legacy install lacks its
     # manifest. Packaged installations also validate the shared inventory.
-    local -a files=(llvmup llvm-functions.sh llvm-activate llvm-deactivate llvm-prebuilt llvm-build llvm-vscode-activate llvmup-completion-common.sh)
+    local -a files=(llvmup llvm-functions.sh llvmup-core.sh llvm-activate llvm-deactivate llvm-prebuilt llvm-build llvm-vscode-activate llvmup-completion-common.sh)
     local manifest="$doctor_root/llvmup-files.tsv" platform mode extra inventory_invalid=0
     [[ -r $manifest ]] || manifest="$doctor_root/packaging/runtime-files.tsv"
     if [[ -r $manifest ]]; then

@@ -85,6 +85,7 @@ scripts=(
     "llvm-build"
     "llvmup"
     "llvm-functions.sh"
+    "llvmup-core.sh"
     "llvmup-completion-common.sh"
     "llvmup-completion.sh"
     "_llvmup"

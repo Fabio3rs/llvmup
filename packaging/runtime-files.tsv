@@ -16,6 +16,7 @@ bash 755 llvm-deactivate
 bash 755 llvm-vscode-activate
 bash 755 uninstall.sh
 bash 644 llvm-functions.sh
+bash 644 llvmup-core.sh
 bash 644 llvmup-completion-common.sh
 bash 644 llvmup-completion.sh
 bash 644 _llvmup
