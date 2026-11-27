@@ -1024,7 +1024,14 @@ function Invoke-LlvmUpUse {
     }
 
     $delta = Get-LlvmEnvironmentDelta -Manifest $manifest -Target $target -Compiler $compiler
-    return (Apply-LlvmEnvironmentDelta -Delta $delta -SetSessionOverride)
+    $applied = Apply-LlvmEnvironmentDelta -Delta $delta -SetSessionOverride
+    if ($applied) {
+        # Same confirmation as the Bash function; written to the host so the boolean result stays clean.
+        $detail = @([string]$manifest.provider, "compiler $($env:LLVMUP_ACTIVE_COMPILER)")
+        if ($env:LLVMUP_ACTIVE_TARGET) { $detail += "target $($env:LLVMUP_ACTIVE_TARGET)" }
+        Write-Host ("Using {0} ({1})." -f $manifest.install_name, ($detail -join ', '))
+    }
+    return $applied
 }
 
 function Invoke-LlvmUpRun {

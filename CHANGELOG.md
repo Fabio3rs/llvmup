@@ -62,6 +62,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `doctor` prints one line for the readable runtime files (every file stays in `--verbose` and
   `--json`) and states each piece of advice once, with the PowerShell doctor saying what each missing
   optional tool is for. A single-line PowerShell error is reported whole.
+- PowerShell `use` confirms with "Using <toolchain> (<provider>, compiler <C>[, target <T>])." like the
+  Bash function, without changing its boolean result. Verified with real WinLibs, LLVM-MinGW and
+  `update` runs.
 - Directory auto-activation (Bash/Zsh) announces a change with one line naming the toolchain and its
   source ("Using X (from .llvmup-config: ...)") and stays silent when nothing changes; a failed
   auto-activation now includes the reason instead of a bare failure.

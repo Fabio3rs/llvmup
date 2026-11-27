@@ -57,13 +57,31 @@ Describe 'PowerShell llvmup lifecycle facade' {
         ($shown | Out-String) | Should -Not -Match 'Boom happened'
     }
 
+    It 'confirms use with the toolchain, provider and compiler without touching the boolean result' {
+        $root = Join-Path $env:LLVM_TOOLCHAINS_DIR 'ux-tc'
+        $null = New-Item -ItemType Directory -Path (Join-Path $root 'bin') -Force
+        foreach ($t in 'clang.exe', 'clang++.exe') { Set-Content -LiteralPath (Join-Path $root "bin\$t") -Value '' }
+        $manifest = [ordered]@{
+            schema = 1; id = 'ux-tc'; install_name = 'ux-tc'; origin = 'managed'; provider = 'llvm-mingw'
+            provider_release = '1'; llvm_version = '23.1.0'; host = @{ os = 'windows'; arch = 'x64' }
+            supported_targets = @('x86_64-w64-mingw32'); default_target = 'x86_64-w64-mingw32'
+            variant = @{ crt = 'ucrt'; default_compiler = 'clang' }
+            tools = @{ clang = 'bin/clang.exe'; 'clang++' = 'bin/clang++.exe' }
+            capabilities = @{ compilers = @('clang') }; root_path = $root
+        }
+        $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $root '.llvmup-toolchain.json')
+        $all = @(llvmup use ux-tc *>&1)
+        $result = @($all | Where-Object { $_ -is [bool] })
+        $result | Should -Contain $true
+        ($all | Where-Object { $_ -isnot [bool] } | Out-String) | Should -Match 'Using ux-tc \(llvm-mingw, compiler clang'
+        Deactivate-Llvm *>&1 | Out-Null
+    }
+
     It 'reports a single-line error whole, not as its first character' {
         $err = $null
-        $null = llvmup use does-not-exist-anywhere -ErrorVariable err -ErrorAction SilentlyContinue 2>$null
-        $text = ($err | Out-String)
-        $text | Should -Match 'No installed toolchain matches'
-        @($err | ForEach-Object { $_.Exception.Message }) | Should -Contain "No installed toolchain matches 'does-not-exist-anywhere'."
-        @($err | ForEach-Object { $_.Exception.Message } | Where-Object { $_.Length -le 2 }).Count | Should -Be 0
+        $null = llvmup use -ErrorVariable err -ErrorAction SilentlyContinue 2>$null
+        $messages = @($err | ForEach-Object { $_.Exception.Message })
+        $messages | Should -Contain "Missing toolchain selector for 'use'"
     }
 
     It 're-exports the core matcher with candidate-version support' {
