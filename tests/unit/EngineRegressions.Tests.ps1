@@ -307,6 +307,25 @@ Describe 'LLVMUP engine regressions' {
             $msg | Should -Match 'llvmup list'
         }
 
+        It 'explains GitHub rate limiting without retrying it and without exposing a token' {
+            $fake = {
+                param($code, $headers)
+                $ex = [System.Exception]::new('The remote server returned an error')
+                $ex | Add-Member -NotePropertyName Response -NotePropertyValue ([pscustomobject]@{ StatusCode = $code; Headers = $headers })
+                [System.Management.Automation.ErrorRecord]::new($ex, 'x', 'NotSpecified', $null)
+            }
+            $limited = & $fake 403 @{ 'X-RateLimit-Remaining' = '0'; 'X-RateLimit-Reset' = '1893456000' }
+            $f = & (Get-Module Llvm-Downloader) { param($e) Get-LlvmGitHubFailure -ErrorRecord $e } $limited
+            $f.Retryable | Should -BeFalse
+            $f.Reason | Should -Match 'rate limit was exceeded'
+            $f.Reason | Should -Match 'GITHUB_TOKEN'
+            $f.Reason | Should -Not -Match 'ghp_'
+            $notFound = & $fake 404 @{}
+            (& (Get-Module Llvm-Downloader) { param($e) Get-LlvmGitHubFailure -ErrorRecord $e } $notFound).Reason | Should -Match 'not found'
+            $down = & $fake 503 @{}
+            (& (Get-Module Llvm-Downloader) { param($e) Get-LlvmGitHubFailure -ErrorRecord $e } $down).Retryable | Should -BeTrue
+        }
+
         It 'does not leave GH_TOKEN behind in the session' {
             $before = [Environment]::GetEnvironmentVariable('GH_TOKEN', 'Process')
             $artifact = Join-Path $TestDrive 'b.zip'

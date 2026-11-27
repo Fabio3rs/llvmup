@@ -28,6 +28,8 @@ doctor_filesystem() {
             doctor_emit installation.file installation PASS 'Runtime file is accessible.' '' "$doctor_root/$file"
         fi
     done
+    # Human output groups the accessible files (doctor_emit counts them instead of printing each).
+    if ((doctor_files_ok)); then printf 'PASS [installation.file] %d runtime files are accessible.\n' "$doctor_files_ok"; fi
     if [[ -n ${LLVMUP_INSTALL_DIR:-} && $LLVMUP_INSTALL_DIR != "$doctor_root" ]]; then
         doctor_emit installation.path installation WARN 'LLVMUP_INSTALL_DIR differs from this executable directory.' 'Check that shell functions and PATH use the intended installation.' "$LLVMUP_INSTALL_DIR"
     fi

@@ -610,14 +610,18 @@ function Test-LlvmCommandHelp {
     return $script:LlvmCommandHelp.ContainsKey($key)
 }
 
-function Write-LlvmUpError {
-    # PowerShell 7's default error view folds line breaks into one paragraph. The first line goes to
-    # the error stream (callers and -ErrorVariable still see it); the guidance after it is shown as is.
+function Split-LlvmUpMessage {
+    # PowerShell 7's default error view folds line breaks into one paragraph, so an error is reported
+    # in two parts: Lines[0] as the error (callers and -ErrorVariable still see it) and the guidance
+    # that follows it as plain text (Write-LlvmUpGuidance).
     param([Parameter(Mandatory)][string]$Message)
-    $lines = @($Message -split "\r?\n")
-    Write-Error $lines[0] -ErrorAction Continue
-    if ($lines.Count -gt 1) {
-        $rest = ($lines | Select-Object -Skip 1) -join [Environment]::NewLine
+    return @($Message.Replace("`r`n", "`n") -split "`n")
+}
+
+function Write-LlvmUpGuidance {
+    param([string[]]$Lines)
+    if ($Lines.Count -gt 1) {
+        $rest = ($Lines | Select-Object -Skip 1) -join [Environment]::NewLine
         if ($rest.Trim()) { Write-Host $rest }
     }
 }
@@ -1434,7 +1438,9 @@ function llvmup {
             $rest = if ($tokens.Count -gt 1) { @($tokens[1..($tokens.Count - 1)]) } else { @() }
             return Invoke-LlvmUpRun -Tokens $rest -PresetSelector $preset
         } catch {
-            Write-LlvmUpError -Message $_.Exception.Message
+            $lines = @(Split-LlvmUpMessage -Message $_.Exception.Message)
+            Write-Error $lines[0] -ErrorAction Continue
+            Write-LlvmUpGuidance -Lines $lines
             return $false
         }
     }
@@ -1701,7 +1707,9 @@ function llvmup {
         # This facade reports handled command failures by returning false.
         # Keep an ambient ErrorActionPreference=Stop (as used by GitHub
         # Actions) from turning that handled result into a new exception.
-        Write-LlvmUpError -Message $_.Exception.Message
+        $lines = @(Split-LlvmUpMessage -Message $_.Exception.Message)
+        Write-Error $lines[0] -ErrorAction Continue
+        Write-LlvmUpGuidance -Lines $lines
         return $false
     }
 }

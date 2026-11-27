@@ -401,3 +401,14 @@ STUB
     [ "$status" -eq 0 ]
     [[ "$output" == *"short"* && "$output" == *"2 toolchains installed."* ]]
 }
+
+@test "doctor groups the accessible runtime files and states each piece of advice once" {
+    run bash -c "'$BATS_TEST_DIRNAME/../../llvmup-doctor.sh' 2>&1"
+    [ "$(grep -c '^PASS \[installation.file\]' <<<"$output")" -eq 1 ]
+    [[ "$output" == *"runtime files are accessible"* ]]
+    # --verbose and --json keep every file
+    run bash -c "'$BATS_TEST_DIRNAME/../../llvmup-doctor.sh' --verbose 2>&1"
+    [ "$(grep -c '^PASS \[installation.file\]' <<<"$output")" -gt 3 ]
+    run bash -c "'$BATS_TEST_DIRNAME/../../llvmup-doctor.sh' --json 2>/dev/null"
+    [ "$(jq '[.checks[] | select(.id == "installation.file")] | length' <<<"$output")" -gt 3 ]
+}

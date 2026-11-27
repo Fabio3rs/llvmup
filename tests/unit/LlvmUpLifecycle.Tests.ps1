@@ -49,11 +49,21 @@ Describe 'PowerShell llvmup lifecycle facade' {
     }
 
     It 'keeps the layout of multi-line errors: first line as the error, guidance as plain text' {
-        $out = @(& (Get-Module Llvm-Functions) { Write-LlvmUpError -Message "Boom happened.`n`nTo fix it:`n  llvmup list" } *>&1)
-        $err = @($out | Where-Object { $_ -is [System.Management.Automation.ErrorRecord] })
-        $err.Count | Should -Be 1
-        $err[0].Exception.Message | Should -Be 'Boom happened.'
-        ($out | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } | Out-String) | Should -Match 'llvmup list'
+        $lines = & (Get-Module Llvm-Functions) { Split-LlvmUpMessage -Message "Boom happened.`n`nTo fix it:`n  llvmup list" }
+        $lines[0] | Should -Be 'Boom happened.'
+        $lines.Count | Should -BeGreaterThan 2
+        $shown = @(& (Get-Module Llvm-Functions) { param($l) Write-LlvmUpGuidance -Lines $l } $lines 6>&1)
+        ($shown | Out-String) | Should -Match 'llvmup list'
+        ($shown | Out-String) | Should -Not -Match 'Boom happened'
+    }
+
+    It 'reports a single-line error whole, not as its first character' {
+        $err = $null
+        $null = llvmup use does-not-exist-anywhere -ErrorVariable err -ErrorAction SilentlyContinue 2>$null
+        $text = ($err | Out-String)
+        $text | Should -Match 'No installed toolchain matches'
+        @($err | ForEach-Object { $_.Exception.Message }) | Should -Contain "No installed toolchain matches 'does-not-exist-anywhere'."
+        @($err | ForEach-Object { $_.Exception.Message } | Where-Object { $_.Length -le 2 }).Count | Should -Be 0
     }
 
     It 're-exports the core matcher with candidate-version support' {
