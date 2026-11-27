@@ -217,18 +217,18 @@ configure_shell_profiles() {
     quoted_functions=$(profile_quote "$FUNCTIONS_FILE")
     quoted_bin=$(profile_quote "$INSTALL_DIR")
     quoted_zsh=$(profile_quote "$ZSH_COMPLETION_DIR")
-    block=$(cat <<EOF
-$start
-case ":\$PATH:" in
-    *:$quoted_bin:*) ;;
-    *) export PATH=$quoted_bin:"\$PATH" ;;
-esac
-if [ -n "\${BASH_VERSION:-}\${ZSH_VERSION:-}" ] && [ -f $quoted_functions ]; then
-    . $quoted_functions
-fi
-$end
-EOF
-)
+    # Bash 3.2 can mistake ')' in a here-document for the end of $(...).
+    printf -v block '%s\n' \
+        "$start" \
+        'case ":$PATH:" in' \
+        "    *:$quoted_bin:*) ;;" \
+        "    *) export PATH=$quoted_bin:\"\$PATH\" ;;" \
+        'esac' \
+        "if [ -n \"\${BASH_VERSION:-}\${ZSH_VERSION:-}\" ] && [ -f $quoted_functions ]; then" \
+        "    . $quoted_functions" \
+        'fi' \
+        "$end"
+    block=${block%$'\n'}
     update_profile_block "$bash_profile" "$start" "$end" "$block"
     mkdir -p -- "$(dirname -- "$zsh_profile")"
     update_profile_block "$zsh_profile" "$start" "$end" "$block"
