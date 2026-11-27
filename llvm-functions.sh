@@ -802,9 +802,13 @@ llvmup() {
                         prev="$a"
                     done
                     [ -n "$runtime_script" ] || { log_error "llvmup runtime script not found"; return 1; }
-                    "$runtime_script" install "${inst[@]}" || return $?
-                    llvm-use "${name:-${sel:-latest}}" "${use_args[@]}"
-                    return $?
+                    LLVMUP_SUPPRESS_USE_HINT=1 "$runtime_script" install "${inst[@]}" || return $?
+                    # Installation succeeded; activation is a separate step that can still fail.
+                    if ! llvm-use "${name:-${sel:-latest}}" "${use_args[@]}"; then
+                        log_warn "The toolchain was installed, but it was not activated in this terminal."
+                        return 1
+                    fi
+                    return 0
                     ;;
             esac
             ;;

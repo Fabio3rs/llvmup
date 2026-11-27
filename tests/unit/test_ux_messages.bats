@@ -168,3 +168,23 @@ fake_toolchain() {
     [ "$status" -eq 0 ]
     [[ "$output" != *"Usage:"* ]]
 }
+
+@test "name collision shows only diverging identity fields and a non-destructive suggestion" {
+    export LLVMUP_OFFICIAL_RELEASES_FILE="$BATS_TEST_DIRNAME/../fixtures/releases/official.json"
+    export LLVMUP_WINLIBS_RELEASES_FILE="$BATS_TEST_DIRNAME/../fixtures/releases/winlibs.json"
+    export LLVMUP_LLVM_MINGW_RELEASES_FILE="$BATS_TEST_DIRNAME/../fixtures/releases/llvm-mingw.json"
+    export LLVMUP_ASSET_FORMATS="tar.xz,zip"
+    fake_toolchain dev official 23.1.6
+    run "$LLVMUP_SCRIPT" install llvm-mingw@23 --name dev
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"Installation name 'dev' is already in use"* ]]
+    [[ "$output" == *"Existing installation:"* ]]
+    [[ "$output" == *"Requested installation:"* ]]
+    [[ "$output" == *"Provider: official"* ]]
+    [[ "$output" == *"Provider: llvm-mingw"* ]]
+    [[ "$output" == *"--name <new-name>"* ]]
+    [[ "$output" == *"explicitly"* ]]
+    [[ "$output" == *"was not modified"* ]]
+    [ -f "$LLVM_HOME/toolchains/dev/.llvmup-toolchain.json" ]
+}
+

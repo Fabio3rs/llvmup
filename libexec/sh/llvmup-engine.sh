@@ -56,6 +56,50 @@ eng_resolve_or_die() {
     esac
 }
 
+# eng_plan_summary <plan> <requested-selector> <name> <dest>: what exactly is about to be installed.
+# Fields that are unknown or irrelevant (null, system, unknown) are not shown.
+eng_plan_summary() {
+    eng_info "Resolving $2..."
+    [ "$ENGINE_QUIET" = 1 ] && return 0
+    jq -r --arg name "$3" --arg dest "$4" '
+        def f($k; $v): if $v == null or $v == "" or $v == "system" or $v == "unknown" then empty else "  " + ($k + ":" + (" " * (14 - ($k | length)))) + ($v | tostring) end;
+        f("Provider"; .provider), f("Release"; .release_tag), f("LLVM"; .llvm_version), f("GCC"; .gcc_version),
+        f("Architecture"; .host.arch), f("CRT"; .variant.crt), f("Threads"; .variant.threads),
+        f("Exceptions"; .variant.exceptions), f("C++ library"; .variant.cxx_stdlib),
+        f("Profile"; (if .variant.profile == "full" then null else .variant.profile end)),
+        f("Asset"; .asset.name), f("Name"; $name), f("Directory"; $dest)' <<<"$1" >&2
+}
+
+# eng_verify_summary <verification-json>: integrity and authenticity are reported separately.
+eng_verify_summary() {
+    [ "$ENGINE_QUIET" = 1 ] && return 0
+    jq -r '
+        (.checksum_algorithm // "" | ascii_upcase | sub("SHA"; "SHA-")) as $algo
+        | (if .checksum == "valid" then "Integrity: Verified (" + $algo + ")" else "Integrity: Not verified" end),
+          (if .gpg == "valid" then "Authenticity: Verified (GPG)"
+           elif .attestation == "valid" then "Authenticity: Verified (GitHub/Sigstore attestation)"
+           elif .policy == "skip" then "Verification: Skipped by user request"
+           elif .gpg == "unavailable" or .attestation == "unavailable" then "Authenticity: Verification tool or data unavailable"
+           else "Authenticity: Not provided by upstream" end)' <<<"$1" >&2
+}
+
+# eng_collision_die <existing-manifest> <plan> <selector> <name>: the name is taken by another identity.
+eng_collision_die() {
+    local q
+    q="$(eng_quote_sel "$3")"
+    eng_err "Installation name '$4' is already in use."
+    jq -rn --argjson e "$1" --argjson r "$2" '
+        def row($k; $a; $b): if $a != $b then {k: $k, a: ($a // "-"), b: ($b // "-")} else empty end;
+        [row("Provider"; $e.provider; $r.provider), row("Release"; $e.provider_release; $r.release_tag),
+         row("LLVM"; $e.llvm_version; $r.llvm_version), row("Architecture"; $e.host.arch; $r.host.arch),
+         row("CRT"; $e.variant.crt; $r.variant.crt)] as $d
+        | "\nExisting installation:", ($d[] | "  \(.k): \(.a)"), "\nRequested installation:", ($d[] | "  \(.k): \(.b)")' >&2
+    printf '\nChoose a different name:\n  llvmup install %s --name <new-name>\n' "$q" >&2
+    printf '\nTo replace the existing installation explicitly, add --force. This deletes it first.\n' >&2
+    printf 'The existing installation was not modified.\n' >&2
+    exit 1
+}
+
 eng_require() {
     command -v "$1" >/dev/null 2>&1 || eng_die "'$1' is required for this operation${2:+ ($2)}"
 }
@@ -735,7 +779,11 @@ eng_verify() {
             if [ "$checksum" = valid ]; then methods=(checksum-only); else methods=(unverified); fi
         fi
         if [ "$checksum" = valid ]; then
-            eng_warn "Integrity of $name verified ($algo), but its origin is not authenticated (gpg=$gpg, attestation=$att)."
+            if [ "$gpg" = unavailable ] || [ "$att" = unavailable ]; then
+                eng_warn "Integrity of $name verified ($algo), but its origin is not authenticated: a signature or attestation exists, but the verification tool or key data was unavailable (gpg=$gpg, attestation=$att)."
+            else
+                eng_warn "Integrity of $name verified ($algo), but its origin is not authenticated: upstream provides only checksums for this asset."
+            fi
         else
             eng_warn "$name could not be verified: no digest, checksum, signature, or attestation was available."
         fi
@@ -1475,10 +1523,13 @@ cmd_install() (
 
     if [ -d "$dest" ] && [ "$ENG_OPT_FORCE" -ne 1 ]; then
         if [ -f "$dest/.llvmup-toolchain.json" ] && jq -e '(.capabilities.compilers // []) | length > 0' "$dest/.llvmup-toolchain.json" >/dev/null 2>&1; then
+            if ! jq -e --argjson r "$plan" '.id == $r.canonical_id' "$dest/.llvmup-toolchain.json" >/dev/null 2>&1; then
+                eng_collision_die "$(cat "$dest/.llvmup-toolchain.json")" "$plan" "$sel" "$name"
+            fi
             eng_check_managed_asset "$(jq -c '.release = .release_tag' <<<"$plan")" "$(cat "$dest/.llvmup-toolchain.json")" "$policy" "$dest"
             if [ "$prov" = official ]; then llvm_selection_check "$dest" || exit 1; fi
             if [ "$ENG_OPT_DEFAULT" -eq 1 ]; then llvm-default-set "$name" || exit 1; fi
-            eng_info "Toolchain '$name' is already installed at $dest"
+            eng_info "$name is already installed and validated ($dest). Reusing it."
             printf '%s\n' "$dest"
             return 0
         fi
@@ -1491,7 +1542,7 @@ cmd_install() (
     install_transaction="$(mktemp -d "$tc/.$name.llvmup-txn.XXXXXXXX")" || exit 1
     staging="$install_transaction/staging"
     backup="$install_transaction/previous"
-    eng_info "Installing $prov ($(jq -r '.release_tag' <<<"$plan"), LLVM $(jq -r '.llvm_version' <<<"$plan")) -> $name"
+    eng_plan_summary "$plan" "$sel" "$name" "$dest"
     local fetch archive ver
     fetch="$(eng_fetch_asset "$plan" "$work")" || exit 1
     archive="$(jq -er '.path | strings | select(length > 0)' <<<"$fetch")" || exit 1
@@ -1528,7 +1579,10 @@ cmd_install() (
     rm -rf "$backup"
     if [ "$ENG_OPT_DEFAULT" -eq 1 ]; then llvm-default-set "$name" || exit 1; fi
     if [ "$prov" = official ]; then llvm_space_snapshot 'after installation' "$dest"; fi
-    eng_info "[OK] Installed '$name' at $dest (verify=$(jq -r '.methods | join("+")' <<<"$ver"))"
+    eng_verify_summary "$ver"
+    eng_info "Installed $name successfully."
+    if [ -z "${LLVMUP_SUPPRESS_USE_HINT:-}" ]; then eng_info "To activate in this terminal:
+  llvmup use $name"; fi
     printf '%s\n' "$dest"
 )
 
@@ -2110,11 +2164,13 @@ cmd_update() {
         plan="$(eng_resolve_plan "$prov" "$( [ "$major" = latest ] && echo latest || echo "$major.*")" "" "$crt" "" "$(eng_norm_os)" "$(eng_norm_arch)" "")" || { rc=1; continue; }
         cid="$(jq -r '.canonical_id' <<<"$plan")"
         if eng_resolve_installed "$cid" >/dev/null 2>&1; then
-            printf '%s: up to date (%s)\n' "$(jq -r '.install_name' <<<"$m")" "$cid"
+            printf '%s is up to date (%s).\n' "$(jq -r '.install_name' <<<"$m")" "$cid"
             continue
         fi
-        printf '%s: installing %s\n' "$(jq -r '.install_name' <<<"$m")" "$cid"
-        ( cmd_install "$prov@$major" ${crt:+--crt "$crt"} --release "$(jq -r '.release_tag' <<<"$plan")" ) || rc=1
+        printf 'Update available for %s: installing %s as a new installation.\n' "$(jq -r '.install_name' <<<"$m")" "$cid"
+        if ( LLVMUP_SUPPRESS_USE_HINT=1 cmd_install "$prov@$major" ${crt:+--crt "$crt"} --release "$(jq -r '.release_tag' <<<"$plan")" ); then
+            printf 'The previous installation (%s) remains available; aliases, defaults and pins were not changed.\nTo use the new one:\n  llvmup use %s\n' "$(jq -r '.install_name' <<<"$m")" "$cid"
+        else rc=1; fi
     done
     return "$rc"
 }
