@@ -303,6 +303,11 @@ teardown() {
     [ -L "$HOME/.llvm/default" ]
     [ "$(basename "$(readlink "$HOME/.llvm/default")")" = "custom-llvm" ]
     [[ "$output" == *"Installed custom-llvm successfully"* ]]
+    # The resolved distribution is shown before the download, and verification is reported in two parts.
+    [[ "$output" == *"Provider:"*"official"* ]]
+    [[ "$output" == *"Name:"*"custom-llvm"* ]]
+    [[ "$output" == *"Asset:"* ]]
+    [[ "$output" == *"Verification: Skipped by user request"* || "$output" == *"Integrity:"* ]]
 }
 
 @test "verbose extraction propagates tar failures" {

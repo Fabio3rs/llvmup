@@ -1820,6 +1820,7 @@ cmd_alias() {
                 '.aliases[$a] = {target_name: $m.install_name, target_id: $m.id, provider: $m.provider, llvm_version: $m.llvm_version, created_at: $now}' \
                 "$file" > "$tmp" && mv "$tmp" "$file"
             jq -c --arg a "$1" '.aliases[$a]' "$file"
+            eng_info "Alias '$1' now points to $(jq -r '.install_name' <<<"$m")."
             ;;
         list) if [ "${1:-}" = --json ]; then jq '.aliases' "$file"; else jq -r '.aliases | to_entries[] | "\(.key)\t-> \(.value.target_name) (\(.value.provider), LLVM \(.value.llvm_version))"' "$file"; fi ;;
         show) [ $# -eq 1 ] || eng_die "Usage: llvmup alias show <alias>"; jq -e --arg a "$1" '.aliases[$a]' "$file" || eng_die "Alias '$1' does not exist." ;;
@@ -1828,6 +1829,7 @@ cmd_alias() {
             jq -e --arg a "$1" '.aliases[$a]' "$file" >/dev/null || eng_die "Alias '$1' does not exist."
             local tmp="$file.tmp-$$"
             jq --arg a "$1" 'del(.aliases[$a])' "$file" > "$tmp" && mv "$tmp" "$file"
+            eng_info "Alias '$1' removed. Toolchain preserved."
             ;;
         *) eng_die "Available alias subcommands: set, list, show, remove" ;;
     esac
@@ -1858,6 +1860,7 @@ cmd_toolchain() {
             [ -f "$file" ] && jq -e --arg n "$1" '.toolchains[$n]' "$file" >/dev/null || eng_die "External toolchain '$1' is not registered."
             local tmp="$file.tmp-$$"
             jq --arg n "$1" 'del(.toolchains[$n])' "$file" > "$tmp" && mv "$tmp" "$file"
+            eng_info "Toolchain '$1' unlinked. External files preserved."
             ;;
         list) cmd_list_installed ;;
         *) eng_die "Available toolchain subcommands: link, unlink, list" ;;

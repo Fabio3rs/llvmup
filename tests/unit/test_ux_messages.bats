@@ -292,3 +292,31 @@ STUB
     try_download 23; [[ "$output" == *"disk may be full"* ]]
     try_download 22; [[ "$output" == *"server rejected the request"* ]]
 }
+
+@test "remove, alias remove and toolchain unlink say what was preserved" {
+    fake_toolchain cross-dev llvm-mingw 23.1.6
+    run "$LLVMUP_SCRIPT" alias set work cross-dev
+    [ "$status" -eq 0 ]
+    run "$LLVMUP_SCRIPT" alias remove work
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Alias 'work' removed. Toolchain preserved."* ]]
+    [ -f "$LLVM_HOME/toolchains/cross-dev/.llvmup-toolchain.json" ]
+
+    mkdir -p "$TEST_HOME/ext/bin"
+    printf '#!/bin/sh\n' > "$TEST_HOME/ext/bin/clang"; chmod +x "$TEST_HOME/ext/bin/clang"
+    cp "$TEST_HOME/ext/bin/clang" "$TEST_HOME/ext/bin/clang++"
+    run "$LLVMUP_SCRIPT" toolchain link ext "$TEST_HOME/ext"
+    [ "$status" -eq 0 ]
+    run "$LLVMUP_SCRIPT" toolchain unlink ext
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"unlinked. External files preserved."* ]]
+    [ -x "$TEST_HOME/ext/bin/clang" ]
+
+    ln -s "$LLVM_HOME/toolchains/cross-dev" "$LLVM_HOME/default"
+    run "$LLVMUP_SCRIPT" remove cross-dev
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"user default"* ]]
+    [[ "$output" == *"--force"* ]]
+    run "$LLVMUP_SCRIPT" remove nothing-here
+    [[ "$output" == *"llvmup list"* ]]
+}

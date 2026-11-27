@@ -434,16 +434,19 @@ EOF
 
     if [ ! -d "$target" ] && [ ! -L "$target" ]; then
         log_error "LLVM version '$version' is not installed in $toolchains_dir"
+        echo "To see installed toolchains: llvmup list" >&2
         return 1
     fi
 
     if [ "$active_version" = "$version" ] && [ "$force" -ne 1 ]; then
         log_error "Cannot remove active LLVM version '$version' without --force"
+        echo "It is active in this terminal. Run 'llvmup deactivate' first, or pass --force to remove it anyway." >&2
         return 1
     fi
 
     if [ "$default_version" = "$version" ] && [ "$force" -ne 1 ]; then
         log_error "Cannot remove default LLVM version '$version' without --force"
+        echo "It is the user default. Pick another with 'llvmup default <toolchain>', or pass --force to remove it and clear the default." >&2
         return 1
     fi
 
@@ -464,7 +467,8 @@ EOF
     fi
 
     rm -rf -- "$target"
-    log_success "Removed LLVM toolchain: $version"
+    log_success "Removed $version."
+    [ "$default_version" != "$version" ] || log_success "The user default was cleared."
     log_info "Preserved source checkouts under $(llvm-get-sources-dir)"
 }
 

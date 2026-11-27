@@ -36,6 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub release lookups explain why they failed (rate limit with reset time and `GITHUB_TOKEN` hint,
   HTTP errors, unreachable network) without ever printing a token; the bundled-metadata fallback says
   that it may be out of date.
+- Destructive operations say what was kept: `alias remove` ("Toolchain preserved"), `toolchain unlink`
+  ("External files preserved") and `remove`, which explains how to proceed when the toolchain is
+  active or the user default.
 - Download failures distinguish an unwritable or full destination, an HTTP error and an unreachable
   server; `llvm-activate` and `llvm-vscode-activate` print plain-text usage.
 - Colors are disabled for `NO_COLOR`, `TERM=dumb` and redirected output.

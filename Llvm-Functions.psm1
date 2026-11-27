@@ -1122,7 +1122,9 @@ function Invoke-LlvmUpAlias {
         }
         'remove' {
             if ($Tokens.Count -ne 2) { throw 'Usage: llvmup alias remove <alias>' }
-            return Remove-LlvmAlias -AliasName $Tokens[1] -HomePath $homePath
+            $removed = Remove-LlvmAlias -AliasName $Tokens[1] -HomePath $homePath
+            if ($removed) { Write-Host "Alias '$($Tokens[1])' removed. Toolchain preserved." }
+            return $removed
         }
         default { throw 'Available alias subcommands: set, list, show, remove' }
     }
@@ -1631,7 +1633,9 @@ function llvmup {
                     }
                     'unlink' {
                         if ($tokens.Count -ne 2) { throw 'Usage: llvmup toolchain unlink <name>' }
-                        return Unregister-LlvmExternalToolchain -Name $tokens[1] -HomePath $homePath
+                        $unlinked = Unregister-LlvmExternalToolchain -Name $tokens[1] -HomePath $homePath
+                        if ($unlinked) { Write-Host "Toolchain '$($tokens[1])' unlinked. External files preserved." }
+                        return $unlinked
                     }
                     'list' {
                         return Get-LlvmList
