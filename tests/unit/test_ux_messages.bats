@@ -320,3 +320,30 @@ STUB
     run "$LLVMUP_SCRIPT" remove nothing-here
     [[ "$output" == *"llvmup list"* ]]
 }
+
+@test "automation outputs stay undecorated: where, which, info --json, status --json, env" {
+    fake_toolchain cross-dev llvm-mingw 23.1.6
+    run bash -c "'$LLVMUP_SCRIPT' where cross-dev 2>/dev/null"
+    [ "$status" -eq 0 ]
+    [ "$output" = "$LLVM_HOME/toolchains/cross-dev" ]
+
+    run bash -c "'$LLVMUP_SCRIPT' which clang --toolchain cross-dev 2>/dev/null"
+    [ "$status" -eq 0 ]
+    [ "$output" = "$LLVM_HOME/toolchains/cross-dev/bin/clang" ]
+
+    run bash -c "'$LLVMUP_SCRIPT' info cross-dev --json 2>/dev/null"
+    [ "$status" -eq 0 ]
+    jq -e '.install_name == "cross-dev"' <<<"$output"
+    [[ "$output" != *$'\033'* ]]
+
+    run bash -c "'$LLVMUP_SCRIPT' status --json 2>/dev/null"
+    [ "$status" -eq 0 ]
+    jq -e 'type == "object"' <<<"$output"
+
+    run bash -c "'$LLVMUP_SCRIPT' env cross-dev --format json 2>/dev/null"
+    [ "$status" -eq 0 ]
+    jq -e '.set._ACTIVE_LLVM == "cross-dev"' <<<"$output"
+
+    run bash -c "eval \"\$('$LLVMUP_SCRIPT' env cross-dev 2>/dev/null)\"; printf '%s' \"\$_ACTIVE_LLVM\""
+    [ "$output" = "cross-dev" ]
+}
