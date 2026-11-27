@@ -610,6 +610,18 @@ function Test-LlvmCommandHelp {
     return $script:LlvmCommandHelp.ContainsKey($key)
 }
 
+function Write-LlvmUpError {
+    # PowerShell 7's default error view folds line breaks into one paragraph. The first line goes to
+    # the error stream (callers and -ErrorVariable still see it); the guidance after it is shown as is.
+    param([Parameter(Mandatory)][string]$Message)
+    $lines = @($Message -split "\r?\n")
+    Write-Error $lines[0] -ErrorAction Continue
+    if ($lines.Count -gt 1) {
+        $rest = ($lines | Select-Object -Skip 1) -join [Environment]::NewLine
+        if ($rest.Trim()) { Write-Host $rest }
+    }
+}
+
 function Show-LlvmCommandHelp {
     # Writes the help text of one command (nothing when the command has none; see Test-LlvmCommandHelp).
     param([Parameter(Mandatory)][string]$Command)
@@ -1422,7 +1434,7 @@ function llvmup {
             $rest = if ($tokens.Count -gt 1) { @($tokens[1..($tokens.Count - 1)]) } else { @() }
             return Invoke-LlvmUpRun -Tokens $rest -PresetSelector $preset
         } catch {
-            Write-Error $_.Exception.Message -ErrorAction Continue
+            Write-LlvmUpError -Message $_.Exception.Message
             return $false
         }
     }
@@ -1610,12 +1622,12 @@ function llvmup {
                     try {
                         $res = Invoke-LlvmInstallPrebuiltFromRecipe -Selector $majorExpr -Provider $t.provider -Crt $crtArg -ArchiveOnly -ResolveOnly -ToolchainsPath $toolchainsPath -HomePath $homePath
                         if (Resolve-LlvmInstalledToolchain -Selector $res.canonical_id -ToolchainsPath $toolchainsPath -HomePath $homePath -ErrorAction SilentlyContinue) {
-                            Write-Output "$($t.install_name) is up to date ($($res.canonical_id))."
+                            Write-Host "$($t.install_name) is up to date ($($res.canonical_id))."
                             continue
                         }
-                        Write-Output "Update available for $($t.install_name): installing $($res.canonical_id) as a new installation."
+                        Write-Host "Update available for $($t.install_name): installing $($res.canonical_id) as a new installation."
                         $null = Invoke-LlvmInstallPrebuiltFromRecipe -Selector $majorExpr -Provider $t.provider -ReleaseTag $res.release -Crt $crtArg -ArchiveOnly -ToolchainsPath $toolchainsPath -HomePath $homePath
-                        Write-Output "The previous installation ($($t.install_name)) remains available; aliases, defaults and pins were not changed.`nTo use the new one:`n  llvmup use $($res.canonical_id)"
+                        Write-Host "The previous installation ($($t.install_name)) remains available; aliases, defaults and pins were not changed.`nTo use the new one:`n  llvmup use $($res.canonical_id)"
                     } catch {
                         Write-Warning "$($t.install_name): $($_.Exception.Message)"
                         $ok = $false
@@ -1689,7 +1701,7 @@ function llvmup {
         # This facade reports handled command failures by returning false.
         # Keep an ambient ErrorActionPreference=Stop (as used by GitHub
         # Actions) from turning that handled result into a new exception.
-        Write-Error $_.Exception.Message -ErrorAction Continue
+        Write-LlvmUpError -Message $_.Exception.Message
         return $false
     }
 }

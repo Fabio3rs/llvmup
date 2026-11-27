@@ -52,6 +52,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Destructive operations say what was kept: `alias remove` ("Toolchain preserved"), `toolchain unlink`
   ("External files preserved") and `remove`, which explains how to proceed when the toolchain is
   active or the user default.
+- Found by running real installs and updates (WSL and Windows): the checksum-only warning no longer
+  repeats the `Authenticity:` line, `list` fits long installation names and shows only the legend that
+  applies, `info` labels line up, and PowerShell 7 no longer folds multi-line errors into a single
+  paragraph (the first line is the error, the guidance follows as plain text). PowerShell `update`
+  prints its messages through the host instead of mixing them into the boolean it returns.
 - Directory auto-activation (Bash/Zsh) announces a change with one line naming the toolchain and its
   source ("Using X (from .llvmup-config: ...)") and stays silent when nothing changes; a failed
   auto-activation now includes the reason instead of a bare failure.

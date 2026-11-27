@@ -48,6 +48,14 @@ Describe 'PowerShell llvmup lifecycle facade' {
         ($err | Out-String) | Should -Match "No help available for 'nope'"
     }
 
+    It 'keeps the layout of multi-line errors: first line as the error, guidance as plain text' {
+        $out = @(& (Get-Module Llvm-Functions) { Write-LlvmUpError -Message "Boom happened.`n`nTo fix it:`n  llvmup list" } *>&1)
+        $err = @($out | Where-Object { $_ -is [System.Management.Automation.ErrorRecord] })
+        $err.Count | Should -Be 1
+        $err[0].Exception.Message | Should -Be 'Boom happened.'
+        ($out | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } | Out-String) | Should -Match 'llvmup list'
+    }
+
     It 're-exports the core matcher with candidate-version support' {
         $command = Get-Command Invoke-LlvmMatchVersions
         $command.Parameters.Keys | Should -Contain 'CandidateVersions'
