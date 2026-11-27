@@ -438,55 +438,249 @@ function Initialize-LlvmConfig {
     return & $installScript config init
 }
 
-function Show-LlvmHelp {
-    @'
-LLVMUP for PowerShell
+$script:LlvmCommandHelp = @{
+    'install' = @'
+Install a toolchain.
 
-Usage: llvmup [COMMAND] [OPTIONS] [ARGS]
-       llvmup +<toolchain> -- <command> [args...]
+Usage:
+  llvmup install [<provider>@]<selector> [options]
 
-Manager version:
-  llvmup --version                  Show the installed LLVMUP version
+Selectors:
+  latest, 23, ~23.1, >=23.1.4, 23.*, winlibs@23, llvm-mingw@23, official@latest
+  Quote selectors containing > < or *, for example: llvmup install '>=23.1'
 
-Commands:
-  install          Install a toolchain (providers: official, winlibs, llvm-mingw)
-  use              Activate toolchain in current session (use -, --auto, --install)
-  run              Run a command with a toolchain without mutating the shell
-  activate         Activate an installed toolchain in this session
-  deactivate       Restore the previous shell environment
-  alias            Manage personal aliases (set, list, show, remove)
-  pin              Pin toolchain version/provider in .llvmup-config
-  sync             Provision project toolchain from .llvmup-config / .llvmup-lock.json
-  which            Show resolved path of a tool in the selected toolchain
-  where            Show installation root directory of a toolchain
-  provides         List installed toolchains providing a given tool
-  info             Show detailed manifest and capability metadata
-  update           Update an installed toolchain to the latest matching release
-  pick             Interactive local toolchain selector
-  toolchain        Manage external local toolchains (link, unlink, list)
-  shell            Start a subshell with the selected toolchain active
-  cmake-toolchain  Generate a CMake toolchain file for a toolchain/target
-  env              Print shell/GitHub exports for non-interactive use
-  resolve          Resolve a remote release without installing it
-  vscode-activate  Configure VSCode workspace settings for a toolchain
-  status           Show active and effective toolchain status (--explain, --json)
-  list             List installed, remote, or available providers
-  remove           Remove an installed managed toolchain
-  disk-usage       Show disk usage of installed toolchains
-  default          Manage default toolchain (set, show, unset, or <selector>)
-  config           Manage project config & lockfile (init, load, apply, activate, lock)
-  doctor           Run read-only installation and environment diagnostics
-  help             Show this help message
+Options:
+  --use                  Select the toolchain in this terminal after installing
+  -n, --name <NAME>      Installation name (default: derived from the release)
+  --provider <P>         official, winlibs or llvm-mingw
+  --release <TAG>        Pin the upstream release
+  --crt <ucrt|msvcrt>    C runtime (WinLibs and LLVM-MinGW)
+  --threads <T>          Thread model, where the provider offers a choice
+  --verify <POLICY>      warn (default), strict or skip
+  --extractor <E>        auto, 7z, tar, zip or python
+  --force                Replace an existing installation with the same name
+  --archive-only         Install the prebuilt archive without a source build
+  -q, --quiet / -v, --verbose
 
 Examples:
-  llvmup install official@23 --archive-only
-  llvmup install winlibs@23 --crt ucrt --name win-dev
-  llvmup install llvm-mingw@23 --use
-  llvmup use win-dev --compiler gcc
-  llvmup +win-dev -- clang++ main.cpp -o main.exe
-  llvmup run official@23 -- cmake -S . -B build -G Ninja
+  llvmup install latest --use
+  llvmup install winlibs@23 --name win-dev
+  llvmup install llvm-mingw@23 --crt ucrt
+
+Effects: downloads and verifies an archive, then creates a new directory under the
+toolchains folder. It never changes this terminal unless --use is given.
+'@
+    'use' = @'
+Select a toolchain for this terminal.
+
+Usage:
+  llvmup use <selector|installation|alias> [--compiler clang|gcc] [--target <T>] [--crt <C>] [--install]
+  llvmup use -        Return to the previous selection of this terminal
+  llvmup use --auto   Drop the manual selection and follow .llvmup-config or the default
+
+Options:
+  --compiler <C>   Compiler to export as CC/CXX (only compilers the toolchain provides)
+  --target <T>     Target triple (only targets the toolchain supports)
+  --install        Install the toolchain first, only if no installation matches
+
+Examples:
+  llvmup use official@23
+  llvmup use winlibs@23 --compiler gcc
+
+Effects: changes PATH and related variables of the current PowerShell session only. This works
+through the 'llvmup' function from the module; llvmup.cmd cannot do it. Use
+'llvmup run <toolchain> -- <command>' for a one-off command instead.
+'@
+    'run' = @'
+Run a command with a toolchain, without changing the current session.
+
+Usage:
+  llvmup run [<selector>] [--compiler C] [--target T] [--install] -- <command> [args...]
+  llvmup +<selector> -- <command> [args...]
+  llvmup run --locked -- <command>    Use the toolchain recorded in .llvmup-lock.json
+
+Without a selector, the effective toolchain is used (session, project, then default).
+
+Examples:
+  llvmup run llvm-mingw@23 -- clang++ --version
+  llvmup +winlibs@23 -- gcc --version
+
+The command's own output and exit code are passed through unchanged.
+'@
+    'list' = @'
+List installed toolchains.
+
+Usage:
+  llvmup list [--json]
+  llvmup list --remote [--provider <P>] [--json]
+  llvmup list --providers
+
+--remote queries upstream releases (network); the other forms are offline.
+'@
+    'status' = @'
+Show the current selection.
+
+Usage:
+  llvmup status [--explain] [--json]
+
+--explain shows why the toolchain was selected (session override, project
+configuration or user default). --json prints machine-readable output only.
+'@
+    'config' = @'
+Manage the project configuration (.llvmup-config).
+
+Usage:
+  llvmup config init        Create a .llvmup-config in this directory
+  llvmup config load        Show the configuration that applies here
+  llvmup config apply       Install what the configuration asks for
+  llvmup config activate    Select the configured toolchain in this session
+  llvmup config lock        Write .llvmup-lock.json with exact asset identities
+
+See also: llvmup pin, llvmup sync.
+'@
+    'sync' = @'
+Install the toolchain requested by the project.
+
+Usage:
+  llvmup sync [--locked]
+
+Reads .llvmup-config and installs the matching toolchain if it is missing.
+With --locked, the exact asset recorded in .llvmup-lock.json is required.
+'@
+    'pin' = @'
+Record a toolchain in .llvmup-config.
+
+Usage:
+  llvmup pin [<selector>]
+  llvmup pin --current     Record the active toolchain
+
+Only .llvmup-config in the current project is modified.
+'@
+    'default' = @'
+Manage the user default toolchain.
+
+Usage:
+  llvmup default [<selector>]    Show the default, or set it when a selector is given
+  llvmup default set <selector>
+  llvmup default show
+  llvmup default unset
+
+The default applies when neither a manual selection nor a project configuration exists.
+'@
+    'alias' = @'
+Give installations stable names.
+
+Usage:
+  llvmup alias set <name> <installation>
+  llvmup alias list | show <name> | remove <name>
+
+Removing an alias never removes the toolchain it points to.
+'@
+    'remove' = @'
+Remove an installed toolchain.
+
+Usage:
+  llvmup remove <installation> [--force]
+
+The default toolchain is refused unless --force is given. Only the installation
+directory is deleted.
+'@
+    'update' = @'
+Install a newer release of an installed toolchain.
+
+Usage:
+  llvmup update [<selector>]
+
+The previous installation is kept, and aliases, defaults and pins are not changed.
+'@
+    'env' = @'
+Print environment settings for scripts and CI.
+
+Usage:
+  llvmup env [<selector>|--config] [--compiler C] [--target T] [--format shell|cmd|github|json]
+
+Only the settings are written to the output; diagnostics go to the error stream.
+'@
+}
+
+function Test-LlvmCommandHelp {
+    param([Parameter(Mandatory)][string]$Command)
+    $key = $Command.ToLowerInvariant()
+    if ($key -eq 'activate') { $key = 'use' }
+    return $script:LlvmCommandHelp.ContainsKey($key)
+}
+
+function Show-LlvmCommandHelp {
+    # Writes the help text of one command (nothing when the command has none; see Test-LlvmCommandHelp).
+    param([Parameter(Mandatory)][string]$Command)
+    $key = $Command.ToLowerInvariant()
+    if ($key -eq 'activate') { $key = 'use' }
+    if ($script:LlvmCommandHelp.ContainsKey($key)) { $script:LlvmCommandHelp[$key] }
+}
+
+function Show-LlvmHelp {
+    param([string]$Topic = '')
+    if ($Topic) {
+        if (Test-LlvmCommandHelp -Command $Topic) { Show-LlvmCommandHelp -Command $Topic; return }
+        Write-Error "No help available for '$Topic'. Run 'llvmup help' for the list of commands." -ErrorAction Continue
+        return
+    }
+    @'
+LLVMUP - C/C++ Toolchain Manager
+Your toolchains. Your terminal. Your environment.
+
+Usage:
+  llvmup <command> [options]
+  llvmup +<toolchain> -- <command>
+  llvmup help <command>
+
+Getting started:
+  install       Install a toolchain (official LLVM, WinLibs, LLVM-MinGW)
+  use           Select a toolchain for this terminal
+  list          List installed toolchains
+  run           Run a command with a toolchain, without changing the session
+  status        Show the current selection
+
+Toolchain management:
+  update        Install a newer release of an installed toolchain
+  remove        Remove an installed toolchain
+  default       Choose the user default toolchain
+  alias         Give toolchains stable names
+  resolve       Show which release a selector would install
+  toolchain     Link or unlink an external toolchain
+  disk-usage    Show disk usage of installed toolchains
+
+Projects:
+  pin           Record the toolchain in .llvmup-config
+  sync          Install what .llvmup-config or the lockfile asks for
+  config        Manage .llvmup-config (init, load, apply, activate, lock)
+
+Environment:
+  deactivate    Restore this session's previous environment
+  shell         Start a subshell with a toolchain active
+  pick          Choose an installed toolchain from a list
+  env           Print environment settings for scripts and CI
+
+Integration:
+  cmake-toolchain   Write a CMake toolchain file
+  vscode-activate   Configure VS Code for a toolchain
+
+Inspection:
+  info  which  where  provides  doctor
+
+Common flows:
+  llvmup install latest --use
+  llvmup install winlibs@23
+  llvmup use winlibs@23 --compiler gcc
+  llvmup run llvm-mingw@23 -- clang++ --version
   llvmup pin --current
-  llvmup sync --locked
+  llvmup sync
+
+Options:
+  --version     Show the LLVMUP version
+  -h, --help    Show this help, or help for a command
+
+Historical commands such as 'activate' and the 'llvmup <version>' install shorthand still work.
 '@
 }
 
@@ -1247,6 +1441,14 @@ function llvmup {
         return $false
     }
 
+    # Help is answered before anything touches the network or the installations.
+    if ($command -ne 'help') {
+        $beforeSep = @()
+        foreach ($t in $tokens) { if ($t -eq '--') { break }; $beforeSep += $t }
+        $wantsHelp = ($beforeSep -contains '--help') -or (($beforeSep -contains '-h') -and $command -ne 'disk-usage')
+        if ($wantsHelp -and (Test-LlvmCommandHelp -Command $command)) { Show-LlvmCommandHelp -Command $command; return }
+    }
+
     try {
         $toolchainsPath = Get-LlvmSessionToolchainsPath
         $homePath = Get-LlvmHomePath
@@ -1406,11 +1608,12 @@ function llvmup {
                     try {
                         $res = Invoke-LlvmInstallPrebuiltFromRecipe -Selector $majorExpr -Provider $t.provider -Crt $crtArg -ArchiveOnly -ResolveOnly -ToolchainsPath $toolchainsPath -HomePath $homePath
                         if (Resolve-LlvmInstalledToolchain -Selector $res.canonical_id -ToolchainsPath $toolchainsPath -HomePath $homePath -ErrorAction SilentlyContinue) {
-                            Write-Output "$($t.install_name): up to date ($($res.canonical_id))"
+                            Write-Output "$($t.install_name) is up to date ($($res.canonical_id))."
                             continue
                         }
-                        Write-Output "$($t.install_name): installing $($res.canonical_id)"
+                        Write-Output "Update available for $($t.install_name): installing $($res.canonical_id) as a new installation."
                         $null = Invoke-LlvmInstallPrebuiltFromRecipe -Selector $majorExpr -Provider $t.provider -ReleaseTag $res.release -Crt $crtArg -ArchiveOnly -ToolchainsPath $toolchainsPath -HomePath $homePath
+                        Write-Output "The previous installation ($($t.install_name)) remains available; aliases, defaults and pins were not changed.`nTo use the new one:`n  llvmup use $($res.canonical_id)"
                     } catch {
                         Write-Warning "$($t.install_name): $($_.Exception.Message)"
                         $ok = $false
@@ -1476,7 +1679,7 @@ function llvmup {
                 if (-not $eff) { throw 'No matching toolchain found for cmake-toolchain.' }
                 return New-LlvmCMakeToolchainFile -Manifest $eff.manifest -Target $eff.target -Compiler $eff.compiler -OutputPath $out
             }
-            'help' { return Show-LlvmHelp }
+            'help' { return Show-LlvmHelp -Topic $(if ($tokens.Count) { [string]$tokens[0] } else { '' }) }
         }
     } catch {
         # This facade reports handled command failures by returning false.

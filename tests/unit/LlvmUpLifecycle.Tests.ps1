@@ -29,6 +29,25 @@ Describe 'PowerShell llvmup lifecycle facade' {
         }
     }
 
+    It 'shows progressive help without touching installations or the network' {
+        $overview = (llvmup help | Out-String)
+        $overview | Should -Match 'Getting started'
+        $overview | Should -Match 'llvmup help <command>'
+        foreach ($c in 'install', 'use', 'run', 'list', 'status', 'config', 'sync', 'pin') {
+            $text = (llvmup $c --help | Out-String)
+            $text | Should -Match 'Usage:'
+            $text | Should -Match "llvmup $c"
+            ((llvmup help $c | Out-String)) | Should -Match 'Usage:'
+        }
+        @(Get-ChildItem -LiteralPath $env:LLVM_TOOLCHAINS_DIR).Count | Should -Be 0
+    }
+
+    It 'rejects an unknown help topic with an explanation' {
+        $err = $null
+        $null = llvmup help nope -ErrorVariable err -ErrorAction SilentlyContinue 2>&1
+        ($err | Out-String) | Should -Match "No help available for 'nope'"
+    }
+
     It 're-exports the core matcher with candidate-version support' {
         $command = Get-Command Invoke-LlvmMatchVersions
         $command.Parameters.Keys | Should -Contain 'CandidateVersions'

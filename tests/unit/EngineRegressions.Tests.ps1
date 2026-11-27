@@ -643,7 +643,7 @@ Describe 'LLVMUP engine regressions' {
             $env:LLVM_TOOLCHAINS_DIR = Join-Path $script:lhome 'toolchains'
             $help = & $script:launcher help 2>&1 | ForEach-Object { "$_" }
             $LASTEXITCODE | Should -Be 0
-            ($help -join "`n") | Should -Match 'Usage: llvmup'
+            ($help -join "`n") | Should -Match 'llvmup <command>'
             $null = & $script:launcher list 2>&1
             $LASTEXITCODE | Should -Be 0
         }
@@ -654,7 +654,7 @@ Describe 'LLVMUP engine regressions' {
             $env:LLVM_TOOLCHAINS_DIR = Join-Path $script:lhome 'toolchains'
             $help = & $script:launcher help
             $LASTEXITCODE | Should -Be 0
-            ($help -join "`n") | Should -Match 'Usage: llvmup'
+            ($help -join "`n") | Should -Match 'llvmup <command>'
         }
     }
 }
