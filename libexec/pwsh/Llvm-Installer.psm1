@@ -204,6 +204,31 @@ function Invoke-LlvmInstallPrebuiltFromRecipe {
             if (-not $existingManifest -or -not $existingManifest.capabilities -or $existingManifest.capabilities.compilers.Count -eq 0) {
                 throw "Incomplete toolchain already exists at $installPath. Remove it or pass --force."
             }
+            if ($existingManifest.id -and $plan.canonical_id -and ([string]$existingManifest.id -ne [string]$plan.canonical_id)) {
+                $arg = Format-LlvmCommandArgument $Selector
+                $rows = @(
+                    @('Provider', $existingManifest.provider, $plan.provider),
+                    @('Release', $existingManifest.provider_release, $plan.release_tag),
+                    @('LLVM', $existingManifest.llvm_version, $plan.llvm_version),
+                    @('GCC', $existingManifest.gcc_version, $plan.gcc_version),
+                    @('OS', $existingManifest.host.os, $plan.host.os),
+                    @('Architecture', $existingManifest.host.arch, $plan.host.arch),
+                    @('CRT', $existingManifest.variant.crt, $plan.variant.crt),
+                    @('Threads', $existingManifest.variant.threads, $plan.variant.threads),
+                    @('Exceptions', $existingManifest.variant.exceptions, $plan.variant.exceptions),
+                    @('C++ library', $existingManifest.variant.cxx_stdlib, $plan.variant.cxx_stdlib),
+                    @('Profile', $existingManifest.variant.profile, $plan.variant.profile),
+                    @('Asset', $existingManifest.asset.name, $plan.asset.name)
+                ) | Where-Object { [string]$_[1] -ne [string]$_[2] }
+                if (-not $rows -or @($rows).Count -eq 0) {
+                    $rows = @(@('Identity', $existingManifest.id, $plan.canonical_id))
+                }
+                $have = ($rows | ForEach-Object { "  $($_[0]): $(if ([string]$_[1]) { $_[1] } else { '-' })" }) -join "`n"
+                $want = ($rows | ForEach-Object { "  $($_[0]): $(if ([string]$_[2]) { $_[2] } else { '-' })" }) -join "`n"
+                throw ("Installation name '$installName' is already in use.`n`nExisting installation:`n$have`n`nRequested installation:`n$want`n`n" +
+                    "Choose a different name:`n  llvmup install $arg --name <new-name>`n`n" +
+                    "To replace the existing installation explicitly, add --force. This deletes it first.`nThe existing installation was not modified.")
+            }
             Assert-LlvmManagedAsset -Manifest $existingManifest -Expected @{
                 canonical_id = $plan.canonical_id
                 provider = $plan.provider
@@ -215,7 +240,7 @@ function Invoke-LlvmInstallPrebuiltFromRecipe {
                 Invoke-LlvmSelection -Operation check -Root $installPath -Selection $selection
             }
             if (-not $Quiet) {
-                Write-Host "[INFO] Toolchain '$installName' is already installed at $installPath" -ForegroundColor Cyan
+                Write-Host "$installName is already installed and validated ($installPath). Reusing it." -ForegroundColor Cyan
             }
             return [pscustomobject][ordered]@{
                 install_name = $installName
@@ -229,7 +254,20 @@ function Invoke-LlvmInstallPrebuiltFromRecipe {
 
         $null = New-Item -ItemType Directory -Path $tempRoot -Force
         if (-not $Quiet) {
-            Write-Host "[INFO] Installing $($plan.provider) ($($plan.release_tag), LLVM $($plan.llvm_version)) -> $installName" -ForegroundColor Cyan
+            Write-Host "Resolving $Selector..." -ForegroundColor Cyan
+            $summary = [ordered]@{
+                'Provider' = $plan.provider; 'Release' = $plan.release_tag; 'LLVM' = $plan.llvm_version
+                'GCC' = $plan.gcc_version; 'Architecture' = $plan.host.arch; 'CRT' = $plan.variant.crt
+                'Threads' = $plan.variant.threads; 'Exceptions' = $plan.variant.exceptions
+                'C++ library' = $plan.variant.cxx_stdlib
+                'Profile' = $(if ($plan.variant.profile -and $plan.variant.profile -ne 'full') { $plan.variant.profile } else { $null })
+                'Asset' = $plan.asset.name; 'Name' = $installName; 'Directory' = $installPath
+            }
+            foreach ($k in $summary.Keys) {
+                $v = [string]$summary[$k]
+                if (-not $v -or $v -eq 'system' -or $v -eq 'unknown') { continue }
+                Write-Host ("  {0,-14}{1}" -f ($k + ':'), $v)
+            }
         }
 
         $dlResult = Get-LlvmCachedOrDownload `
@@ -253,7 +291,8 @@ function Invoke-LlvmInstallPrebuiltFromRecipe {
             -ReleaseKeysPath $ReleaseKeysPath `
             -TimeoutSec $TimeoutSec `
             -MaxRetries $MaxRetries `
-            -Quiet:$Quiet
+            -Quiet:$Quiet `
+            -DeferOriginNotice:(-not $Quiet)
 
         $extractInfo = $null
         if ($effProvider -eq 'official' -and $selection -and $selection.selective) {
@@ -338,7 +377,16 @@ function Invoke-LlvmInstallPrebuiltFromRecipe {
         $manifest['root_path'] = $installPath
 
         if (-not $Quiet) {
-            Write-Host "[OK] Installed '$installName' at $installPath (verify=$($verifyResult.methods -join '+'))" -ForegroundColor Green
+            $vr = $verifyResult
+            $algo = if ($vr.checksum_algorithm) { ([string]$vr.checksum_algorithm).ToUpperInvariant() -replace '^SHA', 'SHA-' } else { '' }
+            Write-Host $(if ($vr.checksum -eq 'valid') { "Integrity: Verified ($algo)" } else { 'Integrity: Not verified' })
+            if ($vr.gpg -eq 'valid') { Write-Host 'Authenticity: Verified (GPG)' }
+            elseif ($vr.attestation -eq 'valid') { Write-Host 'Authenticity: Verified (GitHub/Sigstore attestation)' }
+            elseif ($vr.authenticode -eq 'valid' -or ($vr.methods -contains 'authenticode')) { Write-Host 'Authenticity: Verified (Authenticode)' }
+            elseif ($vr.policy -eq 'skip') { Write-Host 'Verification: Skipped by user request' }
+            elseif ($vr.gpg -eq 'unavailable' -or $vr.attestation -eq 'unavailable') { Write-Host 'Authenticity: Verification tool or data unavailable' }
+            else { Write-Host 'Authenticity: Not provided by upstream' }
+            Write-Host "Installed $installName successfully." -ForegroundColor Green
         }
 
         return [pscustomobject][ordered]@{

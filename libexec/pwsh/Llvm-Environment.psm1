@@ -50,13 +50,14 @@ function Get-LlvmEnvironmentDelta {
     $effCompiler = if ($Compiler) { $Compiler.ToLowerInvariant() } elseif ($Manifest.variant -and $Manifest.variant.default_compiler) { [string]$Manifest.variant.default_compiler } else { 'clang' }
     $availableCompilers = if ($Manifest.capabilities -and $Manifest.capabilities.compilers) { @($Manifest.capabilities.compilers) } else { @() }
     if ($availableCompilers.Count -gt 0 -and $availableCompilers -notcontains $effCompiler) {
-        throw "Toolchain '$($Manifest.install_name)' ($provider) does not provide compiler '$effCompiler'. Available: $($availableCompilers -join ', ')"
+        $ccName = $effCompiler.ToUpperInvariant()
+        throw ("Toolchain $($Manifest.install_name) does not provide $ccName.`n`nAvailable compilers:`n  " + ($availableCompilers -join "`n  ") + "`n`nTo find installed toolchains with ${ccName}:`n  llvmup provides $effCompiler")
     }
 
     $effTarget = if ($Target) { $Target } elseif ($Manifest.default_target) { [string]$Manifest.default_target } else { '' }
     $supportedTargets = if ($Manifest.supported_targets) { @($Manifest.supported_targets) } else { @() }
     if ($Target -and $supportedTargets.Count -gt 0 -and ($supportedTargets -notcontains $Target)) {
-        throw "Toolchain '$($Manifest.install_name)' ($provider) does not support target '$Target'. Supported: $($supportedTargets -join ', ')"
+        throw ("Toolchain $($Manifest.install_name) does not support target $Target.`n`nSupported targets:`n  " + ($supportedTargets -join "`n  "))
     }
 
     if ($effCompiler -eq 'gcc' -and (Get-Command Get-LlvmRecipePathConstraintWarnings -ErrorAction SilentlyContinue)) {

@@ -14,7 +14,7 @@ function Test-DoctorCompiler {
 }
 function Get-DoctorInstallation {
     param($Checks, $Root, $Toolchains, $LlvmHome)
-    $files = @('Llvm-Functions.psm1','Llvm-Functions-Core.psm1','Get-UserHome.psm1','Llvm-Completion.psm1','Activate-Llvm.ps1','Deactivate-Llvm.ps1','Install-Llvm.ps1','Download-Llvm.ps1','Llvm-Config.ps1','Llvm-Default.ps1','Llvm-Doctor.psm1','Llvm-Doctor.ps1','Llvm-Doctor-Deep.ps1')
+    $files = @('Llvm-Functions.psm1','Llvm-Functions.Format.ps1xml','Llvm-Functions-Core.psm1','Get-UserHome.psm1','Llvm-Completion.psm1','Activate-Llvm.ps1','Deactivate-Llvm.ps1','Install-Llvm.ps1','Download-Llvm.ps1','Llvm-Config.ps1','Llvm-Default.ps1','Llvm-Doctor.psm1','Llvm-Doctor.ps1','Llvm-Doctor-Deep.ps1')
     $manifest = Join-Path $Root 'llvmup-files.tsv'
     if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) { $manifest = Join-Path $Root 'packaging/runtime-files.tsv' }
     if (Test-Path -LiteralPath $manifest -PathType Leaf) {
@@ -36,7 +36,14 @@ function Get-DoctorInstallation {
     }
     foreach ($tool in @('tar','git','cmake','ninja','gpg','gh')) {
         if (Get-Command $tool -ErrorAction SilentlyContinue) { Add-DoctorCheck $Checks "dependency.$tool" dependencies PASS 'Tool available.' '' $tool }
-        else { Add-DoctorCheck $Checks "dependency.$tool" dependencies WARN 'Tool unavailable.' 'tar supports extraction; git/cmake/ninja are for source builds; gpg/gh are optional verification tools.' $tool }
+        else {
+            $impact = switch ($tool) {
+                'tar' { 'Needed to extract .tar.xz archives; the zip providers (WinLibs, LLVM-MinGW) do not need it.' }
+                { $_ -in @('git', 'cmake', 'ninja') } { 'Needed only for source builds.' }
+                default { 'Optional: enables origin verification (GPG signatures or GitHub attestations).' }
+            }
+            Add-DoctorCheck $Checks "dependency.$tool" dependencies WARN 'Tool unavailable.' $impact $tool
+        }
     }
     $bootstrap = @('cl','clang','gcc') | Where-Object { Get-Command $_ -ErrorAction SilentlyContinue }
     if ($bootstrap) { Add-DoctorCheck $Checks dependency.bootstrap dependencies PASS 'Bootstrap compiler discoverable (not executed).' 'Source builds also need C++ support and development libraries.' }
@@ -227,9 +234,21 @@ function Invoke-LlvmDoctor {
     if ($code -eq 0 -and @($checks | Where-Object status -eq FAIL).Count) { $code = 1 }
     if ($Tokens -contains '--json') { [ordered]@{ schema_version=1; checks=@($checks.ToArray()); exit_code=$code } | ConvertTo-Json -Depth 6 -Compress }
     else {
+        $verbose = $Tokens -contains '--verbose'
+        $fileChecks = @($checks | Where-Object { $_.id -eq 'installation.file' -and $_.status -eq 'PASS' })
+        $seen = @{}
+        $summarized = $false
         foreach ($check in $checks) {
+            # One line for the many readable runtime files; every file still appears in --json and --verbose.
+            if (-not $verbose -and $check.id -eq 'installation.file' -and $check.status -eq 'PASS') {
+                if (-not $summarized) { "PASS [installation.file] $($fileChecks.Count) runtime files are readable."; $summarized = $true }
+                continue
+            }
             "$($check.status) [$($check.id)] $($check.description) $($check.subject)"
-            if ($check.recommendation -and ($check.status -in @('WARN','FAIL') -or $Tokens -contains '--verbose')) { "     $($check.recommendation)" }
+            if ($check.recommendation -and ($check.status -in @('WARN','FAIL') -or $verbose)) {
+                # The same advice for several checks (optional tools, for example) is printed once.
+                if (-not $seen.ContainsKey($check.recommendation)) { "     $($check.recommendation)"; $seen[$check.recommendation] = $true }
+            }
         }
     }
     $global:LASTEXITCODE = $code

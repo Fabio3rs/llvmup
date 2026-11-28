@@ -223,7 +223,7 @@ teardown() {
     run "$BATS_TEST_DIRNAME/../../llvm-prebuilt" --verify warn "20.1.8"
 
     [ "$status" -eq 0 ]
-    [[ "$output" == *"origin is not authenticated"* ]]
+    [[ "$output" == *"Authenticity: Not provided by upstream"* ]]
 }
 
 @test "llvm-prebuilt strict rejects checksum-only verification" {
@@ -302,7 +302,12 @@ teardown() {
     [ -x "$LLVM_TOOLCHAINS_DIR/custom-llvm/bin/clang" ]
     [ -L "$HOME/.llvm/default" ]
     [ "$(basename "$(readlink "$HOME/.llvm/default")")" = "custom-llvm" ]
-    [[ "$output" == *"Installed 'custom-llvm'"* ]]
+    [[ "$output" == *"Installed custom-llvm successfully"* ]]
+    # The resolved distribution is shown before the download, and verification is reported in two parts.
+    [[ "$output" == *"Provider:"*"official"* ]]
+    [[ "$output" == *"Name:"*"custom-llvm"* ]]
+    [[ "$output" == *"Asset:"* ]]
+    [[ "$output" == *"Verification: Skipped by user request"* || "$output" == *"Integrity:"* ]]
 }
 
 @test "verbose extraction propagates tar failures" {
@@ -343,4 +348,43 @@ EOF
     [ "$status" -ne 0 ]
     [[ "$output" == *"official LLVM requires clang and clang++"* ]]
     [ ! -e "$LLVM_TOOLCHAINS_DIR/llvmorg-20.1.8" ]
+}
+
+@test "llvm-prebuilt says when it downloads and when it reuses the cached archive" {
+    create_download_fixture
+    export LLVMUP_SKIP_VERIFY=1
+
+    run "$BATS_TEST_DIRNAME/../../llvm-prebuilt" --name first "20.1.8"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Downloading"* ]]
+
+    run "$BATS_TEST_DIRNAME/../../llvm-prebuilt" --name second "20.1.8"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Using cached archive"* ]]
+    [[ "$output" != *"Downloading"* ]]
+}
+
+@test "a full disk during extraction is named as the cause without a flood of tar lines" {
+    create_download_fixture
+    export LLVMUP_SKIP_VERIFY=1
+    mkdir -p "$BATS_TMPDIR/fulldisk_$$/bin"
+    real_tar="$(command -v tar)"
+    cat > "$BATS_TMPDIR/fulldisk_$$/bin/tar" <<STUB
+#!/bin/sh
+case " \$* " in
+    *" -xf "*)
+        i=0; while [ \$i -lt 40 ]; do echo "tar: some/file\$i.h: Cannot write: No space left on device" >&2; i=\$((i + 1)); done
+        exit 2 ;;
+esac
+exec "$real_tar" "\$@"
+STUB
+    chmod +x "$BATS_TMPDIR/fulldisk_$$/bin/tar"
+
+    run env PATH="$BATS_TMPDIR/fulldisk_$$/bin:$PATH" "$BATS_TEST_DIRNAME/../../llvm-prebuilt" --name nospace "20.1.8"
+    rm -rf "$BATS_TMPDIR/fulldisk_$$"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"no space left on the device"* ]]
+    [[ "$output" == *"Free some disk space"* ]]
+    [ "$(grep -c '^tar:' <<<"$output")" -eq 0 ]
+    [ ! -d "$LLVM_TOOLCHAINS_DIR/nospace" ]
 }

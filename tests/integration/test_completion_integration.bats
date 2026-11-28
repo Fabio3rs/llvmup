@@ -105,7 +105,7 @@ teardown() {
     mkdir -p "$completion_dir" "$TEST_DIR/work"
     cp "$repo_dir/llvmup-completion.sh" "$completion_dir/llvmup"
     cp "$repo_dir/llvmup-completion-common.sh" "$TEST_DIR/bin/"
-    cp "$repo_dir/llvm-functions.sh" "$TEST_DIR/bin/"
+    cp "$repo_dir/llvm-functions.sh" "$repo_dir/llvmup-core.sh" "$TEST_DIR/bin/"
     cp "$repo_dir/llvmup" "$TEST_DIR/bin/llvmup"
     chmod +x "$TEST_DIR/bin/llvmup"
 

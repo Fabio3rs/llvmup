@@ -449,7 +449,7 @@ function Set-LlvmDefaultVersion {
     if (-not $ToolchainsPath) { $ToolchainsPath = Get-LlvmSessionToolchainsPath }
     $versionPath = Join-Path $ToolchainsPath $Version
     if (-not (Test-Path -LiteralPath $versionPath -PathType Container)) {
-        throw "LLVM version '$Version' is not installed in $ToolchainsPath"
+        throw "LLVM version '$Version' is not installed in $ToolchainsPath`nTo see installed toolchains: llvmup list"
     }
 
     $defaultPath = Get-LlvmDefaultPath -HomePath $HomePath
@@ -511,7 +511,7 @@ function Remove-LlvmVersion {
     if (-not $ToolchainsPath) { $ToolchainsPath = Get-LlvmSessionToolchainsPath }
     $target = Join-Path $ToolchainsPath $Version
     if (-not (Test-Path -LiteralPath $target)) {
-        throw "LLVM version '$Version' is not installed in $ToolchainsPath"
+        throw "LLVM version '$Version' is not installed in $ToolchainsPath`nTo see installed toolchains: llvmup list"
     }
 
     $activeVersion = if ($env:_ACTIVE_LLVM) { $env:_ACTIVE_LLVM } else { $env:LLVMUP_ACTIVE_VERSION }

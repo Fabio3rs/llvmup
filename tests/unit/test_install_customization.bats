@@ -16,6 +16,7 @@ setup() {
     cp "$BATS_TEST_DIRNAME/../../uninstall.sh" .
     cp -r "$BATS_TEST_DIRNAME/../../"llvm-* .
     cp "$BATS_TEST_DIRNAME/../../llvmup" .
+    cp "$BATS_TEST_DIRNAME/../../llvmup-core.sh" .
     cp "$BATS_TEST_DIRNAME/../../"llvmup-doctor*.sh .
     cp "$BATS_TEST_DIRNAME/../../llvmup-completion.sh" .
     cp "$BATS_TEST_DIRNAME/../../llvmup-completion-common.sh" .
@@ -246,6 +247,8 @@ EOF
 
 @test "install.sh shows helpful output messages" {
     export LLVMUP_PREFIX="$BATS_TMPDIR/output_test"
+    # A previous run leaves this prefix behind, which would turn "Installation" into "Reinstallation".
+    rm -rf "$LLVMUP_PREFIX"
 
     run timeout 5 ./install.sh
 

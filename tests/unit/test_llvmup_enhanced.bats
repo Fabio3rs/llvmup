@@ -33,6 +33,10 @@ teardown() {
     assert_output --partial "status"
     assert_output --partial "list"
     assert_output --partial "disk-usage"
+
+    # Option details live in the per-command help.
+    run bash "$ORIGINAL_DIR/llvmup" install --help
+    assert_success
     assert_output --partial "--cmake-flags"
     assert_output --partial "--name"
     assert_output --partial "--default"
@@ -57,13 +61,13 @@ teardown() {
 @test "llvmup help uses shell help when functions are available" {
     run bash -lc "export HOME='$TEST_HOME'; export LLVMUP_DISABLE_AUTOACTIVATE=1; source '$ORIGINAL_DIR/llvm-functions.sh'; llvmup help"
     assert_success
-    assert_output --partial "LLVM Manager - Complete Usage Guide"
+    assert_output --partial "LLVMUP - C/C++ Toolchain Manager"
 }
 
 @test "llvmup status routes to shell function" {
     run bash -lc "export HOME='$TEST_HOME'; export LLVMUP_DISABLE_AUTOACTIVATE=1; source '$ORIGINAL_DIR/llvm-functions.sh'; llvmup status"
     assert_success
-    assert_output --partial "LLVM Environment Status"
+    assert_output --partial "No toolchain is active"
 }
 
 @test "llvmup list routes to shell function" {
@@ -71,7 +75,7 @@ teardown() {
 
     run bash -lc "export HOME='$TEST_HOME'; export LLVMUP_DISABLE_AUTOACTIVATE=1; source '$ORIGINAL_DIR/llvm-functions.sh'; llvmup list"
     assert_success
-    assert_output --partial "Installed LLVM Versions"
+    assert_output --partial "toolchain installed"
     assert_output --partial "test-version"
 }
 

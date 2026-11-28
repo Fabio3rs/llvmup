@@ -37,7 +37,7 @@ setup() {
     cp "$BATS_TEST_DIRNAME/../../llvm-activate" "$INSTALL_DIR/"
     cp "$BATS_TEST_DIRNAME/../../llvm-deactivate" "$INSTALL_DIR/"
     cp "$BATS_TEST_DIRNAME/../../llvm-vscode-activate" "$INSTALL_DIR/"
-    cp "$BATS_TEST_DIRNAME/../../llvm-functions.sh" "$INSTALL_DIR/"
+    cp "$BATS_TEST_DIRNAME/../../llvm-functions.sh" "$BATS_TEST_DIRNAME/../../llvmup-core.sh" "$INSTALL_DIR/"
     cp "$BATS_TEST_DIRNAME/../../llvmup" "$INSTALL_DIR/"
     chmod +x "$INSTALL_DIR"/*
 
@@ -124,7 +124,7 @@ echo "Mock '$binary' from '$TEST_VERSION'"' > "$TOOLCHAINS_DIR/$TEST_VERSION/bin
     (
         # 1. Check initial status
         result=$(llvm-status 2>&1)
-        [[ "$result" == *"Status: INACTIVE"* ]]
+        [[ "$result" == *"No toolchain is active"* ]]
 
         # 2. List available versions
         result=$(llvm-list 2>&1)
@@ -137,7 +137,7 @@ echo "Mock '$binary' from '$TEST_VERSION'"' > "$TOOLCHAINS_DIR/$TEST_VERSION/bin
 
         # 4. Check status after activation
         result=$(llvm-status 2>&1)
-        [[ "$result" == *"Version: $TEST_VERSION"* ]]
+        [[ "$result" == *"Active toolchain: $TEST_VERSION"* ]]
 
         # 5. Verify environment variables are set
         [[ "$PATH" == *"$TOOLCHAINS_DIR/$TEST_VERSION/bin"* ]]
@@ -151,7 +151,7 @@ echo "Mock '$binary' from '$TEST_VERSION'"' > "$TOOLCHAINS_DIR/$TEST_VERSION/bin
 
         # 7. Check status after deactivation
         result=$(llvm-status 2>&1)
-        [[ "$result" == *"Status: INACTIVE"* ]]
+        [[ "$result" == *"No toolchain is active"* ]]
 
         # 8. Verify environment is restored
         [ -z "$_ACTIVE_LLVM" ]
@@ -230,7 +230,7 @@ EOF
     # Test deactivation without active version
     run llvm-deactivate
     [ "$status" -eq 0 ]
-    [[ "$output" == *"LLVM environment successfully deactivated"* ]]
+    [[ "$output" == *"Previous shell environment restored"* ]]
 
     # Test VSCode activation outside workspace
     cd "$TEST_DIR"

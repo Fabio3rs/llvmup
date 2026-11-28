@@ -64,7 +64,7 @@ teardown() {
     # Then deactivate
     run llvm-deactivate
     [ "$status" -eq 0 ]
-    [[ "$output" == *"LLVM environment successfully deactivated"* ]]
+    [[ "$output" == *"Previous shell environment restored"* ]]
 }
 
 @test "llvm-deactivate function works with bash function integration" {

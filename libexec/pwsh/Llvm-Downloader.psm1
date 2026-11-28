@@ -27,6 +27,38 @@ function Get-LlvmSafeCacheKey {
     return $clean
 }
 
+function Get-LlvmGitHubFailure {
+    # Reason for a failed GitHub API request, without ever including credentials.
+    # Returns @{ Reason = <text>; Retryable = <bool> }.
+    param([Parameter(Mandatory = $true)]$ErrorRecord)
+    $resp = $ErrorRecord.Exception.Response
+    if (-not $resp) {
+        return @{ Reason = 'GitHub could not be reached. Check your network connection or proxy settings.'; Retryable = $true }
+    }
+    $code = [int]$resp.StatusCode
+    $getHeader = {
+        param($name)
+        try {
+            $h = $resp.Headers
+            if ($h -is [System.Collections.IDictionary] -or $h -is [System.Net.WebHeaderCollection]) { return [string]$h[$name] }
+            return [string](@($h.GetValues($name))[0])
+        } catch { return '' }
+    }
+    $remaining = & $getHeader 'X-RateLimit-Remaining'
+    if ($code -eq 429 -or ($code -eq 403 -and $remaining -eq '0')) {
+        $when = ''
+        $reset = & $getHeader 'X-RateLimit-Reset'
+        if ($reset -match '^\d+$') { $when = ' It resets at ' + [DateTimeOffset]::FromUnixTimeSeconds([long]$reset).UtcDateTime.ToString('HH:mm') + ' UTC.' }
+        return @{ Reason = "the GitHub API rate limit was exceeded.$when Set GITHUB_TOKEN (or GH_TOKEN) to raise the limit, or try again later."; Retryable = $false }
+    }
+    switch ($code) {
+        403 { return @{ Reason = 'GitHub refused the request (HTTP 403).'; Retryable = $false } }
+        404 { return @{ Reason = 'the release metadata was not found (HTTP 404).'; Retryable = $false } }
+        { $_ -ge 500 } { return @{ Reason = "GitHub is temporarily unavailable (HTTP $code). Try again later."; Retryable = $true } }
+        default { return @{ Reason = "GitHub returned HTTP $code."; Retryable = $true } }
+    }
+}
+
 function Invoke-LlvmHttpGetJson {
     [CmdletBinding()]
     param(
@@ -64,9 +96,10 @@ function Invoke-LlvmHttpGetJson {
                 NextUrl = $nextUrl
             }
         } catch {
-            if ($attempt -ge $MaxRetries) {
-                # Never include Authorization token in errors
-                throw "GitHub API request failed ($Url): $($_.Exception.Message)"
+            $failure = Get-LlvmGitHubFailure -ErrorRecord $_
+            if ($attempt -ge $MaxRetries -or -not $failure.Retryable) {
+                # Never include the Authorization token in errors
+                throw "Could not query GitHub releases: $($failure.Reason)`nRequest: $Url"
             }
             $waitSec = [Math]::Pow(2, $attempt - 1)
             Start-Sleep -Seconds $waitSec

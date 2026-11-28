@@ -568,8 +568,10 @@ Describe 'LLVMUP Recipes, Multi-Provider Engine, and Ergonomic CLI' {
 
             llvmup default $script:otherSelector | Should -BeTrue
             (llvmup default) | Should -Match $(if ($script:isWin) { 'winlibs' } else { 'llvmorg' })
-            $upd = (llvmup update llvm-mingw@20261117 2>&1 | Out-String)
-            $upd | Should -Match 'up to date'
+            # Write-Host is mocked above, so the messages land in $script:pickLines.
+            $script:pickLines = @()
+            $null = llvmup update llvm-mingw@20261117
+            ($script:pickLines -join "`n") | Should -Match 'up to date'
             llvmup update no-such-toolchain 2>$null | Should -BeFalse
         }
 
@@ -588,14 +590,14 @@ Describe 'LLVMUP Recipes, Multi-Provider Engine, and Ergonomic CLI' {
             $all = @($newer) + @(Get-Content -LiteralPath $env:LLVMUP_LLVM_MINGW_RELEASES_FILE -Raw | ConvertFrom-Json | ForEach-Object { $_ })
             Set-Content -LiteralPath $env:LLVMUP_LLVM_MINGW_RELEASES_FILE -Value (ConvertTo-Json -InputObject $all -Depth 8) -Encoding UTF8
 
-            $upd = (llvmup update llvm-mingw@20261117 2>&1 | Out-String)
+            $upd = (llvmup update llvm-mingw@20261117 *>&1 | Out-String)
             $upd | Should -Match 'installing'
             $afterDirs = @(Get-ChildItem -LiteralPath $script:toolchainsDir -Directory | ForEach-Object Name)
             @($beforeDirs | Where-Object { $_ -notin $afterDirs }) | Should -BeNullOrEmpty
             @($afterDirs | Where-Object { $_ -notin $beforeDirs }).Count | Should -BeGreaterThan 0
             ((llvmup default) | Out-String) | Should -Match '20261117'
             ((llvmup alias list) | Out-String) | Should -Match 'keep-me'
-            ((llvmup update llvm-mingw@20261117 2>&1 | Out-String)) | Should -Match 'up to date'
+            ((llvmup update llvm-mingw@20261117 *>&1 | Out-String)) | Should -Match 'up to date'
 
             # install --use activates what was installed.
             Deactivate-Llvm

@@ -7,6 +7,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (shell integration weight)
+- `llvm-functions.sh` is now a small loader. Sourcing it defines one stub per public function and the
+  directory hook; the implementation lives in `llvmup-core.sh` (installed next to it) and is loaded
+  the first time a function is used. A new shell no longer parses ~3,400 lines or defines the core's
+  helper variables (`RED`, `NC`, `QUIET_MODE`, ...): sourcing costs about 2 ms in Bash and 2 ms in
+  Zsh (previously about 5 ms and 28 ms), and about 2 ms instead of about 45 ms with auto-activation
+  enabled. `LLVMUP_FUNCTIONS_EAGER=1` loads the core immediately for scripts that rely on its variables.
+- The directory auto-activation hook no longer costs ~120 ms before every prompt. It compares `$PWD`
+  with the previous value (Zsh registers `chpwd` only), looks for `.llvmup-config` with shell built-ins
+  and loads the core only inside a project or to undo an auto-activation. A `.llvmup-config` edited in
+  the current directory is picked up on the next directory change or with `llvmup use --auto`.
+- `LLVMUP_WATCH_CONFIG=1` (opt-in, Bash and Zsh) makes the hook also re-evaluate when the project's
+  `.llvmup-config` is newer than the last evaluation, using a built-in file-time test: no watcher
+  process, no `inotify`/`fswatch`, any platform. It costs nothing when the file did not change.
+- PowerShell `llvmup list` is shown as a table (marker `*` active / `+` default, name, provider, LLVM,
+  GCC, CRT, type) through a format view, `Llvm-Functions.Format.ps1xml`. The command returns exactly the
+  same objects and `--json` is unchanged, so scripts are not affected; only the default console
+  presentation changes (it was a long vertical list per toolchain).
+- Profiles keep sourcing `llvm-functions.sh`; installers and the uninstaller handle `llvmup-core.sh`.
+
+### Changed (user experience)
+- `llvmup use` (Bash) keeps the engine's real diagnostic: an incompatible `--compiler`/`--target`, an
+  ambiguous selector or a broken alias is reported as such, and `use --install` / `run --install`
+  install a toolchain only when no installation matches. Previously the error was replaced by a
+  generic "No installed toolchain matches" message and `run --install` could start a download for an
+  ambiguous selector.
+- Recovery hints: a missing toolchain suggests `llvmup install <selector>` (quoted where needed) and
+  `llvmup list`; ambiguous selectors list the candidate installations and the commands that
+  disambiguate; unavailable compilers and targets list what the installation provides.
+- Help is now a short overview grouped by intent, plus `llvmup <command> --help` and
+  `llvmup help <command>` for the main commands in the executable and the shell function. Help never
+  reads the network or the installation, and does not intercept arguments after `--`.
+- `list`, `status` and `deactivate` use plain text instead of fixed-width boxes. `list` shows active
+  and default markers, provider and LLVM version, and a useful empty state; `status` separates the
+  active toolchain from how it was selected; `deactivate` names the toolchain it restored from.
+- `install` shows what was resolved (provider, release, LLVM/GCC versions, architecture, CRT, threads,
+  exceptions, C++ library, asset, name, directory) before downloading, reports "Integrity" and
+  "Authenticity" separately, reuses a validated installation with a short message, and tells how to
+  activate it. `install --use` distinguishes a successful installation from a failed activation.
+- Name collisions list only the identity fields that differ, suggest `--name <new-name>` first and
+  present `--force` as an explicit replacement; the existing installation is never touched.
+- `update` states that the previous installation, aliases, defaults and pins were left untouched and
+  how to use the new release.
+- `status --explain` now works in the Bash engine and shows each selection tier (session override,
+  project config, active environment, user default) as selected, overridden, not installed or not set.
+- `doctor` reports an invalid runtime inventory once instead of once per malformed line.
+- GitHub release lookups explain why they failed (rate limit with reset time and `GITHUB_TOKEN` hint,
+  HTTP errors, unreachable network) without ever printing a token; the bundled-metadata fallback says
+  that it may be out of date.
+- Destructive operations say what was kept: `alias remove` ("Toolchain preserved"), `toolchain unlink`
+  ("External files preserved") and `remove`, which explains how to proceed when the toolchain is
+  active or the user default.
+- Found by running real installs and updates (WSL and Windows): the checksum-only warning no longer
+  repeats the `Authenticity:` line, `list` fits long installation names and shows only the legend that
+  applies, `info` labels line up, and PowerShell 7 no longer folds multi-line errors into a single
+  paragraph (the first line is the error, the guidance follows as plain text). PowerShell `update`
+  prints its messages through the host instead of mixing them into the boolean it returns.
+- Found with a clean Windows Sandbox (Windows PowerShell 5.1) and real downloads: GitHub rate limiting is
+  explained in PowerShell too (with the reset time and the `GITHUB_TOKEN` hint) and is not retried;
+  `doctor` prints one line for the readable runtime files (every file stays in `--verbose` and
+  `--json`) and states each piece of advice once, with the PowerShell doctor saying what each missing
+  optional tool is for. A single-line PowerShell error is reported whole.
+- PowerShell `use` confirms with "Using <toolchain> (<provider>, compiler <C>[, target <T>])." like the
+  Bash function, without changing its boolean result. Verified with real WinLibs, LLVM-MinGW and
+  `update` runs.
+- A full disk during extraction is named as the cause (instead of one `tar:` line per file followed by
+  a bare exit code); other extractor failures show their first lines once. `status --explain` says when
+  the project configuration exists but requests no toolchain. Verified with a real official LLVM
+  install on Linux and Windows.
+- Directory auto-activation (Bash/Zsh) announces a change with one line naming the toolchain and its
+  source ("Using X (from .llvmup-config: ...)") and stays silent when nothing changes; a failed
+  auto-activation now includes the reason instead of a bare failure.
+- Download failures distinguish an unwritable or full destination, an HTTP error and an unreachable
+  server; `llvm-activate` and `llvm-vscode-activate` print plain-text usage.
+- Colors are disabled for `NO_COLOR`, `TERM=dumb` and redirected output.
+- Completion offers command names after `llvmup help` in Bash, Zsh and PowerShell.
+- The PowerShell module mirrors the Bash help, messages and diagnostics.
+- Errors and warnings are shown in quiet mode (`log_error`/`log_warn` in Bash, verification warnings
+  in PowerShell). `-Quiet`/`--quiet` only suppress progress and success messages.
+
 ### Added
 - `llvmup --version` reports the installed manager version or `development` for a source build of the manager.
 - Manager bootstraps and installers support quiet operation and report first install, update, or reinstall.

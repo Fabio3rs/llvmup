@@ -16,6 +16,7 @@ bash 755 llvm-deactivate
 bash 755 llvm-vscode-activate
 bash 755 uninstall.sh
 bash 644 llvm-functions.sh
+bash 644 llvmup-core.sh
 bash 644 llvmup-completion-common.sh
 bash 644 llvmup-completion.sh
 bash 644 _llvmup
@@ -38,6 +39,7 @@ powershell 644 Llvm-Doctor.ps1
 powershell 644 Llvm-Doctor.psm1
 powershell 644 Llvm-Doctor-Deep.ps1
 powershell 644 Llvm-Functions.psm1
+powershell 644 Llvm-Functions.Format.ps1xml
 powershell 644 Llvm-Functions-Core.psm1
 powershell 644 Uninstall-Llvmup.ps1
 powershell 755 llvmup.cmd

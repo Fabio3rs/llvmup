@@ -26,6 +26,97 @@ eng_warn() { printf 'Warning: %s\n' "$*" >&2; }
 eng_info() { [ "$ENGINE_QUIET" = 1 ] || printf '%s\n' "$*" >&2; }
 eng_die() { eng_err "$*"; exit 1; }
 
+# eng_quote_sel <selector>: single-quotes selectors containing shell metacharacters (e.g. '>=23.1').
+eng_quote_sel() {
+    case "$1" in
+        *[!A-Za-z0-9@._+:/=-]*) printf "'%s'" "${1//\'/\'\\\'\'}" ;;
+        *) printf '%s' "$1" ;;
+    esac
+}
+
+# eng_no_match_die <selector>: the installation is missing (not broken or ambiguous).
+eng_no_match_die() {
+    local q
+    q="$(eng_quote_sel "$1")"
+    eng_err "No installed toolchain matches '$1'."
+    printf '\nTo install it:\n  llvmup install %s\n\nTo see installed toolchains:\n  llvmup list\n' "$q" >&2
+    exit 1
+}
+
+# eng_resolve_or_die <selector> [crt]: like eng_resolve_installed, but prints the "missing" guidance
+# for exit 3; any other failure already explained itself (broken alias, ambiguity, ...).
+eng_resolve_or_die() {
+    local m rc=0
+    m="$(eng_resolve_installed "$@")" || rc=$?
+    case "$rc" in
+        0) printf '%s
+' "$m" ;;
+        3) eng_no_match_die "$1" ;;
+        *) exit 1 ;;
+    esac
+}
+
+# eng_plan_summary <plan> <requested-selector> <name> <dest>: what exactly is about to be installed.
+# Fields that are unknown or irrelevant (null, system, unknown) are not shown.
+eng_plan_summary() {
+    eng_info "Resolving $2..."
+    [ "$ENGINE_QUIET" = 1 ] && return 0
+    jq -r --arg name "$3" --arg dest "$4" '
+        def f($k; $v): if $v == null or $v == "" or $v == "system" or $v == "unknown" then empty else "  " + ($k + ":" + (" " * (14 - ($k | length)))) + ($v | tostring) end;
+        f("Provider"; .provider), f("Release"; .release_tag), f("LLVM"; .llvm_version), f("GCC"; .gcc_version),
+        f("Architecture"; .host.arch), f("CRT"; .variant.crt), f("Threads"; .variant.threads),
+        f("Exceptions"; .variant.exceptions), f("C++ library"; .variant.cxx_stdlib),
+        f("Profile"; (if .variant.profile == "full" then null else .variant.profile end)),
+        f("Asset"; .asset.name), f("Name"; $name), f("Directory"; $dest)' <<<"$1" >&2
+}
+
+# eng_verify_summary <verification-json>: integrity and authenticity are reported separately.
+eng_verify_summary() {
+    [ "$ENGINE_QUIET" = 1 ] && return 0
+    jq -r '
+        (.checksum_algorithm // "" | ascii_upcase | sub("SHA"; "SHA-")) as $algo
+        | (if .checksum == "valid" then "Integrity: Verified (" + $algo + ")" else "Integrity: Not verified" end),
+          (if .gpg == "valid" then "Authenticity: Verified (GPG)"
+           elif .attestation == "valid" then "Authenticity: Verified (GitHub/Sigstore attestation)"
+           elif .policy == "skip" then "Verification: Skipped by user request"
+           elif .gpg == "unavailable" or .attestation == "unavailable" then "Authenticity: Verification tool or data unavailable"
+           else "Authenticity: Not provided by upstream" end)' <<<"$1" >&2
+}
+
+# eng_collision_die <existing-manifest> <plan> <selector> <name>: the name is taken by another identity.
+eng_collision_die() {
+    local q
+    q="$(eng_quote_sel "$3")"
+    eng_err "Installation name '$4' is already in use."
+    jq -rn --argjson e "$1" --argjson r "$2" '
+        def row($k; $a; $b): if ($a // "") != ($b // "") then {k: $k, a: ($a // "-"), b: ($b // "-")} else empty end;
+        [row("Provider"; $e.provider; $r.provider),
+         row("Release"; $e.provider_release; $r.release_tag),
+         row("LLVM"; $e.llvm_version; $r.llvm_version),
+         row("GCC"; $e.gcc_version; $r.gcc_version),
+         row("OS"; $e.host.os; $r.host.os),
+         row("Architecture"; $e.host.arch; $r.host.arch),
+         row("CRT"; $e.variant.crt; $r.variant.crt),
+         row("Threads"; $e.variant.threads; $r.variant.threads),
+         row("Exceptions"; $e.variant.exceptions; $r.variant.exceptions),
+         row("C++ library"; $e.variant.cxx_stdlib; $r.variant.cxx_stdlib),
+         row("Profile"; $e.variant.profile; $r.variant.profile),
+         row("Asset"; $e.asset.name; $r.asset.name)] as $d
+        | (if ($d | length) > 0 then $d else [row("Identity"; $e.id; $r.canonical_id)] end) as $rows
+        | "\nExisting installation:", ($rows[] | "  \(.k): \(.a)"), "\nRequested installation:", ($rows[] | "  \(.k): \(.b)")' >&2
+    printf '\nChoose a different name:\n  llvmup install %s --name <new-name>\n' "$q" >&2
+    printf '\nTo replace the existing installation explicitly, add --force. This deletes it first.\n' >&2
+    printf 'The existing installation was not modified.\n' >&2
+    exit 1
+}
+
+# eng_effective_fail <message>: an explicit selector already explained itself (missing, ambiguous,
+# broken alias); only the no-selector case needs its own message.
+eng_effective_fail() {
+    if [ -n "${ENG_POSITIONAL[0]:-}" ]; then exit 1; fi
+    eng_die "$1 Run 'llvmup list' to see installed toolchains, or select one with 'llvmup use <toolchain>'."
+}
+
 eng_require() {
     command -v "$1" >/dev/null 2>&1 || eng_die "'$1' is required for this operation${2:+ ($2)}"
 }
@@ -184,6 +275,28 @@ eng_http_get() {
     fi
 }
 
+# eng_github_failure_reason <headers-file>: why a GitHub API request failed, without leaking credentials.
+eng_github_failure_reason() {
+    local hdr="$1" code remaining reset
+    code="$(tr -d '\r' < "$hdr" 2>/dev/null | grep -i '^HTTP/' | tail -1 | awk '{print $2}')"
+    remaining="$(tr -d '\r' < "$hdr" 2>/dev/null | grep -i '^x-ratelimit-remaining:' | tail -1 | awk '{print $2}')"
+    reset="$(tr -d '\r' < "$hdr" 2>/dev/null | grep -i '^x-ratelimit-reset:' | tail -1 | awk '{print $2}')"
+    case "$code" in
+        403|429)
+            if [ "$remaining" = 0 ] || [ "$code" = 429 ]; then
+                local when=""
+                if [ -n "$reset" ]; then when=" It resets at $(date -u -d "@$reset" '+%H:%M UTC' 2>/dev/null || date -u -r "$reset" '+%H:%M UTC' 2>/dev/null)."; fi
+                printf 'the GitHub API rate limit was exceeded.%s Set GITHUB_TOKEN (or GH_TOKEN) to raise the limit, or try again later.' "$when"
+            else
+                printf 'GitHub refused the request (HTTP %s).' "$code"
+            fi ;;
+        404) printf 'the release metadata was not found (HTTP 404).' ;;
+        5??) printf 'GitHub is temporarily unavailable (HTTP %s). Try again later.' "$code" ;;
+        "") printf 'GitHub could not be reached. Check your network connection or proxy settings.' ;;
+        *) printf 'GitHub returned HTTP %s.' "$code" ;;
+    esac
+}
+
 eng_releases() {
     # eng_releases <provider> -> JSON array on stdout
     local provider="$1"
@@ -214,13 +327,15 @@ eng_releases() {
             eng_die "Refusing a release API page outside api.github.com."
         fi
         if ! eng_http_get "$url" "$tmp/p$page.json" "$tmp/h$page.txt"; then
+            local why
+            why="$(eng_github_failure_reason "$tmp/h$page.txt")"
             rm -rf -- "$tmp"
             if [ "$provider" = official ] && [ -f "$ENGINE_ROOT/githubreleases.json" ]; then
-                eng_warn 'GitHub API unavailable; falling back to bundled official release metadata.'
+                eng_warn "Could not query GitHub releases: $why Using the bundled official release metadata, which may be out of date."
                 jq -c . "$ENGINE_ROOT/githubreleases.json"
                 return
             fi
-            eng_die "GitHub API request failed for provider '$provider' (page $page)"
+            eng_die "Could not query $provider releases: $why"
         fi
         files+=("$tmp/p$page.json")
         url="$(tr -d '\r' < "$tmp/h$page.txt" | grep -i '^link:' | grep -o '<[^>]*>; rel="next"' | sed 's/^<//; s/>; rel="next"$//' | head -1)"
@@ -508,22 +623,35 @@ eng_download() {
         http://*|https://*) ;;
         *) eng_die "Refusing unsupported download scheme: $url" ;;
     esac
-    mkdir -p -- "$(dirname "$dest")" || return 1
+    mkdir -p -- "$(dirname "$dest")" || eng_die "Cannot create the download directory $(dirname "$dest"). Check its permissions and the free disk space."
     local part
-    part="$(mktemp "$dest.part.XXXXXXXX")" || return 1
-    local ok=1
+    part="$(mktemp "$dest.part.XXXXXXXX")" || eng_die "Cannot write to $(dirname "$dest"). Check its permissions and the free disk space."
+    local ok=1 rc=0 tool=""
     if command -v curl >/dev/null 2>&1; then
+        tool=curl
         local progress=(-sS)
         [ "$ENGINE_QUIET" = 1 ] || [ ! -t 2 ] || progress=(-#)
-        curl -fL --proto-redir '=http,https' --retry 3 --retry-delay 2 --connect-timeout 30 "${progress[@]}" -H 'User-Agent: llvmup' -o "$part" "$url" && ok=0
+        curl -fL --proto-redir '=http,https' --retry 3 --retry-delay 2 --connect-timeout 30 "${progress[@]}" -H 'User-Agent: llvmup' -o "$part" "$url" && ok=0 || rc=$?
     elif command -v wget >/dev/null 2>&1; then
-        wget -q --tries=3 --timeout=60 -O "$part" "$url" && ok=0
+        tool=wget
+        wget -q --tries=3 --timeout=60 -O "$part" "$url" && ok=0 || rc=$?
     else
         eng_die "curl or wget is required"
     fi
     if [ "$ok" -ne 0 ] || [ ! -s "$part" ]; then
         rm -f "$part"
-        eng_die "Download failed: $url"
+        local kind=other
+        case "$tool:$rc" in
+            curl:23|wget:3) kind=disk ;;
+            curl:22|wget:8) kind=http ;;
+            curl:6|curl:7|curl:28|curl:35|curl:56|wget:4|wget:5|wget:7) kind=net ;;
+        esac
+        case "$kind" in
+            disk) eng_die "Download failed: could not write $(basename "$dest") to $(dirname "$dest"). The disk may be full or the directory is not writable." ;;
+            http) eng_die "Download failed: the server rejected the request for $url (HTTP error). The asset may have been removed." ;;
+            net) eng_die "Download failed: could not reach the server for $url. Check your network connection or proxy settings, then try again." ;;
+            *) eng_die "Download failed: $url" ;;
+        esac
     fi
     if [ -n "$expected" ]; then
         local actual
@@ -557,6 +685,7 @@ eng_fetch_asset() {
         dest="$cache_dir/$name"
         if [ -f "$dest" ]; then
             if [ -z "$want" ] || [ "$(eng_sha256 "$dest")" = "$want" ]; then
+                eng_info "Using cached archive $name"
                 jq -cn --arg path "$dest" '{path:$path, cache_hit:1}'
                 return
             fi
@@ -565,7 +694,7 @@ eng_fetch_asset() {
     else
         dest="$work/$name"
     fi
-    eng_info "Downloading $name"
+    eng_info "Downloading $name (transient network errors are retried automatically)"
     eng_download "$url" "$dest" "$want" || return 1
     jq -cn --arg path "$dest" '{path:$path, cache_hit:0}'
 }
@@ -704,8 +833,14 @@ eng_verify() {
         if [ ${#methods[@]} -eq 0 ]; then
             if [ "$checksum" = valid ]; then methods=(checksum-only); else methods=(unverified); fi
         fi
-        if [ "$checksum" = valid ]; then
-            eng_warn "Integrity of $name verified ($algo), but its origin is not authenticated (gpg=$gpg, attestation=$att)."
+        if [ "$checksum" = valid ] && [ "$ENGINE_QUIET" != 1 ]; then
+            : # The "Authenticity:" line of the installation summary says this once.
+        elif [ "$checksum" = valid ]; then
+            if [ "$gpg" = unavailable ] || [ "$att" = unavailable ]; then
+                eng_warn "Integrity of $name verified ($algo), but its origin is not authenticated: a signature or attestation exists, but the verification tool or key data was unavailable (gpg=$gpg, attestation=$att)."
+            else
+                eng_warn "Integrity of $name verified ($algo), but its origin is not authenticated: upstream provides only checksums for this asset."
+            fi
         else
             eng_warn "$name could not be verified: no digest, checksum, signature, or attestation was available."
         fi
@@ -773,7 +908,10 @@ eng_extract() {
         esac
         [ "$ext" != none ] || { rm -rf "$raw"; eng_die "No extractor available for .$fmt archives on this host."; }
     fi
-    local rc=0
+    local rc=0 errlog
+    # Extractors can print one line per file when something goes wrong; keep that out of the way and
+    # report the cause once.
+    errlog="$(mktemp "${TMPDIR:-/tmp}/llvmup-extract.XXXXXX" 2>/dev/null)" || errlog=/dev/null
     case "$ext" in
         tar)
             case "$fmt" in
@@ -783,27 +921,39 @@ eng_extract() {
             esac
             if [ "$fmt" = tar.zst ] && [ "$(eng_tar_flavor)" = gnu ]; then
                 # LLVM .tar.zst assets use a 1 GiB window (windowLog 30): zstd refuses it without --long.
-                tar -I 'zstd -d --long=31' -xf "$arc" -C "$raw" --no-same-owner || rc=$?
+                tar -I 'zstd -d --long=31' -xf "$arc" -C "$raw" --no-same-owner 2>>"$errlog" || rc=$?
             else
-                tar -xf "$arc" -C "$raw" --no-same-owner || rc=$?
+                tar -xf "$arc" -C "$raw" --no-same-owner 2>>"$errlog" || rc=$?
             fi ;;
         zip)
             [ "$fmt" = zip ] || { rm -rf "$raw"; eng_die "Extractor 'zip' only supports .zip archives"; }
             command -v unzip >/dev/null 2>&1 || { rm -rf "$raw"; eng_die "Requested extractor 'zip' (unzip) is not available."; }
-            unzip -q "$arc" -d "$raw" || rc=$? ;;
+            unzip -q "$arc" -d "$raw" 2>>"$errlog" || rc=$? ;;
         7z)
             [ -n "$sz" ] || { rm -rf "$raw"; eng_die "Requested extractor '7z' is not available."; }
             if [ "$fmt" = tar.xz ] || [ "$fmt" = tar.gz ]; then
-                "$sz" x -so -bd "$arc" | "$sz" x -si -ttar -bd -bso0 -y "-o$raw" || rc=$?
+                "$sz" x -so -bd "$arc" 2>>"$errlog" | "$sz" x -si -ttar -bd -bso0 -y "-o$raw" 2>>"$errlog" || rc=$?
             else
-                "$sz" x -bd -bso0 -y "-o$raw" "$arc" || rc=$?
+                "$sz" x -bd -bso0 -y "-o$raw" "$arc" 2>>"$errlog" || rc=$?
             fi ;;
         python)
             eng_require python3 'archive extraction'
-            python3 "$ENGINE_ROOT/libexec/llvmup-extract.py" extract "$arc" "$raw" || rc=$? ;;
+            python3 "$ENGINE_ROOT/libexec/llvmup-extract.py" extract "$arc" "$raw" 2>>"$errlog" || rc=$? ;;
         *) rm -rf "$raw"; eng_die "Invalid extractor '$ext'. Expected auto, 7z, tar, zip, or python." ;;
     esac
-    if [ "$rc" -ne 0 ]; then rm -rf "$raw"; eng_die "Extraction failed ($ext, exit $rc): $arc"; fi
+    if [ "$rc" -ne 0 ]; then
+        rm -rf "$raw"
+        if grep -qi 'no space left on device' "$errlog" 2>/dev/null; then
+            [ "$errlog" = /dev/null ] || rm -f "$errlog"
+            eng_die "Extraction failed: there is no space left on the device holding $(dirname "$dest"). Free some disk space and try again (a full LLVM toolchain needs several GB)."
+        fi
+        local detail=""
+        [ "$errlog" = /dev/null ] || detail="$(head -n 3 "$errlog" 2>/dev/null)"
+        [ "$errlog" = /dev/null ] || rm -f "$errlog"
+        eng_die "Extraction failed ($ext, exit $rc): $arc${detail:+
+$detail}"
+    fi
+    [ "$errlog" = /dev/null ] || rm -f "$errlog"
     if [ -z "$(ls -A "$raw")" ]; then rm -rf "$raw"; eng_die "Extraction produced no files: $arc"; fi
     eng_check_tree "$raw" || { rm -rf "$raw"; exit 1; }
 
@@ -974,7 +1124,7 @@ eng_all_toolchains() {
 }
 
 eng_resolve_installed() {
-    # eng_resolve_installed <selector> [crt] -> manifest JSON (exit 1 when nothing matches)
+    # eng_resolve_installed <selector> [crt] -> manifest JSON (exit 3 when nothing matches; other failures print their own error and exit 1)
     local sel="$1" crt="${2:-}" all
     all="$(eng_all_toolchains)"
     local aliases
@@ -1011,11 +1161,23 @@ eng_resolve_installed() {
         if [ "$iname" = "$expr" ] || [ "$rel" = "$expr" ]; then matched+=("$m"); continue; fi
         if [ -n "$ver" ] && eng_version_satisfies "$ver" "$expr" 2>/dev/null; then matched+=("$m"); fi
     done
-    [ ${#matched[@]} -gt 0 ] || return 1
+    [ ${#matched[@]} -gt 0 ] || return 3
     local arr
     arr="$(printf '%s\n' "${matched[@]}" | jq -cs '.')"
     if [ -z "$prov" ] && [ "$(jq '[.[].provider] | unique | length' <<<"$arr")" -gt 1 ]; then
-        eng_die "Selector '$sel' is ambiguous across providers: $(jq -r 'map("\(.install_name) (\(.provider), LLVM \(.llvm_version))") | join(", ")' <<<"$arr"). Specify provider@version or an exact name."
+        {
+            eng_err "'$sel' matches multiple providers."
+            printf '\nMatching installations:\n' >&2
+            jq -r '.[] | "  \(.install_name)  (\(.provider), LLVM \(.llvm_version // "?"))"' <<<"$arr" >&2
+            printf '\nSpecify a provider or an installation name:\n' >&2
+            local first_name p
+            first_name="$(jq -r '.[0].install_name' <<<"$arr")"
+            while IFS= read -r p; do
+                [ -n "$p" ] && printf '  llvmup use %s\n' "$(eng_quote_sel "$p@$expr")" >&2
+            done < <(jq -r '[.[].provider] | unique | .[:2][]' <<<"$arr")
+            printf '  llvmup use %s\n' "$(eng_quote_sel "$first_name")" >&2
+        }
+        exit 1
     fi
     jq -c 'def num($s): ($s // "0" | tostring | split(".") | map(tonumber? // 0)); sort_by(num(.llvm_version)) | last' <<<"$arr"
 }
@@ -1063,7 +1225,7 @@ eng_split_effective() {
 eng_effective() {
     local sel="${1:-}" m=""
     if [ -n "$sel" ]; then
-        m="$(eng_resolve_installed "$sel")" || eng_die "No installed toolchain matches selector '$sel'."
+        m="$(eng_resolve_or_die "$sel")" || exit 1
         printf 'explicit\tExplicitly selected %s\t-\t-\t%s\n' "$sel" "$m"; return 0
     fi
     if [ -n "${LLVMUP_SESSION_OVERRIDE:-}" ] && m="$(eng_resolve_installed "$LLVMUP_SESSION_OVERRIDE" 2>/dev/null)"; then
@@ -1123,11 +1285,11 @@ eng_delta() {
         | (if $compiler != "" then ($compiler | ascii_downcase) elif ($m.variant.default_compiler // "") != "" then $m.variant.default_compiler else "clang" end) as $cc
         | (($m.capabilities.compilers // [])) as $avail
         | if ($avail | length) > 0 and ($avail | index($cc) | not) then
-            error("Toolchain \($m.install_name) (\($prov)) does not provide compiler \($cc). Available: \($avail | join(", "))")
+            error("Toolchain \($m.install_name) does not provide \($cc | ascii_upcase).\n\nAvailable compilers:\n  \($avail | join("\n  "))\n\nTo find installed toolchains with \($cc | ascii_upcase):\n  llvmup provides \($cc)")
           else . end
         | (if $target != "" then $target else ($m.default_target // "") end) as $tgt
         | if $target != "" and (($m.supported_targets // []) | length) > 0 and (($m.supported_targets | index($target)) | not) then
-            error("Toolchain \($m.install_name) (\($prov)) does not support target \($target). Supported: \($m.supported_targets | join(", "))")
+            error("Toolchain \($m.install_name) does not support target \($target).\n\nSupported targets:\n  \($m.supported_targets | join("\n  "))")
           else . end
         | ($m.tools // {}) as $t
         | (if $prov == "llvm-mingw" and $tgt != "" then ($t.target_wrappers[$tgt] // {}) else {} end) as $w
@@ -1273,6 +1435,7 @@ eng_parse_common() {
             --locked) ENG_OPT_LOCKED=1; shift ;;
             --config) ENG_OPT_CONFIG=1; shift ;;
             --json) ENG_OPT_JSON=1; shift ;;
+            --explain) ENG_OPT_EXPLAIN=1; shift ;;
             --no-cache) ENG_NO_CACHE=1; shift ;;
             --quiet|-q) ENGINE_QUIET=1; shift ;;
             --) shift; ENG_POSITIONAL+=(--); ENG_POSITIONAL+=("$@"); break ;;
@@ -1435,10 +1598,13 @@ cmd_install() (
 
     if [ -d "$dest" ] && [ "$ENG_OPT_FORCE" -ne 1 ]; then
         if [ -f "$dest/.llvmup-toolchain.json" ] && jq -e '(.capabilities.compilers // []) | length > 0' "$dest/.llvmup-toolchain.json" >/dev/null 2>&1; then
+            if ! jq -e --argjson r "$plan" '.id == $r.canonical_id' "$dest/.llvmup-toolchain.json" >/dev/null 2>&1; then
+                eng_collision_die "$(cat "$dest/.llvmup-toolchain.json")" "$plan" "$sel" "$name"
+            fi
             eng_check_managed_asset "$(jq -c '.release = .release_tag' <<<"$plan")" "$(cat "$dest/.llvmup-toolchain.json")" "$policy" "$dest"
             if [ "$prov" = official ]; then llvm_selection_check "$dest" || exit 1; fi
             if [ "$ENG_OPT_DEFAULT" -eq 1 ]; then llvm-default-set "$name" || exit 1; fi
-            eng_info "Toolchain '$name' is already installed at $dest"
+            eng_info "$name is already installed and validated ($dest). Reusing it."
             printf '%s\n' "$dest"
             return 0
         fi
@@ -1451,7 +1617,7 @@ cmd_install() (
     install_transaction="$(mktemp -d "$tc/.$name.llvmup-txn.XXXXXXXX")" || exit 1
     staging="$install_transaction/staging"
     backup="$install_transaction/previous"
-    eng_info "Installing $prov ($(jq -r '.release_tag' <<<"$plan"), LLVM $(jq -r '.llvm_version' <<<"$plan")) -> $name"
+    eng_plan_summary "$plan" "$sel" "$name" "$dest"
     local fetch archive ver
     fetch="$(eng_fetch_asset "$plan" "$work")" || exit 1
     archive="$(jq -er '.path | strings | select(length > 0)' <<<"$fetch")" || exit 1
@@ -1488,7 +1654,10 @@ cmd_install() (
     rm -rf "$backup"
     if [ "$ENG_OPT_DEFAULT" -eq 1 ]; then llvm-default-set "$name" || exit 1; fi
     if [ "$prov" = official ]; then llvm_space_snapshot 'after installation' "$dest"; fi
-    eng_info "[OK] Installed '$name' at $dest (verify=$(jq -r '.methods | join("+")' <<<"$ver"))"
+    eng_verify_summary "$ver"
+    eng_info "Installed $name successfully."
+    if [ -z "${LLVMUP_SUPPRESS_USE_HINT:-}" ]; then eng_info "To activate in this terminal:
+  llvmup use $name"; fi
     printf '%s\n' "$dest"
 )
 
@@ -1525,8 +1694,11 @@ cmd_run() {
         [ -z "$sel" ] || eng_die "--locked uses the toolchain recorded in .llvmup-lock.json; do not pass a selector."
         m="$(eng_locked_manifest)" || exit 1
     elif [ -n "$sel" ]; then
-        if ! m="$(eng_resolve_installed "$sel" "$ENG_OPT_CRT")"; then
-            [ "$ENG_OPT_INSTALL" -eq 1 ] || eng_die "No installed toolchain matches '$sel'. Pass --install to install on demand."
+        local rrc=0
+        m="$(eng_resolve_installed "$sel" "$ENG_OPT_CRT")" || rrc=$?
+        if [ "$rrc" -ne 0 ]; then
+            [ "$rrc" -eq 3 ] || exit 1
+            [ "$ENG_OPT_INSTALL" -eq 1 ] || eng_no_match_die "$sel"
             (cmd_install "$sel" ${ENG_OPT_CRT:+--crt "$ENG_OPT_CRT"} --quiet) >/dev/null || exit 1
             m="$(eng_resolve_installed "$sel" "$ENG_OPT_CRT")" || eng_die "Installed toolchain for '$sel' could not be resolved."
         fi
@@ -1561,7 +1733,7 @@ cmd_which() {
 cmd_where() {
     eng_parse_common "$@"
     local line origin reason m
-    line="$(eng_effective "${ENG_POSITIONAL[0]:-}")" || eng_die "No matching toolchain found."
+    line="$(eng_effective "${ENG_POSITIONAL[0]:-}")" || eng_effective_fail "No toolchain is selected, configured, or set as default."
     eng_split_effective "$line"; origin="$EFF_ORIGIN"; reason="$EFF_REASON"; m="$EFF_MANIFEST"
     jq -r '.root_path' <<<"$m"
 }
@@ -1569,12 +1741,12 @@ cmd_where() {
 cmd_info() {
     eng_parse_common "$@"
     local line origin reason m
-    line="$(eng_effective "${ENG_POSITIONAL[0]:-}")" || eng_die "No matching toolchain found."
+    line="$(eng_effective "${ENG_POSITIONAL[0]:-}")" || eng_effective_fail "No toolchain is selected, configured, or set as default."
     eng_split_effective "$line"; origin="$EFF_ORIGIN"; reason="$EFF_REASON"; m="$EFF_MANIFEST"
     if [ "$ENG_OPT_JSON" -eq 1 ]; then jq . <<<"$m"; return; fi
     jq -r '"Name:            \(.install_name)",
            "Provider:        \(.provider)",
-           "Provider release:\(" " + (.provider_release // ""))",
+           "Release:         \(.provider_release // "")",
            "LLVM version:    \(.llvm_version // "")",
            "GCC version:     \(.gcc_version // "-")",
            "Host:            \(.host.os // "?")/\(.host.arch // "?")",
@@ -1585,6 +1757,46 @@ cmd_info() {
            "Path:            \(.root_path)",
            "Origin:          \(.origin)",
            "Verification:    \(.verification.methods // "unverified" | if type == "array" then join("+") else . end)"' <<<"$m"
+}
+
+# eng_explain_selection <origin>: the selection tiers in the order eng_effective applies them.
+# Tiers that are unset or not installed are shown as such instead of being silently skipped.
+eng_explain_selection() {
+    local origin="$1" cfg="" v="" p="" s="" def="" tier_origin value state m
+    printf '\nSelection precedence:\n\n'
+    if [ -n "${LLVMUP_SESSION_OVERRIDE:-}" ]; then value="$LLVMUP_SESSION_OVERRIDE"; else value=""; fi
+    local labels=("Session override" "Project config" "Active environment" "User default")
+    local origins=(session-override project-config active-session default)
+    local values=("$value" "" "${_ACTIVE_LLVM:-}" "")
+    if cfg="$(eng_project_config)"; then
+        v="$(eng_config_get "$cfg" toolchain version)"; p="$(eng_config_get "$cfg" toolchain provider)"
+        [ -z "$v" ] || { s="$v"; [ -z "$p" ] || s="$p@$v"; }
+        values[1]="$s"
+    fi
+    def="$(eng_default_name 2>/dev/null)" || def=""
+    values[3]="$def"
+    local i
+    for i in 0 1 2 3; do
+        tier_origin="${origins[$i]}"; value="${values[$i]}"
+        if [ -z "$value" ]; then state="not set"
+        elif [ "$tier_origin" = "$origin" ]; then state="selected"
+        elif m="$(eng_resolve_installed "$value" 2>/dev/null)"; then state="overridden"
+        else state="not installed, skipped"
+        fi
+        # The active environment only matters when it decides the outcome.
+        if [ "$tier_origin" = active-session ] && [ "$state" = "not set" ]; then continue; fi
+        printf '  %-19s %-24s %s\n' "${labels[$i]}" "${value:--}" "$state"
+    done
+    if [ -n "$cfg" ]; then
+        if [ -n "${values[1]}" ]; then
+            printf '\nProject configuration: %s\n' "$cfg"
+        else
+            printf '\nProject configuration: %s (it does not request a toolchain)\n' "$cfg"
+        fi
+    fi
+    if [ -n "${LLVMUP_SESSION_OVERRIDE:-}" ]; then
+        printf "\nRun 'llvmup use --auto' to restore automatic selection.\n"
+    fi
 }
 
 cmd_status() {
@@ -1611,6 +1823,7 @@ cmd_status() {
     else
         echo "Selected for execution: none"
     fi
+    if [ "${ENG_OPT_EXPLAIN:-0}" -eq 1 ]; then eng_explain_selection "$origin"; fi
 }
 
 cmd_provides() {
@@ -1622,6 +1835,9 @@ cmd_provides() {
         | select(((.tools // {}) | has($t)) or (.capabilities.compilers // [] | index($t)))
         | {name: .install_name, provider, llvm_version, path: .root_path}]')"
     if [ "$ENG_OPT_JSON" -eq 1 ]; then jq . <<<"$res"; else jq -r '.[] | "\(.name)\t\(.provider)\tLLVM \(.llvm_version)\t\(.path)"' <<<"$res"; fi
+    if [ "$(jq length <<<"$res")" -eq 0 ] && [ "$ENG_OPT_JSON" -ne 1 ]; then
+        eng_info "No installed toolchain provides '$tool'."
+    fi
 }
 
 cmd_list_providers() {
@@ -1658,6 +1874,7 @@ cmd_alias() {
                 '.aliases[$a] = {target_name: $m.install_name, target_id: $m.id, provider: $m.provider, llvm_version: $m.llvm_version, created_at: $now}' \
                 "$file" > "$tmp" && mv "$tmp" "$file"
             jq -c --arg a "$1" '.aliases[$a]' "$file"
+            eng_info "Alias '$1' now points to $(jq -r '.install_name' <<<"$m")."
             ;;
         list) if [ "${1:-}" = --json ]; then jq '.aliases' "$file"; else jq -r '.aliases | to_entries[] | "\(.key)\t-> \(.value.target_name) (\(.value.provider), LLVM \(.value.llvm_version))"' "$file"; fi ;;
         show) [ $# -eq 1 ] || eng_die "Usage: llvmup alias show <alias>"; jq -e --arg a "$1" '.aliases[$a]' "$file" || eng_die "Alias '$1' does not exist." ;;
@@ -1666,6 +1883,7 @@ cmd_alias() {
             jq -e --arg a "$1" '.aliases[$a]' "$file" >/dev/null || eng_die "Alias '$1' does not exist."
             local tmp="$file.tmp-$$"
             jq --arg a "$1" 'del(.aliases[$a])' "$file" > "$tmp" && mv "$tmp" "$file"
+            eng_info "Alias '$1' removed. Toolchain preserved."
             ;;
         *) eng_die "Available alias subcommands: set, list, show, remove" ;;
     esac
@@ -1696,6 +1914,7 @@ cmd_toolchain() {
             [ -f "$file" ] && jq -e --arg n "$1" '.toolchains[$n]' "$file" >/dev/null || eng_die "External toolchain '$1' is not registered."
             local tmp="$file.tmp-$$"
             jq --arg n "$1" 'del(.toolchains[$n])' "$file" > "$tmp" && mv "$tmp" "$file"
+            eng_info "Toolchain '$1' unlinked. External files preserved."
             ;;
         list) cmd_list_installed ;;
         *) eng_die "Available toolchain subcommands: link, unlink, list" ;;
@@ -1705,7 +1924,7 @@ cmd_toolchain() {
 cmd_cmake_toolchain() {
     eng_parse_common "$@"
     local line origin reason m d
-    line="$(eng_effective "${ENG_POSITIONAL[0]:-}")" || eng_die "No matching toolchain found for cmake-toolchain."
+    line="$(eng_effective "${ENG_POSITIONAL[0]:-}")" || eng_effective_fail "No toolchain is selected, configured, or set as default."
     eng_split_effective "$line"; origin="$EFF_ORIGIN"; reason="$EFF_REASON"; m="$EFF_MANIFEST"
     d="$(eng_delta "$m" "${ENG_OPT_TARGET:-${EFF_TARGET:-}}" "${ENG_OPT_COMPILER:-${EFF_COMPILER:-}}")" || exit 1
     local host_os host_arch
@@ -1749,7 +1968,7 @@ cmd_cmake_toolchain() {
 cmd_shell() {
     eng_parse_common "$@"
     local line origin reason m d sh
-    line="$(eng_effective "${ENG_POSITIONAL[0]:-}")" || eng_die "No matching toolchain found for shell."
+    line="$(eng_effective "${ENG_POSITIONAL[0]:-}")" || eng_effective_fail "No toolchain is selected, configured, or set as default."
     eng_split_effective "$line"; origin="$EFF_ORIGIN"; reason="$EFF_REASON"; m="$EFF_MANIFEST"
     d="$(eng_delta "$m" "${ENG_OPT_TARGET:-${EFF_TARGET:-}}" "${ENG_OPT_COMPILER:-${EFF_COMPILER:-}}")" || exit 1
     sh="${SHELL:-/bin/bash}"
@@ -2052,7 +2271,7 @@ cmd_update() {
     eng_parse_common "$@"
     local targets=() m sel="${ENG_POSITIONAL[0]:-}"
     if [ -n "$sel" ]; then
-        m="$(eng_resolve_installed "$sel")" || eng_die "No installed toolchain matches '$sel'."
+        m="$(eng_resolve_or_die "$sel")" || exit 1
         targets+=("$m")
     else
         while IFS= read -r m; do [ -n "$m" ] && targets+=("$m"); done < <(eng_all_toolchains | jq -c '.[] | select(.origin == "managed")')
@@ -2067,11 +2286,13 @@ cmd_update() {
         plan="$(eng_resolve_plan "$prov" "$( [ "$major" = latest ] && echo latest || echo "$major.*")" "" "$crt" "" "$(eng_norm_os)" "$(eng_norm_arch)" "")" || { rc=1; continue; }
         cid="$(jq -r '.canonical_id' <<<"$plan")"
         if eng_resolve_installed "$cid" >/dev/null 2>&1; then
-            printf '%s: up to date (%s)\n' "$(jq -r '.install_name' <<<"$m")" "$cid"
+            printf '%s is up to date (%s).\n' "$(jq -r '.install_name' <<<"$m")" "$cid"
             continue
         fi
-        printf '%s: installing %s\n' "$(jq -r '.install_name' <<<"$m")" "$cid"
-        ( cmd_install "$prov@$major" ${crt:+--crt "$crt"} --release "$(jq -r '.release_tag' <<<"$plan")" ) || rc=1
+        printf 'Update available for %s: installing %s as a new installation.\n' "$(jq -r '.install_name' <<<"$m")" "$cid"
+        if ( LLVMUP_SUPPRESS_USE_HINT=1 cmd_install "$prov@$major" ${crt:+--crt "$crt"} --release "$(jq -r '.release_tag' <<<"$plan")" ); then
+            printf 'The previous installation (%s) remains available; aliases, defaults and pins were not changed.\nTo use the new one:\n  llvmup use %s\n' "$(jq -r '.install_name' <<<"$m")" "$cid"
+        else rc=1; fi
     done
     return "$rc"
 }

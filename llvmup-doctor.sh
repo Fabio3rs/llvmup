@@ -27,14 +27,27 @@ doctor_emit() {
         done
         printf '}'
     else
+        # One summary line for the many readable runtime files (see doctor_filesystem); --verbose and
+        # --json still list every file.
+        if [[ $1 == installation.file && $3 == PASS ]] && ((! doctor_verbose)); then
+            doctor_files_ok=$((doctor_files_ok + 1))
+            return 0
+        fi
         printf '%-4s [%s] %s' "$3" "$1" "$4"
         [[ -z ${6:-} ]] || printf ' (%s)' "$6"
         printf '\n'
-        if [[ -n $5 ]] && { ((doctor_verbose)) || [[ $3 == WARN || $3 == FAIL ]]; }; then printf '     %s\n' "$5"; fi
+        if [[ -n $5 ]] && { ((doctor_verbose)) || [[ $3 == WARN || $3 == FAIL ]]; }; then
+            # The same advice for several checks (optional tools, for example) is printed once.
+            if [[ $doctor_seen_advice != *$'\n'"$5"$'\n'* ]]; then
+                printf '     %s\n' "$5"
+                doctor_seen_advice+=$'\n'"$5"$'\n'
+            fi
+        fi
     fi
 }
 doctor_main() {
     local doctor_json=0 doctor_verbose=0 doctor_deep=0 doctor_network=0 doctor_help=0 doctor_exit=0 doctor_separator=''
+    local doctor_files_ok=0 doctor_seen_advice=$'\n'
     local arg invalid='' invalid_found=0
     for arg in "$@"; do
         case "$arg" in --json) doctor_json=1 ;; --verbose) doctor_verbose=1 ;; --deep) doctor_deep=1 ;; --network) doctor_network=1 ;;

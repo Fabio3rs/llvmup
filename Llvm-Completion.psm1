@@ -336,6 +336,7 @@ $llvmupSB = {
         $afterSeparator = ($elements[1..($typed - 1)] -contains '--')
         switch ($subcommand) {
             { $_ -in @('activate', 'vscode-activate') } { $values = Get-LlvmToolchainCompletionItems }
+            'help' { if ($typed -le 2) { $values = @('install', 'use', 'run', 'list', 'status', 'config', 'sync', 'pin', 'default', 'alias', 'remove', 'update', 'env') } }
             'remove' { $values = if ($wordToComplete -like '-*') { @('--force', '--help') } else { Get-LlvmToolchainCompletionItems } }
             'list' { $values = @('--remote', '--json', '--providers', '--provider', '--help') }
             'default' {

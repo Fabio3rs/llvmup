@@ -2,18 +2,22 @@ doctor_filesystem() {
     local file dir tool count=0
     # Keep a minimal rescue inventory when a partial/legacy install lacks its
     # manifest. Packaged installations also validate the shared inventory.
-    local -a files=(llvmup llvm-functions.sh llvm-activate llvm-deactivate llvm-prebuilt llvm-build llvm-vscode-activate llvmup-completion-common.sh)
-    local manifest="$doctor_root/llvmup-files.tsv" platform mode extra
+    local -a files=(llvmup llvm-functions.sh llvmup-core.sh llvm-activate llvm-deactivate llvm-prebuilt llvm-build llvm-vscode-activate llvmup-completion-common.sh)
+    local manifest="$doctor_root/llvmup-files.tsv" platform mode extra inventory_invalid=0
     [[ -r $manifest ]] || manifest="$doctor_root/packaging/runtime-files.tsv"
     if [[ -r $manifest ]]; then
         while read -r platform mode file extra; do
             [[ $platform == bash || $platform == common ]] || continue
             if [[ ! $file =~ ^(libexec/([a-zA-Z0-9_-]+/)*)?[a-zA-Z0-9_][a-zA-Z0-9_.-]*$ || -n $extra ]]; then
-                doctor_emit installation.manifest installation FAIL 'Invalid runtime inventory.' 'Reinstall a complete LLVMUP package.' "$manifest"
+                inventory_invalid=1
                 continue
             fi
             case " ${files[*]} " in *" $file "*) ;; *) files+=("$file") ;; esac
         done < "$manifest"
+        # One finding per inventory, not one per malformed line.
+        if ((inventory_invalid)); then
+            doctor_emit installation.manifest installation FAIL 'Invalid runtime inventory.' 'Reinstall a complete LLVMUP package.' "$manifest"
+        fi
     fi
     for file in "${files[@]}"; do
         if [[ ! -r $doctor_root/$file ]]; then
@@ -24,6 +28,8 @@ doctor_filesystem() {
             doctor_emit installation.file installation PASS 'Runtime file is accessible.' '' "$doctor_root/$file"
         fi
     done
+    # Human output groups the accessible files (doctor_emit counts them instead of printing each).
+    if ((doctor_files_ok)); then printf 'PASS [installation.file] %d runtime files are accessible.\n' "$doctor_files_ok"; fi
     if [[ -n ${LLVMUP_INSTALL_DIR:-} && $LLVMUP_INSTALL_DIR != "$doctor_root" ]]; then
         doctor_emit installation.path installation WARN 'LLVMUP_INSTALL_DIR differs from this executable directory.' 'Check that shell functions and PATH use the intended installation.' "$LLVMUP_INSTALL_DIR"
     fi

@@ -16,7 +16,7 @@ load "../fixtures/test_helpers.bash"
 }
 
 @test "llvmup help includes --disable-libc-wno-error option" {
-    run ./llvmup --help
+    run ./llvmup install --help
 
     # Help exits successfully when requested explicitly
     assert_success

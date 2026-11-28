@@ -29,6 +29,85 @@ Describe 'PowerShell llvmup lifecycle facade' {
         }
     }
 
+    It 'shows progressive help without touching installations or the network' {
+        $overview = (llvmup help | Out-String)
+        $overview | Should -Match 'Getting started'
+        $overview | Should -Match 'llvmup help <command>'
+        foreach ($c in 'install', 'use', 'run', 'list', 'status', 'config', 'sync', 'pin') {
+            $text = (llvmup $c --help | Out-String)
+            $text | Should -Match 'Usage:'
+            $text | Should -Match "llvmup $c"
+            ((llvmup help $c | Out-String)) | Should -Match 'Usage:'
+        }
+        @(Get-ChildItem -LiteralPath $env:LLVM_TOOLCHAINS_DIR).Count | Should -Be 0
+    }
+
+    It 'rejects an unknown help topic with an explanation' {
+        $err = $null
+        $null = llvmup help nope -ErrorVariable err -ErrorAction SilentlyContinue 2>&1
+        ($err | Out-String) | Should -Match "No help available for 'nope'"
+    }
+
+    It 'keeps the layout of multi-line errors: first line as the error, guidance as plain text' {
+        $lines = & (Get-Module Llvm-Functions) { Split-LlvmUpMessage -Message "Boom happened.`n`nTo fix it:`n  llvmup list" }
+        $lines[0] | Should -Be 'Boom happened.'
+        $lines.Count | Should -BeGreaterThan 2
+        $shown = @(& (Get-Module Llvm-Functions) { param($l) Write-LlvmUpGuidance -Lines $l } $lines 6>&1)
+        ($shown | Out-String) | Should -Match 'llvmup list'
+        ($shown | Out-String) | Should -Not -Match 'Boom happened'
+    }
+
+    It 'confirms use with the toolchain, provider and compiler without touching the boolean result' {
+        $root = Join-Path $env:LLVM_TOOLCHAINS_DIR 'ux-tc'
+        $null = New-Item -ItemType Directory -Path (Join-Path $root 'bin') -Force
+        foreach ($t in 'clang.exe', 'clang++.exe') { Set-Content -LiteralPath (Join-Path $root "bin\$t") -Value '' }
+        $manifest = [ordered]@{
+            schema = 1; id = 'ux-tc'; install_name = 'ux-tc'; origin = 'managed'; provider = 'llvm-mingw'
+            provider_release = '1'; llvm_version = '23.1.0'; host = @{ os = 'windows'; arch = 'x64' }
+            supported_targets = @('x86_64-w64-mingw32'); default_target = 'x86_64-w64-mingw32'
+            variant = @{ crt = 'ucrt'; default_compiler = 'clang' }
+            tools = @{ clang = 'bin/clang.exe'; 'clang++' = 'bin/clang++.exe' }
+            capabilities = @{ compilers = @('clang') }; root_path = $root
+        }
+        $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $root '.llvmup-toolchain.json')
+        $all = @(llvmup use ux-tc *>&1)
+        $result = @($all | Where-Object { $_ -is [bool] })
+        $result | Should -Contain $true
+        ($all | Where-Object { $_ -isnot [bool] } | Out-String) | Should -Match 'Using ux-tc \(llvm-mingw, compiler clang'
+        Deactivate-Llvm *>&1 | Out-Null
+        Remove-Item -LiteralPath $root -Recurse -Force
+    }
+
+    It 'presents list as a table while returning the same objects' {
+        $root = Join-Path $env:LLVM_TOOLCHAINS_DIR 'fmt-tc'
+        $null = New-Item -ItemType Directory -Path (Join-Path $root 'bin') -Force
+        @{ schema = 1; id = 'fmt-tc'; install_name = 'fmt-tc'; origin = 'managed'; provider = 'winlibs'; provider_release = '1'
+           llvm_version = '23.1.6'; gcc_version = '16.2.0'; host = @{ os = 'windows'; arch = 'x64' }
+           variant = @{ crt = 'ucrt' }; capabilities = @{ compilers = @('gcc') }; root_path = $root } |
+            ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $root '.llvmup-toolchain.json')
+        $items = @(llvmup list)
+        $items.Count | Should -BeGreaterThan 0
+        $items[0].PSObject.TypeNames[0] | Should -Be 'Llvmup.Toolchain'
+        foreach ($prop in 'name', 'provider', 'llvm_version', 'gcc_version', 'crt', 'path', 'active', 'default') {
+            $items[0].PSObject.Properties.Name | Should -Contain $prop
+        }
+        Get-FormatData -TypeName 'Llvmup.Toolchain' | Should -Not -BeNullOrEmpty
+        $text = ($items | Out-String -Width 200)
+        $text | Should -Match 'NAME\s+PROVIDER\s+LLVM\s+GCC\s+CRT'
+        $text | Should -Match 'fmt-tc\s+winlibs\s+23\.1\.6\s+16\.2\.0\s+ucrt'
+        ((llvmup list --json) | ConvertFrom-Json).installed_versions[0].name | Should -Be 'fmt-tc'
+        { Import-Module (Join-Path $script:repoRoot 'Llvm-Functions.psm1') -Force -DisableNameChecking } | Should -Not -Throw
+        # The TestDrive is shared by the tests of this block; leave nothing behind.
+        Remove-Item -LiteralPath $root -Recurse -Force
+    }
+
+    It 'reports a single-line error whole, not as its first character' {
+        $err = $null
+        $null = llvmup use -ErrorVariable err -ErrorAction SilentlyContinue 2>$null
+        $messages = @($err | ForEach-Object { $_.Exception.Message })
+        $messages | Should -Contain "Missing toolchain selector for 'use'"
+    }
+
     It 're-exports the core matcher with candidate-version support' {
         $command = Get-Command Invoke-LlvmMatchVersions
         $command.Parameters.Keys | Should -Contain 'CandidateVersions'

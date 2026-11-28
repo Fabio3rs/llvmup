@@ -66,6 +66,22 @@ if [ "${1:-}" = doctor ]; then
     exec bash "$SCRIPT_DIR/llvmup-doctor.sh" "$@"
 fi
 
+# Help never touches the network or the installation: answer it before anything else runs.
+case "${1:-}" in
+    help|--help|-h|install|use|activate|run|list|status|config|sync|pin|default|alias|remove|update|env|deactivate|which|where|provides|resolve|toolchain|shell|pick|info|disk-usage|cmake-toolchain|vscode-activate)
+        if [ -f "$SCRIPT_DIR/llvm-functions.sh" ]; then
+            # shellcheck source=/dev/null
+            source "$SCRIPT_DIR/llvm-functions.sh" >/dev/null 2>&1 || true
+            if command -v llvm-try-command-help >/dev/null 2>&1; then
+                _help_rc=0
+                llvm-try-command-help "$@" || _help_rc=$?
+                [ "$_help_rc" -eq 1 ] || exit "$_help_rc"
+                unset _help_rc
+            fi
+        fi
+        ;;
+esac
+
 # Provider-aware commands run in the recipe engine (shared with the PowerShell implementation).
 LLVMUP_ENGINE="$SCRIPT_DIR/libexec/sh/llvmup-engine.sh"
 engine_exec() {
@@ -190,6 +206,11 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
+
+# Colors are only a visual aid: off for NO_COLOR, dumb terminals and non-interactive output.
+if [ -n "${NO_COLOR:-}" ] || [ "${TERM:-}" = dumb ] || { [ ! -t 1 ] && [ ! -t 2 ]; }; then
+    RED=''; GREEN=''; BLUE=''; NC=''
+fi
 
 log_info() {
     if [ "$QUIET" -eq 0 ]; then
@@ -579,6 +600,11 @@ usage() {
 
     if [ $# -eq 0 ] && [ "$exit_code" -eq 0 ]; then
         exit_code=1
+    fi
+
+    if command -v llvm-help >/dev/null 2>&1 || source_local_functions >/dev/null 2>&1; then
+        llvm-help
+        exit "$exit_code"
     fi
 
     cat <<'EOF'

@@ -206,3 +206,14 @@ PY
     ! grep -q 'LLVMUP Zsh Completion - Start' "$ZDOTDIR/.zshrc"
     grep -Fxq '# personal zsh' "$ZDOTDIR/.zshrc"
 }
+
+@test "executable files in packaging inventory have executable bit set in repo" {
+    local platform mode name
+    while read -r platform mode name; do
+        [[ -n "$platform" && "$platform" != \#* ]] || continue
+        [ -e "$REPO/$name" ]
+        if [ "$mode" = 755 ] && [ "$platform" != powershell ]; then
+            [ -x "$REPO/$name" ]
+        fi
+    done < <(tr -d '\r' < "$REPO/packaging/runtime-files.tsv")
+}

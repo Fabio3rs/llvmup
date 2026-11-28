@@ -110,7 +110,9 @@ function Invoke-LlvmAssetVerify {
         [string]$ReleaseKeysPath = '',
         [int]$TimeoutSec = 60,
         [int]$MaxRetries = 3,
-        [switch]$Quiet
+        [switch]$Quiet,
+        # The caller prints an "Authenticity:" line, so the checksum-only notice would repeat it.
+        [switch]$DeferOriginNotice
     )
 
     $assetName = [string]$Plan.asset.name
@@ -335,9 +337,12 @@ function Invoke-LlvmAssetVerify {
         if ($result.methods.Count -eq 0) {
             $result.methods = @(if ($result.checksum -eq 'valid') { 'checksum-only' } else { 'unverified' })
         }
-        if ($Policy -eq 'warn' -and -not $Quiet) {
+        # Verification warnings are security-relevant: -Quiet silences progress, never these.
+        if ($Policy -eq 'warn') {
             if ($result.checksum -eq 'valid') {
-                Write-Warning "Integrity of $assetName verified ($($result.checksum_algorithm)), but its origin is not authenticated (gpg=$($result.gpg), attestation=$($result.attestation))."
+                if (-not $DeferOriginNotice) {
+                    Write-Warning "Integrity of $assetName verified ($($result.checksum_algorithm)), but its origin is not authenticated (gpg=$($result.gpg), attestation=$($result.attestation))."
+                }
             } else {
                 Write-Warning "$assetName could not be verified: no digest, checksum, signature, or attestation was available (provider '$($Plan.provider)'). Use --verify strict to refuse unverified downloads."
             }

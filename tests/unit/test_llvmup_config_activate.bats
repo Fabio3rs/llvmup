@@ -44,6 +44,7 @@ teardown() {
     mkdir -p "$TEST_CONFIG_DIR"
     cp "$LLVMUP_SCRIPT" "$TEST_CONFIG_DIR/llvmup"
     cp "$(pwd)/llvm-functions.sh" "$TEST_CONFIG_DIR/llvm-functions.sh"
+    cp "$(pwd)/llvmup-core.sh" "$TEST_CONFIG_DIR/llvmup-core.sh"
     chmod +x "$TEST_CONFIG_DIR/llvmup"
 
     cd "$TEST_CONFIG_DIR"
@@ -61,7 +62,11 @@ teardown() {
     run "$LLVMUP_SCRIPT" help
 
     [ "$status" -eq 0 ]
-    [[ "$output" == *"LLVM Manager - Complete Usage Guide"* ]]
+    [[ "$output" == *"LLVMUP - C/C++ Toolchain Manager"* ]]
+    [[ "$output" == *"config"* ]]
+
+    run "$LLVMUP_SCRIPT" help config
+    [ "$status" -eq 0 ]
     [[ "$output" == *"llvmup config init"* ]]
     [[ "$output" == *"llvmup config activate"* ]]
 }
