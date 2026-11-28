@@ -555,10 +555,16 @@ function Get-LlvmAllToolchains {
     return $results
 }
 
+function Format-LlvmCommandArgument {
+    param([Parameter(Mandatory)][string]$Value)
+    if ($Value -match '^[A-Za-z0-9@._+:=/-]+$') { return $Value }
+    return "'" + $Value.Replace("'", "''") + "'"
+}
+
 function Format-LlvmNoMatchMessage {
     # Message for the one case where --install may help: no installation matches the selector.
     param([Parameter(Mandatory)][string]$Selector, [switch]$OfferUseInstall)
-    $arg = if ($Selector -match '^[A-Za-z0-9@._+:=/-]+$') { $Selector } else { "'" + $Selector.Replace("'", "''") + "'" }
+    $arg = Format-LlvmCommandArgument $Selector
     $msg = "No installed toolchain matches '$Selector'.`n`nTo install it:`n  llvmup install $arg"
     if ($OfferUseInstall) { $msg += "`n`nTo install and activate it in one step:`n  llvmup use $arg --install" }
     return $msg + "`n`nTo see installed toolchains:`n  llvmup list"
@@ -664,7 +670,7 @@ function Resolve-LlvmInstalledToolchain {
     $providers = @($matched | ForEach-Object { $_.provider } | Select-Object -Unique)
     if ($providers.Count -gt 1 -and -not $requestedProvider) {
         $lines = ($matched | ForEach-Object { "  $($_.install_name)  ($($_.provider), LLVM $($_.llvm_version))" }) -join "`n"
-        $hints = (@($providers | Select-Object -First 2 | ForEach-Object { "  llvmup use $_@$Selector" }) + "  llvmup use $($matched[0].install_name)") -join "`n"
+        $hints = (@($providers | Select-Object -First 2 | ForEach-Object { "  llvmup use $(Format-LlvmCommandArgument "$_@$Selector")" }) + "  llvmup use $(Format-LlvmCommandArgument $matched[0].install_name)") -join "`n"
         throw "'$Selector' matches multiple providers.`n`nMatching installations:`n$lines`n`nSpecify a provider or an installation name:`n$hints"
     }
 
@@ -713,6 +719,7 @@ function Assert-LlvmManagedAsset {
 
 Export-ModuleMember -Function @(
     'Assert-LlvmManagedAsset',
+    'Format-LlvmCommandArgument',
     'Format-LlvmNoMatchMessage',
     'Get-LlvmAliasesPath',
     'Get-LlvmExternalRegistryPath',

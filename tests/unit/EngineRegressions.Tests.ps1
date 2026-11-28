@@ -676,4 +676,68 @@ Describe 'LLVMUP engine regressions' {
             ($help -join "`n") | Should -Match 'llvmup <command>'
         }
     }
+
+    Context 'Contextual help, quoting, and error streams' {
+        BeforeAll {
+            Import-Module (Join-Path $PSScriptRoot '../../Llvm-Functions.psm1') -Force -DisableNameChecking
+            Import-Module (Join-Path $PSScriptRoot '../../libexec/pwsh/Llvm-Manifest.psm1') -Force -DisableNameChecking
+        }
+
+        It 'provides contextual help for every command advertised in main help' {
+            $advertised = @(
+                'install', 'use', 'list', 'run', 'status',
+                'update', 'remove', 'default', 'alias', 'resolve', 'toolchain', 'disk-usage',
+                'pin', 'sync', 'config',
+                'deactivate', 'shell', 'pick', 'env',
+                'cmake-toolchain', 'vscode-activate',
+                'info', 'which', 'where', 'provides', 'doctor'
+            )
+            foreach ($cmd in $advertised) {
+                $out = (llvmup help $cmd 2>&1 | Out-String)
+                $out | Should -Not -Match "No help available for '$cmd'"
+                $out.Trim().Length | Should -BeGreaterThan 0
+            }
+        }
+
+        It 'quotes ambiguous provider suggestions when the selector has metacharacters' {
+            $root = Join-Path $TestDrive 'ambig-quote'
+            $tcDir = Join-Path $root 'toolchains'
+            foreach ($pair in @(@('official-dev', 'official', '23.1.6'), @('win-dev', 'winlibs', '23.1.3'))) {
+                $p = Join-Path $tcDir $pair[0]
+                $null = New-Item -ItemType Directory -Path (Join-Path $p 'bin') -Force
+                [IO.File]::WriteAllText((Join-Path $p 'bin/clang.exe'), '')
+                $m = [ordered]@{
+                    schema = 1; id = $pair[0]; origin = 'managed'; provider = $pair[1]
+                    provider_release = $pair[2]; llvm_version = $pair[2]
+                    host = @{ os = 'windows'; arch = 'x64' }
+                    supported_targets = @('x86_64-w64-mingw32'); default_target = 'x86_64-w64-mingw32'
+                    variant = @{ crt = 'ucrt'; default_compiler = 'clang' }
+                    tools = @{ clang = 'bin/clang.exe' }; capabilities = @{ compilers = @('clang') }
+                    asset = @{ name = 'x.zip'; digest = 'sha256:00' }
+                }
+                [IO.File]::WriteAllText((Join-Path $p '.llvmup-toolchain.json'), ($m | ConvertTo-Json -Depth 6))
+            }
+            { Resolve-LlvmInstalledToolchain -Selector '>=23' -ToolchainsPath $tcDir -HomePath $root } |
+                Should -Throw "*llvmup use 'official@>=23'*"
+        }
+
+        It 'splits primary error to error stream and guidance to information stream' {
+            $prevHome = $env:LLVM_HOME
+            $prevTc = $env:LLVM_TOOLCHAINS_DIR
+            try {
+                $tmp = Join-Path $TestDrive 'stream-contract'
+                $null = New-Item -ItemType Directory -Path (Join-Path $tmp 'toolchains') -Force
+                $env:LLVM_HOME = $tmp
+                $env:LLVM_TOOLCHAINS_DIR = Join-Path $tmp 'toolchains'
+                $errOut = @()
+                $infoOut = @(llvmup use '>=99.1' -ErrorVariable errOut 2>$null 6>&1)
+                $errOut.Count | Should -BeGreaterThan 0
+                [string]$errOut[0] | Should -Match "No installed toolchain matches '>=99.1'"
+                ($infoOut | Out-String) | Should -Match "llvmup install '>=99.1'"
+            } finally {
+                $env:LLVM_HOME = $prevHome
+                $env:LLVM_TOOLCHAINS_DIR = $prevTc
+            }
+        }
+    }
 }

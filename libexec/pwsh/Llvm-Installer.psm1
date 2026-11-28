@@ -205,16 +205,26 @@ function Invoke-LlvmInstallPrebuiltFromRecipe {
                 throw "Incomplete toolchain already exists at $installPath. Remove it or pass --force."
             }
             if ($existingManifest.id -and $plan.canonical_id -and ([string]$existingManifest.id -ne [string]$plan.canonical_id)) {
-                $arg = if ($Selector -match '^[A-Za-z0-9@._+:=/-]+$') { $Selector } else { "'" + $Selector.Replace("'", "''") + "'" }
+                $arg = Format-LlvmCommandArgument $Selector
                 $rows = @(
                     @('Provider', $existingManifest.provider, $plan.provider),
                     @('Release', $existingManifest.provider_release, $plan.release_tag),
                     @('LLVM', $existingManifest.llvm_version, $plan.llvm_version),
+                    @('GCC', $existingManifest.gcc_version, $plan.gcc_version),
+                    @('OS', $existingManifest.host.os, $plan.host.os),
                     @('Architecture', $existingManifest.host.arch, $plan.host.arch),
-                    @('CRT', $existingManifest.variant.crt, $plan.variant.crt)
+                    @('CRT', $existingManifest.variant.crt, $plan.variant.crt),
+                    @('Threads', $existingManifest.variant.threads, $plan.variant.threads),
+                    @('Exceptions', $existingManifest.variant.exceptions, $plan.variant.exceptions),
+                    @('C++ library', $existingManifest.variant.cxx_stdlib, $plan.variant.cxx_stdlib),
+                    @('Profile', $existingManifest.variant.profile, $plan.variant.profile),
+                    @('Asset', $existingManifest.asset.name, $plan.asset.name)
                 ) | Where-Object { [string]$_[1] -ne [string]$_[2] }
-                $have = ($rows | ForEach-Object { "  $($_[0]): $($_[1])" }) -join "`n"
-                $want = ($rows | ForEach-Object { "  $($_[0]): $($_[2])" }) -join "`n"
+                if (-not $rows -or @($rows).Count -eq 0) {
+                    $rows = @(@('Identity', $existingManifest.id, $plan.canonical_id))
+                }
+                $have = ($rows | ForEach-Object { "  $($_[0]): $(if ([string]$_[1]) { $_[1] } else { '-' })" }) -join "`n"
+                $want = ($rows | ForEach-Object { "  $($_[0]): $(if ([string]$_[2]) { $_[2] } else { '-' })" }) -join "`n"
                 throw ("Installation name '$installName' is already in use.`n`nExisting installation:`n$have`n`nRequested installation:`n$want`n`n" +
                     "Choose a different name:`n  llvmup install $arg --name <new-name>`n`n" +
                     "To replace the existing installation explicitly, add --force. This deletes it first.`nThe existing installation was not modified.")

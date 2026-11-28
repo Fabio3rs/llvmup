@@ -422,3 +422,63 @@ STUB
     [[ "$output" == *"does not request a toolchain"* ]]
     [[ "$output" == *"Project config"*"not set"* ]]
 }
+
+@test "ambiguous selector quotes metacharacters and embedded single quotes in suggestions" {
+    fake_toolchain official-dev official 23.1.6
+    fake_toolchain win-dev winlibs 23.1.3
+    run "$LLVMUP_SCRIPT" run '>=23' -- true
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"llvmup use 'official@>=23'"* ]]
+    [[ "$output" == *"llvmup use 'winlibs@>=23'"* ]]
+
+    run "$LLVMUP_SCRIPT" run "23'foo" -- true
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"llvmup install '23'\''foo'"* ]]
+}
+
+@test "eng_download maps wget exit codes separately from curl" {
+    local mockbin="$TEST_HOME/mockbin" t
+    mkdir -p "$mockbin"
+    for t in dirname basename mkdir mktemp rm mv; do
+        ln -s "$(command -v "$t")" "$mockbin/$t"
+    done
+    cat > "$mockbin/wget" <<'SH'
+#!/bin/sh
+exit "${MOCK_WGET_RC:-8}"
+SH
+    chmod +x "$mockbin/wget"
+
+    run env PATH="$mockbin" MOCK_WGET_RC=3 /bin/bash -c "
+        source '$BATS_TEST_DIRNAME/../../libexec/sh/llvmup-engine.sh' >/dev/null 2>&1 || true
+        eng_download 'https://example.invalid/a.tar.xz' '$TEST_HOME/a.tar.xz'
+    "
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"disk may be full"* ]]
+
+    run env PATH="$mockbin" MOCK_WGET_RC=8 /bin/bash -c "
+        source '$BATS_TEST_DIRNAME/../../libexec/sh/llvmup-engine.sh' >/dev/null 2>&1 || true
+        eng_download 'https://example.invalid/a.tar.xz' '$TEST_HOME/a.tar.xz'
+    "
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"HTTP error"* ]]
+
+    run env PATH="$mockbin" MOCK_WGET_RC=4 /bin/bash -c "
+        source '$BATS_TEST_DIRNAME/../../libexec/sh/llvmup-engine.sh' >/dev/null 2>&1 || true
+        eng_download 'https://example.invalid/a.tar.xz' '$TEST_HOME/a.tar.xz'
+    "
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"could not reach the server"* ]]
+}
+
+@test "collision diagnostic reports differences in variant attributes like threads" {
+    local existing plan
+    existing='{"provider":"winlibs","provider_release":"15.2.0","llvm_version":"21.1.8","host":{"os":"windows","arch":"x64"},"variant":{"crt":"ucrt","threads":"posix"}}'
+    plan='{"provider":"winlibs","release_tag":"15.2.0","llvm_version":"21.1.8","host":{"os":"windows","arch":"x64"},"variant":{"crt":"ucrt","threads":"mcf"}}'
+    run bash -c "
+        source '$BATS_TEST_DIRNAME/../../libexec/sh/llvmup-engine.sh' >/dev/null 2>&1 || true
+        eng_collision_die '$existing' '$plan' 'winlibs@21' 'win-dev'
+    "
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"Threads: posix"* ]]
+    [[ "$output" == *"Threads: mcf"* ]]
+}

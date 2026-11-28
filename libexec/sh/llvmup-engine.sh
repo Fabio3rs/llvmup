@@ -29,7 +29,7 @@ eng_die() { eng_err "$*"; exit 1; }
 # eng_quote_sel <selector>: single-quotes selectors containing shell metacharacters (e.g. '>=23.1').
 eng_quote_sel() {
     case "$1" in
-        *[!A-Za-z0-9@._+:/=-]*) printf "'%s'" "$1" ;;
+        *[!A-Za-z0-9@._+:/=-]*) printf "'%s'" "${1//\'/\'\\\'\'}" ;;
         *) printf '%s' "$1" ;;
     esac
 }
@@ -89,11 +89,21 @@ eng_collision_die() {
     q="$(eng_quote_sel "$3")"
     eng_err "Installation name '$4' is already in use."
     jq -rn --argjson e "$1" --argjson r "$2" '
-        def row($k; $a; $b): if $a != $b then {k: $k, a: ($a // "-"), b: ($b // "-")} else empty end;
-        [row("Provider"; $e.provider; $r.provider), row("Release"; $e.provider_release; $r.release_tag),
-         row("LLVM"; $e.llvm_version; $r.llvm_version), row("Architecture"; $e.host.arch; $r.host.arch),
-         row("CRT"; $e.variant.crt; $r.variant.crt)] as $d
-        | "\nExisting installation:", ($d[] | "  \(.k): \(.a)"), "\nRequested installation:", ($d[] | "  \(.k): \(.b)")' >&2
+        def row($k; $a; $b): if ($a // "") != ($b // "") then {k: $k, a: ($a // "-"), b: ($b // "-")} else empty end;
+        [row("Provider"; $e.provider; $r.provider),
+         row("Release"; $e.provider_release; $r.release_tag),
+         row("LLVM"; $e.llvm_version; $r.llvm_version),
+         row("GCC"; $e.gcc_version; $r.gcc_version),
+         row("OS"; $e.host.os; $r.host.os),
+         row("Architecture"; $e.host.arch; $r.host.arch),
+         row("CRT"; $e.variant.crt; $r.variant.crt),
+         row("Threads"; $e.variant.threads; $r.variant.threads),
+         row("Exceptions"; $e.variant.exceptions; $r.variant.exceptions),
+         row("C++ library"; $e.variant.cxx_stdlib; $r.variant.cxx_stdlib),
+         row("Profile"; $e.variant.profile; $r.variant.profile),
+         row("Asset"; $e.asset.name; $r.asset.name)] as $d
+        | (if ($d | length) > 0 then $d else [row("Identity"; $e.id; $r.canonical_id)] end) as $rows
+        | "\nExisting installation:", ($rows[] | "  \(.k): \(.a)"), "\nRequested installation:", ($rows[] | "  \(.k): \(.b)")' >&2
     printf '\nChoose a different name:\n  llvmup install %s --name <new-name>\n' "$q" >&2
     printf '\nTo replace the existing installation explicitly, add --force. This deletes it first.\n' >&2
     printf 'The existing installation was not modified.\n' >&2
@@ -616,22 +626,30 @@ eng_download() {
     mkdir -p -- "$(dirname "$dest")" || eng_die "Cannot create the download directory $(dirname "$dest"). Check its permissions and the free disk space."
     local part
     part="$(mktemp "$dest.part.XXXXXXXX")" || eng_die "Cannot write to $(dirname "$dest"). Check its permissions and the free disk space."
-    local ok=1 rc=0
+    local ok=1 rc=0 tool=""
     if command -v curl >/dev/null 2>&1; then
+        tool=curl
         local progress=(-sS)
         [ "$ENGINE_QUIET" = 1 ] || [ ! -t 2 ] || progress=(-#)
         curl -fL --proto-redir '=http,https' --retry 3 --retry-delay 2 --connect-timeout 30 "${progress[@]}" -H 'User-Agent: llvmup' -o "$part" "$url" && ok=0 || rc=$?
     elif command -v wget >/dev/null 2>&1; then
+        tool=wget
         wget -q --tries=3 --timeout=60 -O "$part" "$url" && ok=0 || rc=$?
     else
         eng_die "curl or wget is required"
     fi
     if [ "$ok" -ne 0 ] || [ ! -s "$part" ]; then
         rm -f "$part"
-        case "$rc" in
-            23) eng_die "Download failed: could not write $(basename "$dest") to $(dirname "$dest"). The disk may be full or the directory is not writable." ;;
-            22) eng_die "Download failed: the server rejected the request for $url (HTTP error). The asset may have been removed." ;;
-            6|7|28|35|56) eng_die "Download failed: could not reach the server for $url. Check your network connection or proxy settings, then try again." ;;
+        local kind=other
+        case "$tool:$rc" in
+            curl:23|wget:3) kind=disk ;;
+            curl:22|wget:8) kind=http ;;
+            curl:6|curl:7|curl:28|curl:35|curl:56|wget:4|wget:5|wget:7) kind=net ;;
+        esac
+        case "$kind" in
+            disk) eng_die "Download failed: could not write $(basename "$dest") to $(dirname "$dest"). The disk may be full or the directory is not writable." ;;
+            http) eng_die "Download failed: the server rejected the request for $url (HTTP error). The asset may have been removed." ;;
+            net) eng_die "Download failed: could not reach the server for $url. Check your network connection or proxy settings, then try again." ;;
             *) eng_die "Download failed: $url" ;;
         esac
     fi
@@ -1152,9 +1170,11 @@ eng_resolve_installed() {
             printf '\nMatching installations:\n' >&2
             jq -r '.[] | "  \(.install_name)  (\(.provider), LLVM \(.llvm_version // "?"))"' <<<"$arr" >&2
             printf '\nSpecify a provider or an installation name:\n' >&2
-            local first_name
+            local first_name p
             first_name="$(jq -r '.[0].install_name' <<<"$arr")"
-            jq -r --arg e "$expr" '[.[].provider] | unique | .[:2][] | "  llvmup use \(.)@\($e)"' <<<"$arr" >&2
+            while IFS= read -r p; do
+                [ -n "$p" ] && printf '  llvmup use %s\n' "$(eng_quote_sel "$p@$expr")" >&2
+            done < <(jq -r '[.[].provider] | unique | .[:2][]' <<<"$arr")
             printf '  llvmup use %s\n' "$(eng_quote_sel "$first_name")" >&2
         }
         exit 1

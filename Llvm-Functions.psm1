@@ -609,6 +609,90 @@ Usage:
 
 Only the settings are written to the output; diagnostics go to the error stream.
 '@
+    'resolve' = @'
+Show which upstream release and asset a selector would install.
+
+Usage:
+  llvmup resolve [<selector>|--config] [--provider <P>] [--release <TAG>] [--crt <C>] [--threads <T>] [--platform <OS>] [--arch <A>] [--format tag|json]
+
+Queries release metadata without downloading or installing any archive.
+'@
+    'toolchain' = @'
+Link, unlink, or list external (non-managed) toolchains.
+
+Usage:
+  llvmup toolchain link <name> <path>
+  llvmup toolchain unlink <name>
+  llvmup toolchain list
+
+Unlinking only removes the LLVMUP registration; external files on disk are preserved.
+'@
+    'disk-usage' = @'
+Show disk usage of installed toolchains.
+
+Usage:
+  llvmup disk-usage [-h|--human-readable]
+'@
+    'deactivate' = @'
+Restore this terminal session's environment to its state before LLVMUP activation.
+
+Usage:
+  llvmup deactivate
+'@
+    'shell' = @'
+Start a subshell with a toolchain active.
+
+Usage:
+  llvmup shell [<selector>] [--compiler <C>] [--target <T>] [--shell <PATH>]
+'@
+    'pick' = @'
+Interactively choose an installed toolchain from a list and activate it.
+
+Usage:
+  llvmup pick
+'@
+    'cmake-toolchain' = @'
+Write a CMake toolchain file for a selected toolchain.
+
+Usage:
+  llvmup cmake-toolchain [<selector>] [--compiler <C>] [--target <T>] [-o|--output <PATH>]
+'@
+    'vscode-activate' = @'
+Configure VS Code settings for a toolchain.
+
+Usage:
+  llvmup vscode-activate <selector>
+'@
+    'info' = @'
+Show detailed metadata for a toolchain.
+
+Usage:
+  llvmup info [<selector>] [--json]
+'@
+    'which' = @'
+Print the full path to a tool inside the selected toolchain.
+
+Usage:
+  llvmup which <tool> [--toolchain <selector>] [--compiler <C>] [--target <T>]
+'@
+    'where' = @'
+Print the root directory of a toolchain.
+
+Usage:
+  llvmup where [<selector>]
+'@
+    'provides' = @'
+Find installed toolchains that provide a given tool.
+
+Usage:
+  llvmup provides <tool> [--json]
+'@
+    'doctor' = @'
+Check LLVMUP installation, environment, and project health.
+
+Usage:
+  llvmup doctor [--verbose] [--json]
+'@
 }
 
 function Test-LlvmCommandHelp {
@@ -1648,7 +1732,7 @@ function llvmup {
                         }
                         Write-Host "Update available for $($t.install_name): installing $($res.canonical_id) as a new installation."
                         $null = Invoke-LlvmInstallPrebuiltFromRecipe -Selector $majorExpr -Provider $t.provider -ReleaseTag $res.release -Crt $crtArg -ArchiveOnly -ToolchainsPath $toolchainsPath -HomePath $homePath
-                        Write-Host "The previous installation ($($t.install_name)) remains available; aliases, defaults and pins were not changed.`nTo use the new one:`n  llvmup use $($res.canonical_id)"
+                        Write-Host "The previous installation ($($t.install_name)) remains available; aliases, defaults and pins were not changed.`nTo use the new one:`n  llvmup use $(Format-LlvmCommandArgument $res.canonical_id)"
                     } catch {
                         Write-Warning "$($t.install_name): $($_.Exception.Message)"
                         $ok = $false
